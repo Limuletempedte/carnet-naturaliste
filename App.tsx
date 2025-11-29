@@ -61,8 +61,13 @@ const App: React.FC = () => {
                     // Only sync initial data if we are online and have no data? 
                     // Or maybe just skip this if offline.
                     if (navigator.onLine) {
-                        await syncObservations(INITIAL_OBSERVATIONS);
-                        obsToUse = INITIAL_OBSERVATIONS;
+                        try {
+                            await syncObservations(INITIAL_OBSERVATIONS);
+                            obsToUse = INITIAL_OBSERVATIONS;
+                        } catch (syncError) {
+                            console.warn("Initial sync failed (likely auth), skipping:", syncError);
+                            // Continue with empty observations or whatever was loaded
+                        }
                     }
                 }
                 setObservations(obsToUse);
