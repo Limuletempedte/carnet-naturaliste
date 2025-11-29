@@ -1,7 +1,7 @@
 import 'leaflet/dist/leaflet.css';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Observation, View, TaxonomicGroup, Status } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, syncObservations } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, syncObservations, processOfflineQueue } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ObservationForm from './components/ObservationForm';
 import ObservationMap from './components/ObservationMap';
