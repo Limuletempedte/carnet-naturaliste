@@ -1,0 +1,5 @@
+{
+  "name": "Carnet Naturaliste",
+  "description": "An offline application for recording, managing, and exporting naturalist observations. All data is stored locally in your browser, no internet connection is required.",
+  "requestFramePermissions": []
+}
