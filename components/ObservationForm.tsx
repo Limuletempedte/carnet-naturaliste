@@ -154,7 +154,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             reader.onload = (event) => {
                 const target = event.target;
                 if (target && typeof target.result === 'string') {
-                    setFormData(prev => ({ ...prev, [name]: target.result }));
+                    setFormData(prev => ({ ...prev, [name]: target.result as string }));
                 }
             };
             reader.readAsDataURL(files[0]);

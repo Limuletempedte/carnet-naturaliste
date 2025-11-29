@@ -81,7 +81,7 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                                     {selectedObservations.map(obs => (
-                                        <ObservationRow key={obs.id} observation={obs} onEdit={onEdit} onDelete={onDelete} />
+                                        <ObservationRow key={obs.id} observation={obs} onEdit={onEdit} onDelete={onDelete} selected={false} onToggle={() => { }} />
                                     ))}
                                 </tbody>
                             </table>

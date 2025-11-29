@@ -270,7 +270,7 @@ export const processOfflineQueue = async () => {
                 // Remove temp ID if needed, or handle it. 
                 // For now, we just insert. If ID was temp, Supabase generates new one.
                 // Issue: Optimistic UI has temp ID. We might need to reload data after sync.
-                const { id, ...rest } = item.payload;
+
                 // If id starts with temp-, remove it to let DB generate UUID
                 const row = mapToRow(item.payload, user.id);
                 if (String(id).startsWith('temp-')) {

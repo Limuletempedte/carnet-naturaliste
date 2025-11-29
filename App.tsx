@@ -21,7 +21,7 @@ import UserProfile from './components/Auth/UserProfile';
 import { useAuth } from './contexts/AuthContext';
 
 const App: React.FC = () => {
-    const { user, loading: authLoading, signOut } = useAuth();
+    const { user, loading: authLoading } = useAuth();
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
     const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
