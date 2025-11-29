@@ -18,6 +18,9 @@ const Login: React.FC = () => {
                 const { error } = await supabase.auth.signUp({
                     email,
                     password,
+                    options: {
+                        emailRedirectTo: window.location.origin,
+                    },
                 });
                 if (error) throw error;
                 setMessage({ type: 'success', text: 'Inscription réussie ! Vérifiez vos emails pour confirmer.' });
