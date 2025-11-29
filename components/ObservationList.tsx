@@ -239,7 +239,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     </div>
 
                     {/* Horizontal Filter Scroll */}
-                    <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+                    <div className="flex flex-wrap gap-2 pt-2 no-scrollbar">
                         <button
                             onClick={handleSelectAll}
                             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap border-none outline-none ${selectedIds.size === observations.length && observations.length > 0 ? 'bg-nature-green text-white' : 'bg-gray-100 dark:bg-white/10 dark:text-white'}`}

@@ -83,6 +83,11 @@ export const getObservations = async (): Promise<Observation[]> => {
     }
 
     try {
+        console.log('Fetching observations from Supabase...');
+        // Debug: Check URL (masked)
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        console.log('Supabase URL configured:', supabaseUrl ? supabaseUrl.substring(0, 15) + '...' : 'UNDEFINED');
+
         const { data, error } = await supabase
             .from('observations')
             .select('*')
