@@ -11,6 +11,16 @@ if (!rootElement) {
 
 import { AuthProvider } from './contexts/AuthContext';
 
+import { registerSW } from 'virtual:pwa-register';
+
+const updateSW = registerSW({
+  onNeedRefresh() {
+    if (confirm("Une nouvelle version est disponible. Recharger ?")) {
+      updateSW(true);
+    }
+  },
+});
+
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
