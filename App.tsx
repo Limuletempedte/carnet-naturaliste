@@ -334,42 +334,58 @@ const App: React.FC = () => {
     return (
         <div className={`min-h-screen font-sans transition-colors duration-500 bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface text-nature-dark dark:text-nature-dark-text ${isMobileView ? 'pb-20' : ''}`}>
 
-            {/* Glass Header */}
-            <header className="fixed top-0 left-0 right-0 z-50 px-4 py-3 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
-                {/* Left: User Profile */}
-                <UserProfile />
+            {/* Mobile Layout: Glass Header */}
+            {isMobileView ? (
+                <header className="fixed top-0 left-0 right-0 z-50 px-4 py-3 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
+                    <UserProfile />
+                    <div className="flex items-center gap-2">
+                        {/* Server Status Mobile */}
+                        <div className={`w-3 h-3 rounded-full ${error && error.includes('serveur') ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} title={error && error.includes('serveur') ? "Offline" : "Online"}></div>
 
-                {/* Right: Controls */}
-                <div className="flex items-center gap-2 md:gap-3">
-                    {/* Server Status */}
-                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm transition-all ${error && error.includes('serveur') ? 'bg-red-100/80 border-red-200 text-red-600' : 'bg-green-100/80 border-green-200 text-green-700'}`} title={error && error.includes('serveur') ? "Déconnecté du serveur" : "Connecté au serveur"}>
-                        <div className={`w-2 h-2 rounded-full ${error && error.includes('serveur') ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
-                        <span className="text-xs font-bold hidden md:inline">{error && error.includes('serveur') ? "Offline" : "Online"}</span>
+                        <button
+                            onClick={() => setIsMobileView(!isMobileView)}
+                            className="p-2 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-700 dark:text-gray-200"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        </button>
+
+                        <button
+                            onClick={() => setIsDarkMode(!isDarkMode)}
+                            className="p-2 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all"
+                        >
+                            {isDarkMode ? '☀️' : '🌙'}
+                        </button>
+                    </div>
+                </header>
+            ) : (
+                /* Desktop Layout: Floating Buttons */
+                <>
+                    <div className="fixed top-6 left-6 z-50">
+                        <UserProfile />
                     </div>
 
-                    {/* Mobile Toggle */}
-                    <button
-                        onClick={() => setIsMobileView(!isMobileView)}
-                        className="p-2 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-700 dark:text-gray-200 border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
-                        title={isMobileView ? "Version Desktop" : "Version Mobile"}
-                    >
-                        {isMobileView ? (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-                        ) : (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-                        )}
-                    </button>
-
-                    {/* Theme Toggle */}
                     <button
                         onClick={() => setIsDarkMode(!isDarkMode)}
-                        className="p-2 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
+                        className="fixed top-6 right-6 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10"
                         title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
                     >
                         {isDarkMode ? '☀️' : '🌙'}
                     </button>
-                </div>
-            </header>
+
+                    <button
+                        onClick={() => setIsMobileView(!isMobileView)}
+                        className="fixed top-6 right-20 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-700 dark:text-gray-200"
+                        title="Version Mobile"
+                    >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                    </button>
+
+                    <div className={`fixed top-6 right-36 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${error && error.includes('serveur') ? 'bg-red-100/80 border-red-200 text-red-600' : 'bg-green-100/80 border-green-200 text-green-700'}`} title={error && error.includes('serveur') ? "Déconnecté du serveur" : "Connecté au serveur"}>
+                        <div className={`w-2 h-2 rounded-full ${error && error.includes('serveur') ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
+                        <span className="text-xs font-bold hidden md:inline">{error && error.includes('serveur') ? "Offline" : "Online"}</span>
+                    </div>
+                </>
+            )}
 
             {confirmation && (
                 <ConfirmationDialog
@@ -381,7 +397,7 @@ const App: React.FC = () => {
                 />
             )}
             {error && (
-                <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 bg-red-100/90 backdrop-blur-md border border-red-200 text-red-700 px-6 py-4 rounded-2xl shadow-ios flex items-center gap-3 animate-fadeIn w-[90%] md:w-auto">
+                <div className={`fixed left-1/2 transform -translate-x-1/2 z-50 bg-red-100/90 backdrop-blur-md border border-red-200 text-red-700 px-6 py-4 rounded-2xl shadow-ios flex items-center gap-3 animate-fadeIn w-[90%] md:w-auto ${isMobileView ? 'top-24' : 'top-20'}`}>
                     <strong className="font-bold">Erreur:</strong>
                     <span className="block sm:inline"> {error}</span>
                     <button onClick={() => setError(null)} className="ml-4 text-red-500 hover:text-red-700">
@@ -401,7 +417,7 @@ const App: React.FC = () => {
                 </button>
             )}
 
-            <div className={`container mx-auto p-4 md:p-8 max-w-7xl pt-24 ${isMobileView ? 'px-2' : ''}`}>
+            <div className={`container mx-auto p-4 md:p-8 max-w-7xl ${isMobileView ? 'pt-24 px-2' : ''}`}>
                 {/* Navigation Tabs - Desktop Only */}
                 {!isMobileView && view !== View.FORM && (
                     <div className="flex justify-center mb-10 sticky top-4 z-40">
