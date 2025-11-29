@@ -98,8 +98,9 @@ export const getObservations = async (): Promise<Observation[]> => {
         const observations = data.map(mapToObservation);
         setLocalCache(observations); // Update cache
         return observations;
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error fetching observations:', error);
+        console.error('Error details:', error.message, error.details, error.hint);
         // Fallback to cache on error
         return getLocalCache();
     }
@@ -277,9 +278,13 @@ export const processOfflineQueue = async () => {
                 // Issue: Optimistic UI has temp ID. We might need to reload data after sync.
 
                 // If id starts with temp-, remove it to let DB generate UUID
+                // If id starts with temp-, remove it to let DB generate UUID
                 const row = mapToRow(item.payload, user.id);
-                if (String(id).startsWith('temp-')) {
-                    await supabase.from('observations').insert(row);
+                // Fix: Use item.payload.id instead of undefined 'id'
+                if (String(item.payload.id).startsWith('temp-')) {
+                    // Remove id from row to let DB generate it
+                    const { id, ...rowWithoutId } = row as any;
+                    await supabase.from('observations').insert(rowWithoutId);
                 } else {
                     await supabase.from('observations').upsert(row);
                 }

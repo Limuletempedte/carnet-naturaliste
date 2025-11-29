@@ -104,8 +104,9 @@ const App: React.FC = () => {
                         setObservations(updatedObs);
                     }
                 }
-            } catch (e) {
-                setError("Erreur lors du chargement des observations. Le serveur n'est peut-être pas démarré.");
+            } catch (e: any) {
+                const errorMsg = e.message || "Erreur inconnue";
+                setError(`Erreur connexion: ${errorMsg}. Le serveur n'est peut-être pas démarré.`);
                 console.error(e);
                 setIsLoading(false);
             }
