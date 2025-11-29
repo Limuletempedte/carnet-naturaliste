@@ -26,7 +26,7 @@ const UserProfile: React.FC = () => {
     const initial = email.charAt(0).toUpperCase();
 
     return (
-        <div className="fixed top-6 left-6 z-50" ref={dropdownRef}>
+        <div className="relative z-50" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 p-1.5 pr-4 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 border border-white/20 dark:border-white/10 group"
