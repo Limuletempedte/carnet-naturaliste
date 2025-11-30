@@ -28,7 +28,10 @@ export default defineConfig(({ mode }) => {
               sizes: '512x512',
               type: 'image/png'
             }
-          ]
+          ],
+          display: 'standalone',
+          start_url: '/',
+          background_color: '#ffffff'
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],

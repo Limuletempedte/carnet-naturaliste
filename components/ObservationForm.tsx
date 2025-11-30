@@ -37,7 +37,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         country: 'France',
         altitude: null,
         comment: '',
-        status: Status.LC,
+        status: Status.NE,
         atlasCode: '',
         protocol: Protocol.OPPORTUNIST,
         sexe: Sexe.UNKNOWN,
