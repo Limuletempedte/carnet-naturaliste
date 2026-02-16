@@ -21,7 +21,7 @@ import UserProfile from './components/Auth/UserProfile';
 import { useAuth } from './contexts/AuthContext';
 
 const App: React.FC = () => {
-    const { user, loading: authLoading } = useAuth();
+    const { user, loading: authLoading, isOffline } = useAuth();
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
     const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
@@ -324,6 +324,19 @@ const App: React.FC = () => {
     }
 
     if (!user) {
+        // If offline and no cached user, show offline message instead of broken Login form
+        if (isOffline) {
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
+                    <div className="w-full max-w-md bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-2xl shadow-ios p-8 border border-white/20 text-center">
+                        <h1 className="text-3xl font-bold mb-2 text-nature-dark dark:text-white">Carnet Naturaliste</h1>
+                        <div className="text-6xl mb-4">📡</div>
+                        <p className="text-gray-600 dark:text-gray-400 mb-4">Vous êtes hors-ligne. Connectez-vous à Internet pour vous identifier.</p>
+                        <p className="text-sm text-gray-400 dark:text-gray-500">Une fois connecté, vos données seront disponibles hors-ligne.</p>
+                    </div>
+                </div>
+            );
+        }
         return <Login />;
     }
 

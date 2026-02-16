@@ -78,16 +78,10 @@ const setLocalCache = (observations: Observation[]) => {
 
 export const getObservations = async (): Promise<Observation[]> => {
     if (!navigator.onLine) {
-        console.log('Offline: Fetching from local cache');
         return getLocalCache();
     }
 
     try {
-        console.log('Fetching observations from Supabase...');
-        // Debug: Check URL (masked)
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        console.log('Supabase URL configured:', supabaseUrl ? supabaseUrl.substring(0, 15) + '...' : 'UNDEFINED');
-
         const { data, error } = await supabase
             .from('observations')
             .select('*')
@@ -100,7 +94,6 @@ export const getObservations = async (): Promise<Observation[]> => {
         return observations;
     } catch (error: any) {
         console.error('Error fetching observations:', error);
-        console.error('Error details:', error.message, error.details, error.hint);
         // Fallback to cache on error
         return getLocalCache();
     }
