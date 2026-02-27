@@ -1,11 +1,10 @@
 
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, '.', '');
+export default defineConfig(() => {
   return {
     plugins: [
       react(),
@@ -34,16 +33,18 @@ export default defineConfig(({ mode }) => {
           background_color: '#ffffff'
         },
         workbox: {
+          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MiB to accommodate the large main bundle
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          globIgnores: ['**/Logo/*'],
           runtimeCaching: [
             {
-              urlPattern: /^https:\/\/xowiezzqehadcfnbjio\.supabase\.co\/rest\/v1\/.*/i,
-              handler: 'NetworkFirst',
+              urlPattern: ({ url }) => url.pathname.startsWith('/Logo/'),
+              handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'supabase-api-cache',
+                cacheName: 'logo-assets-cache',
                 expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60 * 24 * 7 // 1 week
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 30
                 },
                 cacheableResponse: {
                   statuses: [0, 200]
@@ -68,10 +69,6 @@ export default defineConfig(({ mode }) => {
         }
       })
     ],
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

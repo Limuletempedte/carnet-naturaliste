@@ -10,17 +10,23 @@ import ObservationGallery from './components/ObservationGallery';
 import ObservationCalendar from './components/ObservationCalendar';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
-import { INITIAL_OBSERVATIONS } from './constants';
 import { fetchSpeciesInfo } from './services/speciesService';
+import { ImportResult } from './services/excelImportService';
+import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
+import { compareIsoDate, getYearFromIsoDate } from './utils/dateUtils';
 
 type SortDirection = 'ascending' | 'descending';
 type SortKey = keyof Observation | '';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 import Login from './components/Auth/Login';
 import UserProfile from './components/Auth/UserProfile';
 import { useAuth } from './contexts/AuthContext';
+import { supabaseConfigError } from './supabaseClient';
 
 const App: React.FC = () => {
+    const ENRICHMENT_BATCH_LIMIT = 20;
+    const ENRICHMENT_CONCURRENCY = 3;
     const { user, loading: authLoading, isOffline } = useAuth();
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
@@ -35,8 +41,25 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [confirmation, setConfirmation] = useState<{ title: string; message: string; onConfirm: () => void; } | null>(null);
+    const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
+
+    useEffect(() => {
+        localStorage.setItem('darkMode', String(isDarkMode));
+    }, [isDarkMode]);
+
+    const removeToast = (id: string) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    };
+
+    const pushToast = (type: ToastType, message: string, durationMs = 4500) => {
+        const id = crypto.randomUUID();
+        setToasts(prev => [...prev, { id, type, message }]);
+        window.setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, durationMs);
+    };
 
     useEffect(() => {
         if (isDarkMode) {
@@ -46,7 +69,20 @@ const App: React.FC = () => {
         }
     }, [isDarkMode]);
 
+    // Listen for localStorage quota exceeded and warn user
     useEffect(() => {
+        const handleQuota = () => pushToast('warning', 'Stockage local plein — les données hors-ligne risquent de ne pas être sauvegardées. Libérez de l\'espace ou synchronisez vos données.', 8000);
+        window.addEventListener('storage-quota-exceeded', handleQuota);
+        return () => window.removeEventListener('storage-quota-exceeded', handleQuota);
+    }, []);
+
+    useEffect(() => {
+        if (authLoading || !user || supabaseConfigError) {
+            return;
+        }
+
+        let mounted = true;
+
         const loadData = async () => {
             setIsLoading(true);
             try {
@@ -55,61 +91,70 @@ const App: React.FC = () => {
                     await processOfflineQueue();
                 }
 
-                const loadedObservations = await getObservations();
-                let obsToUse = loadedObservations;
-                if (loadedObservations.length === 0) {
-                    // Only sync initial data if we are online and have no data? 
-                    // Or maybe just skip this if offline.
-                    if (navigator.onLine) {
-                        try {
-                            await syncObservations(INITIAL_OBSERVATIONS);
-                            obsToUse = INITIAL_OBSERVATIONS;
-                        } catch (syncError) {
-                            console.warn("Initial sync failed (likely auth), skipping:", syncError);
-                            // Continue with empty observations or whatever was loaded
-                        }
-                    }
-                }
+                const obsToUse = await getObservations();
+                if (!mounted) return;
                 setObservations(obsToUse);
                 setIsLoading(false);
 
                 // Auto-fetch missing images for existing observations
-                const obsWithMissingImages = obsToUse.filter(obs => !obs.photo && !obs.wikipediaImage && obs.speciesName);
+                if (!navigator.onLine) return;
+                const obsWithMissingImages = obsToUse
+                    .filter(obs => !obs.photo && !obs.wikipediaImage && obs.speciesName)
+                    .slice(0, ENRICHMENT_BATCH_LIMIT);
 
                 if (obsWithMissingImages.length > 0) {
-                    // Process in background
                     const updatedObs = [...obsToUse];
                     let hasUpdates = false;
+                    let nextIndex = 0;
 
-                    for (const obs of obsWithMissingImages) {
-                        try {
-                            const info = await fetchSpeciesInfo(obs.speciesName);
-                            if (info && info.imageUrl) {
+                    const worker = async () => {
+                        while (nextIndex < obsWithMissingImages.length && mounted) {
+                            const currentIndex = nextIndex;
+                            nextIndex += 1;
+                            const obs = obsWithMissingImages[currentIndex];
+
+                            try {
+                                const info = await fetchSpeciesInfo(obs.speciesName);
+                                if (!mounted || !info) continue;
+
                                 const index = updatedObs.findIndex(o => o.id === obs.id);
-                                if (index !== -1) {
-                                    updatedObs[index] = {
-                                        ...updatedObs[index],
-                                        wikipediaImage: info.imageUrl,
-                                        latinName: updatedObs[index].latinName || info.latinName || updatedObs[index].latinName,
-                                        taxonomicGroup: info.taxonomicGroup || updatedObs[index].taxonomicGroup
-                                    };
-                                    hasUpdates = true;
-                                    // Save individually to storage to persist
-                                    await updateObservation(updatedObs[index]);
-                                }
-                            }
-                        } catch (err) {
-                            console.error(`Failed to fetch info for ${obs.speciesName}`, err);
-                        }
-                        // Small delay to be nice to the API
-                        await new Promise(resolve => setTimeout(resolve, 200));
-                    }
+                                if (index === -1) continue;
 
-                    if (hasUpdates) {
+                                const nextObservation = {
+                                    ...updatedObs[index],
+                                    wikipediaImage: info.imageUrl || updatedObs[index].wikipediaImage,
+                                    latinName: updatedObs[index].latinName || info.latinName || '',
+                                    taxonomicGroup: info.taxonomicGroup || updatedObs[index].taxonomicGroup
+                                };
+
+                                const changed = (
+                                    nextObservation.wikipediaImage !== updatedObs[index].wikipediaImage ||
+                                    nextObservation.latinName !== updatedObs[index].latinName ||
+                                    nextObservation.taxonomicGroup !== updatedObs[index].taxonomicGroup
+                                );
+
+                                if (!changed) continue;
+
+                                updatedObs[index] = nextObservation;
+                                hasUpdates = true;
+                                await updateObservation(nextObservation);
+                            } catch (err) {
+                                console.error(`Failed to fetch info for ${obs.speciesName}`, err);
+                            }
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                        }
+                    };
+
+                    await Promise.all(
+                        Array.from({ length: Math.min(ENRICHMENT_CONCURRENCY, obsWithMissingImages.length) }, () => worker())
+                    );
+
+                    if (hasUpdates && mounted) {
                         setObservations(updatedObs);
                     }
                 }
             } catch (e: any) {
+                if (!mounted) return;
                 const errorMsg = e.message || "Erreur inconnue";
                 setError(`Erreur connexion: ${errorMsg}. Le serveur n'est peut-être pas démarré.`);
                 console.error(e);
@@ -117,7 +162,9 @@ const App: React.FC = () => {
             }
         };
         loadData();
-    }, []);
+
+        return () => { mounted = false; };
+    }, [authLoading, user, supabaseConfigError]);
 
     const handleAddObservation = () => {
         setEditingObservation(null);
@@ -154,20 +201,23 @@ const App: React.FC = () => {
             message: `Êtes-vous sûr de vouloir supprimer ces ${ids.length} observations ? Cette action est irréversible.`,
             onConfirm: async () => {
                 try {
-                    // Delete sequentially or in parallel
-                    // Parallel might overwhelm the server if too many, but for SQLite it's tricky.
-                    // Let's do it sequentially for safety or Promise.all with chunks.
-                    // Given the server fix (INSERT OR REPLACE), DELETE should be fine.
-                    // But we don't have a bulk delete endpoint.
-                    // We will call deleteObservation for each.
+                    const results = await Promise.allSettled(ids.map(id => deleteObservation(id)));
+                    const successIds: string[] = [];
+                    let failedCount = 0;
 
-                    // Optimistic update
-                    const idsSet = new Set(ids);
+                    results.forEach((result, index) => {
+                        if (result.status === 'fulfilled') {
+                            successIds.push(ids[index]);
+                        } else {
+                            failedCount++;
+                        }
+                    });
+
+                    const idsSet = new Set(successIds);
                     setObservations(prev => prev.filter(obs => !idsSet.has(obs.id)));
 
-                    // Background delete
-                    for (const id of ids) {
-                        await deleteObservation(id).catch(e => console.error(`Failed to delete ${id}`, e));
+                    if (failedCount > 0) {
+                        pushToast('warning', `${failedCount} suppression(s) ont échoué.`);
                     }
                 } catch (e) {
                     setError("Erreur lors de la suppression multiple.");
@@ -193,43 +243,75 @@ const App: React.FC = () => {
         } catch (e) {
             setError("Erreur lors de la sauvegarde de l'observation.");
             console.error(e);
+            throw e;
         }
     };
 
-    const handleImportRequest = (importedObservations: Observation[]) => {
-        setConfirmation({
-            title: "Confirmer l'importation",
-            message: `Vous allez importer ${importedObservations.length} observations. Les doublons (basés sur l'ID) seront mis à jour. Continuer ?`,
-            onConfirm: async () => {
-                try {
-                    // Merge observations: Update existing ones, add new ones
-                    const mergedObservations = [...observations];
-                    let addedCount = 0;
-                    let updatedCount = 0;
+    const handleImportRequest = async (importResult: ImportResult): Promise<void> => {
+        try {
+            if (importResult.report.errors.length > 0) {
+                throw new Error(`Le fichier contient ${importResult.report.errors.length} erreur(s) bloquante(s).`);
+            }
 
-                    importedObservations.forEach(newObs => {
-                        const index = mergedObservations.findIndex(existingObs => existingObs.id === newObs.id);
-                        if (index !== -1) {
-                            mergedObservations[index] = newObs;
-                            updatedCount++;
-                        } else {
-                            mergedObservations.push(newObs);
-                            addedCount++;
-                        }
-                    });
+            let regeneratedIds = 0;
+            const normalizedImported = importResult.observations.map(obs => {
+                if (!UUID_RE.test(String(obs.id).trim())) {
+                    regeneratedIds++;
+                    return { ...obs, id: crypto.randomUUID() };
+                }
+                return obs;
+            });
 
-                    await syncObservations(mergedObservations);
-                    setObservations(mergedObservations);
-                    setView(View.LIST);
-                    // Optional: Show success message with details
-                    // alert(`${addedCount} ajoutées, ${updatedCount} mises à jour.`);
-                } catch (e: any) {
-                    const errorMessage = e instanceof Error ? e.message : String(e);
-                    setError(`Erreur lors de l'importation : ${errorMessage}`);
-                    console.error(e);
+            // Deduplicate imported rows by ID, keeping the latest occurrence.
+            const importedObservations = Array.from(
+                new Map(normalizedImported.map(obs => [obs.id, obs])).values()
+            );
+
+            const mergedObservations = [...observations];
+            let addedCount = 0;
+            let updatedCount = 0;
+
+            importedObservations.forEach(newObs => {
+                const index = mergedObservations.findIndex(existingObs => existingObs.id === newObs.id);
+                if (index !== -1) {
+                    mergedObservations[index] = newObs;
+                    updatedCount++;
+                } else {
+                    mergedObservations.push(newObs);
+                    addedCount++;
+                }
+            });
+
+            if (navigator.onLine) {
+                await syncObservations(importedObservations);
+            } else {
+                const existingIds = new Set(observations.map(obs => obs.id));
+                for (const imported of importedObservations) {
+                    if (existingIds.has(imported.id)) {
+                        await updateObservation(imported);
+                    } else {
+                        await saveObservation(imported);
+                    }
                 }
             }
-        });
+            setObservations(mergedObservations);
+            setView(View.LIST);
+            setError(null);
+
+            pushToast('success', `Import terminé: ${addedCount} ajoutée(s), ${updatedCount} mise(s) à jour.`);
+            if (importResult.report.warnings.length > 0) {
+                pushToast('warning', `Import avec ${importResult.report.warnings.length} warning(s).`, 7000);
+            }
+            if (regeneratedIds > 0) {
+                pushToast('warning', `${regeneratedIds} ID(s) non valides ont été régénérés en UUID.`, 7000);
+            }
+        } catch (e: any) {
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            setError(`Erreur lors de l'importation : ${errorMessage}`);
+            pushToast('error', `Échec de l'import: ${errorMessage}`);
+            console.error(e);
+            throw e;
+        }
     };
 
     const handleCancel = () => {
@@ -252,7 +334,7 @@ const App: React.FC = () => {
         sortableItems = sortableItems
             .filter(obs => {
                 if (yearFilter === 'all') return true;
-                return new Date(obs.date).getFullYear().toString() === yearFilter;
+                return getYearFromIsoDate(obs.date) === yearFilter;
             })
             .filter(obs => {
                 if (taxonomicGroupFilter === 'all') return true;
@@ -264,11 +346,11 @@ const App: React.FC = () => {
             })
             .filter(obs => {
                 if (!startDateFilter) return true;
-                return new Date(obs.date) >= new Date(startDateFilter);
+                return compareIsoDate(obs.date, startDateFilter) >= 0;
             })
             .filter(obs => {
                 if (!endDateFilter) return true;
-                return new Date(obs.date) <= new Date(endDateFilter);
+                return compareIsoDate(obs.date, endDateFilter) <= 0;
             })
             .filter(obs => {
                 if (!searchTerm) return true;
@@ -291,6 +373,11 @@ const App: React.FC = () => {
                 if (aValue === null || aValue === undefined) return 1;
                 if (bValue === null || bValue === undefined) return -1;
 
+                if (key === 'date' && typeof aValue === 'string' && typeof bValue === 'string') {
+                    const dateCmp = compareIsoDate(aValue, bValue);
+                    return sortConfig.direction === 'ascending' ? dateCmp : -dateCmp;
+                }
+
                 if (aValue < bValue) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;
                 }
@@ -302,22 +389,46 @@ const App: React.FC = () => {
         }
 
         return sortableItems;
-    }, [observations, searchTerm, yearFilter, taxonomicGroupFilter, statusFilter, sortConfig]);
+    }, [observations, searchTerm, yearFilter, taxonomicGroupFilter, statusFilter, startDateFilter, endDateFilter, sortConfig]);
 
     const availableYears = useMemo(() => {
-        const years = new Set(observations.map(obs => new Date(obs.date).getFullYear().toString()));
+        const years = new Set(
+            observations
+                .map(obs => getYearFromIsoDate(obs.date))
+                .filter((year): year is string => !!year)
+        );
         return Array.from(years).sort((a, b) => parseInt(b) - parseInt(a));
     }, [observations]);
 
-    const [isMobileView, setIsMobileView] = useState(false);
+    const [isMobileView, setIsMobileView] = useState<boolean>(() => {
+        if (typeof window === 'undefined') return false;
+        return window.matchMedia('(max-width: 1024px)').matches;
+    });
 
     useEffect(() => {
-        if (isDarkMode) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [isDarkMode]);
+        const mediaQuery = window.matchMedia('(max-width: 1024px)');
+        const handleChange = (event: MediaQueryListEvent) => {
+            setIsMobileView(event.matches);
+        };
+
+        setIsMobileView(mediaQuery.matches);
+        mediaQuery.addEventListener('change', handleChange);
+        return () => mediaQuery.removeEventListener('change', handleChange);
+    }, []);
+
+
+
+    if (supabaseConfigError) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
+                <div className="w-full max-w-lg bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-2xl shadow-ios p-8 border border-white/20 text-center">
+                    <h1 className="text-3xl font-bold mb-3 text-nature-dark dark:text-white">Configuration invalide</h1>
+                    <p className="text-gray-700 dark:text-gray-300">{supabaseConfigError}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">Ajoutez les variables dans `.env.local`, puis redémarrez l’application.</p>
+                </div>
+            </div>
+        );
+    }
 
     if (authLoading) {
         return <div className="flex items-center justify-center h-screen"><p>Chargement de la session...</p></div>;
@@ -353,14 +464,7 @@ const App: React.FC = () => {
                     <UserProfile />
                     <div className="flex items-center gap-2">
                         {/* Server Status Mobile */}
-                        <div className={`w-3 h-3 rounded-full ${error && error.includes('serveur') ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} title={error && error.includes('serveur') ? "Offline" : "Online"}></div>
-
-                        <button
-                            onClick={() => setIsMobileView(!isMobileView)}
-                            className="p-2 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-700 dark:text-gray-200"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
-                        </button>
+                        <div className={`w-3 h-3 rounded-full ${isOffline ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} title={isOffline ? "Offline" : "Online"}></div>
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
@@ -385,17 +489,9 @@ const App: React.FC = () => {
                         {isDarkMode ? '☀️' : '🌙'}
                     </button>
 
-                    <button
-                        onClick={() => setIsMobileView(!isMobileView)}
-                        className="fixed top-6 right-20 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-700 dark:text-gray-200"
-                        title="Version Mobile"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-                    </button>
-
-                    <div className={`fixed top-6 right-36 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${error && error.includes('serveur') ? 'bg-red-100/80 border-red-200 text-red-600' : 'bg-green-100/80 border-green-200 text-green-700'}`} title={error && error.includes('serveur') ? "Déconnecté du serveur" : "Connecté au serveur"}>
-                        <div className={`w-2 h-2 rounded-full ${error && error.includes('serveur') ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
-                        <span className="text-xs font-bold hidden md:inline">{error && error.includes('serveur') ? "Offline" : "Online"}</span>
+                    <div className={`fixed top-6 right-20 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${isOffline ? 'bg-red-100/80 border-red-200 text-red-600' : 'bg-green-100/80 border-green-200 text-green-700'}`} title={isOffline ? "Déconnecté du serveur" : "Connecté au serveur"}>
+                        <div className={`w-2 h-2 rounded-full ${isOffline ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></div>
+                        <span className="text-xs font-bold hidden md:inline">{isOffline ? "Offline" : "Online"}</span>
                     </div>
                 </>
             )}
@@ -418,8 +514,9 @@ const App: React.FC = () => {
                     </button>
                 </div>
             )}
+            <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
-            {/* Backup Button (Desktop) */}
+            {/* Backup Button (Desktop Only) */}
             {!isMobileView && (
                 <button
                     onClick={() => import('./services/backupService').then(m => m.createBackup(observations))}
@@ -473,6 +570,7 @@ const App: React.FC = () => {
                         onDelete={handleDeleteRequest}
                         onBulkDelete={handleBulkDeleteRequest}
                         onImport={handleImportRequest}
+                        onToast={pushToast}
                         searchTerm={searchTerm}
                         onSearchChange={setSearchTerm}
                         yearFilter={yearFilter}
@@ -494,34 +592,35 @@ const App: React.FC = () => {
                 ) : view === View.MAP ? (
                     <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
                         {/* Reuse filters from ObservationList for the Map */}
-                        {!isMobileView && (
-                            <div className="p-6 bg-white/60 dark:bg-nature-dark-surface/60 backdrop-blur-sm rounded-xl shadow-lg space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-                                    <div className="relative md:col-span-1">
-                                        <label htmlFor="search-input" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Recherche</label>
-                                        <input
-                                            type="text"
-                                            id="search-input"
-                                            placeholder="Espèce, lieu..."
-                                            value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                            className="w-full px-4 py-2 border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="year-filter" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Année</label>
-                                        <select
-                                            id="year-filter"
-                                            value={yearFilter}
-                                            onChange={e => setYearFilter(e.target.value)}
-                                            className="w-full border border-nature-light-gray dark:border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white"
-                                        >
-                                            <option value="all">Toutes</option>
-                                            {availableYears.map(year => (
-                                                <option key={year} value={year}>{year}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                        {/* Filters for Map view */}
+                        <div className={`${isMobileView ? 'p-3 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md rounded-xl shadow-sm space-y-2' : 'p-6 bg-white/60 dark:bg-nature-dark-surface/60 backdrop-blur-sm rounded-xl shadow-lg space-y-6'}`}>
+                            <div className={`grid ${isMobileView ? 'grid-cols-2 gap-2' : 'grid-cols-1 md:grid-cols-3 gap-6'} items-end`}>
+                                <div className={`relative ${isMobileView ? '' : 'md:col-span-1'}`}>
+                                    <label htmlFor="search-input" className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Recherche</label>
+                                    <input
+                                        type="text"
+                                        id="search-input"
+                                        placeholder="Espèce, lieu..."
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                        className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'px-2 py-1.5 text-xs' : 'px-4 py-2'}`}
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="year-filter" className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Année</label>
+                                    <select
+                                        id="year-filter"
+                                        value={yearFilter}
+                                        onChange={e => setYearFilter(e.target.value)}
+                                        className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'p-1.5 text-xs' : 'p-2'}`}
+                                    >
+                                        <option value="all">Toutes</option>
+                                        {availableYears.map(year => (
+                                            <option key={year} value={year}>{year}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {!isMobileView && (
                                     <div>
                                         <label htmlFor="status-filter" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Statut</label>
                                         <select
@@ -536,14 +635,15 @@ const App: React.FC = () => {
                                             ))}
                                         </select>
                                     </div>
-                                </div>
+                                )}
                             </div>
-                        )}
+                        </div>
 
                         <ObservationMap
                             observations={sortedAndFilteredObservations}
                             isDarkMode={isDarkMode}
                             isMobileView={isMobileView}
+                            onToast={pushToast}
                         />
 
                         <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
@@ -567,34 +667,35 @@ const App: React.FC = () => {
                 ) : view === View.GALLERY ? (
                     <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
                         {/* Reuse filters for Gallery too */}
-                        {!isMobileView && (
-                            <div className="p-6 bg-white/60 dark:bg-nature-dark-surface/60 backdrop-blur-sm rounded-xl shadow-lg space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-                                    <div className="relative md:col-span-1">
-                                        <label htmlFor="search-input-gallery" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Recherche</label>
-                                        <input
-                                            type="text"
-                                            id="search-input-gallery"
-                                            placeholder="Espèce, lieu..."
-                                            value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                            className="w-full px-4 py-2 border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label htmlFor="year-filter-gallery" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Année</label>
-                                        <select
-                                            id="year-filter-gallery"
-                                            value={yearFilter}
-                                            onChange={e => setYearFilter(e.target.value)}
-                                            className="w-full border border-nature-light-gray dark:border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white"
-                                        >
-                                            <option value="all">Toutes</option>
-                                            {availableYears.map(year => (
-                                                <option key={year} value={year}>{year}</option>
-                                            ))}
-                                        </select>
-                                    </div>
+                        {/* Filters for Gallery view */}
+                        <div className={`${isMobileView ? 'p-3 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md rounded-xl shadow-sm space-y-2' : 'p-6 bg-white/60 dark:bg-nature-dark-surface/60 backdrop-blur-sm rounded-xl shadow-lg space-y-6'}`}>
+                            <div className={`grid ${isMobileView ? 'grid-cols-2 gap-2' : 'grid-cols-1 md:grid-cols-3 gap-6'} items-end`}>
+                                <div className={`relative ${isMobileView ? '' : 'md:col-span-1'}`}>
+                                    <label htmlFor="search-input-gallery" className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Recherche</label>
+                                    <input
+                                        type="text"
+                                        id="search-input-gallery"
+                                        placeholder="Espèce, lieu..."
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                        className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'px-2 py-1.5 text-xs' : 'px-4 py-2'}`}
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="year-filter-gallery" className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Année</label>
+                                    <select
+                                        id="year-filter-gallery"
+                                        value={yearFilter}
+                                        onChange={e => setYearFilter(e.target.value)}
+                                        className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'p-1.5 text-xs' : 'p-2'}`}
+                                    >
+                                        <option value="all">Toutes</option>
+                                        {availableYears.map(year => (
+                                            <option key={year} value={year}>{year}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {!isMobileView && (
                                     <div>
                                         <label htmlFor="status-filter-gallery" className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Statut</label>
                                         <select
@@ -609,9 +710,9 @@ const App: React.FC = () => {
                                             ))}
                                         </select>
                                     </div>
-                                </div>
+                                )}
                             </div>
-                        )}
+                        </div>
                         <ObservationGallery
                             observations={sortedAndFilteredObservations}
                             onEdit={handleEditObservation}
@@ -631,6 +732,7 @@ const App: React.FC = () => {
                         onSave={handleSaveObservation}
                         onCancel={handleCancel}
                         initialData={editingObservation}
+                        onToast={pushToast}
                     />
                 )}
             </div>

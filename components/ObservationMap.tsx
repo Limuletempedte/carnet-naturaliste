@@ -6,6 +6,8 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
+import { SearchResult } from '../services/locationService';
+import { isoToFrDisplay } from '../utils/dateUtils';
 
 // Fix for default marker icon
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -24,12 +26,75 @@ interface ObservationMapProps {
     observations: Observation[];
     isDarkMode: boolean;
     isMobileView?: boolean;
+    onToast: (type: 'warning' | 'error' | 'info' | 'success', message: string, durationMs?: number) => void;
 }
 
-const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false }) => {
+const isSafeImageUrl = (value: string): boolean => {
+    try {
+        const url = new URL(value, window.location.origin);
+        return ['http:', 'https:', 'blob:'].includes(url.protocol);
+    } catch {
+        return false;
+    }
+};
+
+const buildPopupContent = (obs: Observation, isDark: boolean): HTMLElement => {
+    const root = document.createElement('div');
+    root.style.minWidth = '200px';
+    root.style.color = isDark ? '#e5e7eb' : '#1f2937';
+
+    const imageSrc = obs.photo || obs.wikipediaImage;
+    if (imageSrc && isSafeImageUrl(imageSrc)) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = obs.speciesName;
+        img.style.width = '100%';
+        img.style.height = '128px';
+        img.style.objectFit = 'cover';
+        img.style.borderRadius = '8px';
+        img.style.marginBottom = '8px';
+        root.appendChild(img);
+    }
+
+    const title = document.createElement('h3');
+    title.textContent = obs.speciesName;
+    title.style.fontSize = '16px';
+    title.style.fontWeight = '700';
+    title.style.marginBottom = '4px';
+    root.appendChild(title);
+
+    const latin = document.createElement('p');
+    latin.textContent = obs.latinName || '';
+    latin.style.fontSize = '12px';
+    latin.style.fontStyle = 'italic';
+    latin.style.opacity = '0.85';
+    latin.style.marginBottom = '8px';
+    root.appendChild(latin);
+
+    const details = document.createElement('div');
+    details.style.fontSize = '12px';
+
+    const date = document.createElement('p');
+    date.textContent = `Date: ${isoToFrDisplay(obs.date)}`;
+    details.appendChild(date);
+
+    const location = document.createElement('p');
+    location.textContent = `Lieu: ${obs.location || obs.municipality}`;
+    details.appendChild(location);
+
+    const count = document.createElement('p');
+    count.textContent = `Nombre: ${obs.count}`;
+    details.appendChild(count);
+
+    root.appendChild(details);
+    return root;
+};
+
+const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false, onToast }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const markersRef = useRef<L.Marker[]>([]);
+    const userLocationMarkerRef = useRef<L.Marker | null>(null);
 
     useEffect(() => {
         if (mapContainerRef.current && !mapRef.current) {
@@ -107,14 +172,6 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
             spiderfyOnMaxZoom: true,
             iconCreateFunction: function (cluster) {
                 const count = cluster.getChildCount();
-                let c = ' marker-cluster-';
-                if (count < 10) {
-                    c += 'small';
-                } else if (count < 100) {
-                    c += 'medium';
-                } else {
-                    c += 'large';
-                }
 
                 // Custom cluster icon styling to match app theme
                 return L.divIcon({
@@ -126,9 +183,8 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
         });
 
         observations.forEach(obs => {
-            if (obs.gps.lat && obs.gps.lon) {
+            if (typeof obs.gps.lat === 'number' && Number.isFinite(obs.gps.lat) && typeof obs.gps.lon === 'number' && Number.isFinite(obs.gps.lon)) {
                 const logo = TAXON_LOGOS[obs.taxonomicGroup as keyof typeof TAXON_LOGOS];
-                const imageSrc = obs.photo || obs.wikipediaImage;
 
                 // Custom icon with taxon logo if available
                 let customIcon = DefaultIcon;
@@ -144,21 +200,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 }
 
                 const marker = L.marker([obs.gps.lat, obs.gps.lon], { icon: customIcon });
-
-                const popupContent = `
-                    <div class="min-w-[200px] ${isDarkMode ? 'text-gray-200' : ''}">
-                        ${imageSrc ? `<img src="${imageSrc}" alt="${obs.speciesName}" class="w-full h-32 object-cover rounded-t-lg mb-2" />` : ''}
-                        <h3 class="font-bold text-lg ${isDarkMode ? 'text-white' : 'text-nature-dark'}">${obs.speciesName}</h3>
-                        <p class="text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} italic">${obs.latinName || ''}</p>
-                        <div class="mt-2 text-sm">
-                            <p><strong>Date:</strong> ${new Date(obs.date).toLocaleDateString('fr-FR')}</p>
-                            <p><strong>Lieu:</strong> ${obs.location || obs.municipality}</p>
-                            <p><strong>Nombre:</strong> ${obs.count}</p>
-                        </div>
-                    </div>
-                `;
-
-                marker.bindPopup(popupContent);
+                marker.bindPopup(buildPopupContent(obs, isDarkMode));
 
                 // Hover effect
                 marker.on('mouseover', function (this: L.Marker) {
@@ -184,7 +226,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
     }, [observations, isDarkMode]);
 
     const [searchQuery, setSearchQuery] = React.useState('');
-    const [searchResults, setSearchResults] = React.useState<any[]>([]);
+    const [searchResults, setSearchResults] = React.useState<SearchResult[]>([]);
     const [isSearching, setIsSearching] = React.useState(false);
 
     const handleSearch = async (e: React.FormEvent) => {
@@ -195,14 +237,18 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
         try {
             const results = await import('../services/locationService').then(m => m.searchAddress(searchQuery));
             setSearchResults(results);
+            if (results.length === 0) {
+                onToast('info', 'Aucun résultat trouvé pour cette recherche.');
+            }
         } catch (error) {
             console.error(error);
+            onToast('warning', (error as Error).message || "Erreur lors de la recherche d'adresse.");
         } finally {
             setIsSearching(false);
         }
     };
 
-    const handleSelectLocation = (result: any) => {
+    const handleSelectLocation = (result: SearchResult) => {
         if (mapRef.current) {
             mapRef.current.flyTo([result.lat, result.lon], 13);
             setSearchResults([]);
@@ -216,7 +262,11 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 const { latitude, longitude } = position.coords;
                 if (mapRef.current) {
                     mapRef.current.flyTo([latitude, longitude], 13);
-                    L.marker([latitude, longitude], {
+                    // Remove previous user location marker
+                    if (userLocationMarkerRef.current) {
+                        userLocationMarkerRef.current.remove();
+                    }
+                    userLocationMarkerRef.current = L.marker([latitude, longitude], {
                         icon: L.divIcon({
                             className: 'custom-div-icon',
                             html: `<div style="background-color: #007AFF; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,122,255,0.5);"></div>`,
@@ -227,10 +277,10 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 }
             }, (error) => {
                 console.error("Erreur de géolocalisation:", error);
-                alert("Impossible de vous localiser. Vérifiez vos autorisations.");
+                onToast('warning', "Impossible de vous localiser. Vérifiez vos autorisations.");
             });
         } else {
-            alert("La géolocalisation n'est pas supportée par votre navigateur.");
+            onToast('warning', "La géolocalisation n'est pas supportée par votre navigateur.");
         }
     };
 

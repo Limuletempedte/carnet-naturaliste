@@ -1,6 +1,11 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { supabase } from '../supabaseClient';
+import { isSupabaseConfigured, supabase } from '../supabaseClient';
 import { Session, User } from '@supabase/supabase-js';
+import {
+    clearScopedOfflineData,
+    migrateLegacyLocalStorageToScoped,
+    setStorageNamespace
+} from '../services/storageService';
 
 const CACHED_SESSION_KEY = 'cached_auth_session';
 
@@ -71,6 +76,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
     useEffect(() => {
+        if (!isSupabaseConfigured) {
+            setStorageNamespace(null);
+            setLoading(false);
+            return;
+        }
+
         // Track online/offline status
         const handleOnline = () => setIsOffline(false);
         const handleOffline = () => setIsOffline(true);
@@ -87,13 +98,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setSession(session);
                 setUser(session?.user ?? null);
                 cacheSession(session);
+                if (session?.user?.id) {
+                    setStorageNamespace(session.user.id);
+                    migrateLegacyLocalStorageToScoped(session.user.id);
+                } else {
+                    setStorageNamespace(null);
+                }
             } catch (e) {
                 console.warn('Auth getSession failed (likely offline), trying cache:', e);
                 // Fallback to cached session
                 const cached = getCachedSession();
                 if (cached) {
                     setUser(cached.user);
+                    setStorageNamespace(cached.user.id);
+                    migrateLegacyLocalStorageToScoped(cached.user.id);
                     console.log('Restored user from cache for offline mode');
+                } else {
+                    setStorageNamespace(null);
                 }
             } finally {
                 setLoading(false);
@@ -107,6 +128,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setSession(session);
             setUser(session?.user ?? null);
             cacheSession(session);
+            if (session?.user?.id) {
+                setStorageNamespace(session.user.id);
+                migrateLegacyLocalStorageToScoped(session.user.id);
+            } else {
+                setStorageNamespace(null);
+            }
             setLoading(false);
         });
 
@@ -118,6 +145,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     const signOut = async () => {
+        if (user?.id) {
+            clearScopedOfflineData(user.id);
+        }
+        setStorageNamespace(null);
         cacheSession(null);
         await supabase.auth.signOut();
     };

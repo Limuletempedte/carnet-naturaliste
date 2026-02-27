@@ -3,6 +3,7 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { Observation } from '../types';
 import ObservationRow from './ObservationRow';
+import { dateToIsoLocal } from '../utils/dateUtils';
 
 interface ObservationCalendarProps {
     observations: Observation[];
@@ -18,21 +19,19 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
     const [date, setDate] = useState<Value>(new Date());
 
     const getObservationsForDate = (date: Date) => {
-        const dateString = date.toISOString().split('T')[0];
+        const dateString = dateToIsoLocal(date);
         return observations.filter(obs => obs.date === dateString);
     };
 
     const tileContent = ({ date, view }: { date: Date; view: string }) => {
         if (view === 'month') {
-            const dateString = date.toISOString().split('T')[0];
+            const dateString = dateToIsoLocal(date);
             const dayObservations = observations.filter(obs => obs.date === dateString);
             if (dayObservations.length > 0) {
                 return (
-                    <div className="flex justify-center mt-1">
+                    <div className="flex justify-center items-center mt-1">
                         <div className="w-2 h-2 bg-nature-green rounded-full"></div>
-                        {dayObservations.length > 1 && (
-                            <span className="text-[10px] text-nature-dark ml-1 font-bold">{dayObservations.length}</span>
-                        )}
+                        <span className="text-[10px] text-nature-dark dark:text-nature-green ml-1 font-bold">{dayObservations.length}</span>
                     </div>
                 );
             }
@@ -81,7 +80,7 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                                     {selectedObservations.map(obs => (
-                                        <ObservationRow key={obs.id} observation={obs} onEdit={onEdit} onDelete={onDelete} selected={false} onToggle={() => { }} />
+                                        <ObservationRow key={obs.id} observation={obs} onEdit={onEdit} onDelete={onDelete} selected={false} onToggle={() => { }} showSelection={false} />
                                     ))}
                                 </tbody>
                             </table>

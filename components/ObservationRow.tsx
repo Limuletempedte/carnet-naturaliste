@@ -1,6 +1,7 @@
 import React from 'react';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
+import { isoToFrDisplay } from '../utils/dateUtils';
 
 interface ObservationRowProps {
     observation: Observation;
@@ -8,9 +9,10 @@ interface ObservationRowProps {
     onDelete: (id: string) => void;
     selected: boolean;
     onToggle: (id: string) => void;
+    showSelection?: boolean;
 }
 
-const ObservationRow: React.FC<ObservationRowProps> = ({ observation, onEdit, onDelete, selected, onToggle }) => {
+const ObservationRow: React.FC<ObservationRowProps> = ({ observation, onEdit, onDelete, selected, onToggle, showSelection = true }) => {
     const { id, speciesName, latinName, taxonomicGroup, location, date, count, photo, wikipediaImage } = observation;
 
     const logo = TAXON_LOGOS[taxonomicGroup as keyof typeof TAXON_LOGOS];
@@ -18,14 +20,16 @@ const ObservationRow: React.FC<ObservationRowProps> = ({ observation, onEdit, on
 
     return (
         <tr className={`border-b border-gray-100/50 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/5 transition-all duration-300 group relative backdrop-blur-sm ${selected ? 'bg-nature-green/10 dark:bg-nature-green/20' : ''}`}>
-            <td className="p-6 align-middle">
-                <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => onToggle(id)}
-                    className="w-5 h-5 rounded border-gray-300 text-nature-green focus:ring-nature-green cursor-pointer"
-                />
-            </td>
+            {showSelection && (
+                <td className="p-6 align-middle">
+                    <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => onToggle(id)}
+                        className="w-5 h-5 rounded border-gray-300 text-nature-green focus:ring-nature-green cursor-pointer"
+                    />
+                </td>
+            )}
             <td className="p-6 align-middle">
                 <div className="flex items-center gap-4">
                     {logo && <img src={logo} alt={taxonomicGroup} className="w-10 h-10 object-contain rounded-full bg-white/80 dark:bg-white/10 p-1 shadow-sm ring-1 ring-gray-100/50 dark:ring-white/5 backdrop-blur-md" />}
@@ -52,7 +56,7 @@ const ObservationRow: React.FC<ObservationRowProps> = ({ observation, onEdit, on
                 <div className="text-xs text-gray-500 dark:text-gray-500">{observation.municipality}</div>
             </td>
             <td className="p-6 align-middle hidden lg:table-cell">
-                <span className="text-sm text-gray-600 dark:text-gray-400">{new Date(date).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{isoToFrDisplay(date)}</span>
             </td>
             <td className="p-6 align-middle text-center">
                 <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-sm font-bold bg-nature-green/10 text-nature-green dark:bg-nature-green/20 dark:text-nature-green backdrop-blur-md">
@@ -60,7 +64,7 @@ const ObservationRow: React.FC<ObservationRowProps> = ({ observation, onEdit, on
                 </span>
             </td>
             <td className="p-6 align-middle text-center">
-                <div className="flex justify-center items-center gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
+                <div className="flex justify-center items-center gap-3 opacity-70 md:opacity-0 md:group-hover:opacity-100 transition-all duration-300 md:transform md:translate-y-2 md:group-hover:translate-y-0">
                     <button
                         onClick={() => onEdit(id)}
                         className="p-2 text-blue-600 bg-blue-50/50 hover:bg-blue-100/80 dark:text-blue-400 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 rounded-full transition-all shadow-sm backdrop-blur-md hover:scale-110"

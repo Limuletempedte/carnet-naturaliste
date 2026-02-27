@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Observation } from '../types';
 import Badges from './Badges';
+import { getMonthIndexFromIsoDate } from '../utils/dateUtils';
 
 interface ObservationStatsProps {
     observations: Observation[];
@@ -39,17 +40,17 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({ observations, isMob
         const statusData = Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
 
         // Monthly Activity
-        const monthCounts: Record<string, number> = {};
+        const monthCounts = Array.from({ length: 12 }, () => 0);
         observations.forEach(obs => {
-            const date = new Date(obs.date);
-            const month = date.toLocaleString('fr-FR', { month: 'short' });
-            monthCounts[month] = (monthCounts[month] || 0) + 1;
+            const monthIndex = getMonthIndexFromIsoDate(obs.date);
+            if (monthIndex !== null) {
+                monthCounts[monthIndex] += 1;
+            }
         });
-        // Sort months chronologically is a bit tricky with just names, so let's use a fixed order or index
         const monthsOrder = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-        const activityData = monthsOrder.map(month => ({
+        const activityData = monthsOrder.map((month, index) => ({
             name: month,
-            observations: monthCounts[month] || 0
+            observations: monthCounts[index] || 0
         }));
 
         // Top 5 Species
@@ -158,7 +159,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({ observations, isMob
                                     </span>
                                     <span className="font-semibold text-nature-dark dark:text-white truncate max-w-[150px]">{species.name}</span>
                                 </div>
-                                <span className="font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-3 py-1 rounded-full text-sm whitespace-nowrap">{species.count} obs.</span>
+                                <span className="font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-3 py-1 rounded-full text-sm whitespace-nowrap">{species.count} ind.</span>
                             </li>
                         ))}
                     </ul>

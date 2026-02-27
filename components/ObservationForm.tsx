@@ -1,16 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MapInput from './MapInput';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement } from '../types';
 import { fetchSpeciesInfo, SpeciesInfo } from '../services/speciesService';
 import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
-import { uploadPhoto } from '../services/storageService';
+import { uploadPhoto, uploadSound } from '../services/storageService';
+import { dateToIsoLocal } from '../utils/dateUtils';
+import { ToastType } from './ToastContainer';
 
 interface ObservationFormProps {
-    onSave: (observation: Observation) => void;
+    onSave: (observation: Observation) => Promise<void>;
     onCancel: () => void;
     initialData: Observation | null;
+    onToast: (type: ToastType, message: string, durationMs?: number) => void;
 }
 
 const FormSection: React.FC<{ title: string, children: React.ReactNode }> = ({ title, children }) => (
@@ -22,12 +25,12 @@ const FormSection: React.FC<{ title: string, children: React.ReactNode }> = ({ t
     </div>
 );
 
-const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData }) => {
+const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, onToast }) => {
     const [formData, setFormData] = useState<Omit<Observation, 'id'>>({
         speciesName: '',
         latinName: '',
         taxonomicGroup: TaxonomicGroup.BIRD,
-        date: new Date().toISOString().split('T')[0],
+        date: dateToIsoLocal(new Date()),
         time: new Date().toTimeString().substring(0, 5),
         count: 1,
         location: '',
@@ -53,20 +56,30 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [speciesInfo, setSpeciesInfo] = useState<SpeciesInfo | null>(null);
     const [isFetchingInfo, setIsFetchingInfo] = useState(false);
     const [photoFile, setPhotoFile] = useState<Blob | null>(null);
+    const [soundFile, setSoundFile] = useState<Blob | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const latestSpeciesRequestRef = useRef(0);
 
     useEffect(() => {
         if (initialData) {
             setFormData({ ...initialData });
+            setPhotoFile(null);
+            setSoundFile(null);
         }
     }, [initialData]);
 
     // Debounce fetching species info
     useEffect(() => {
+        let cancelled = false;
         const fetchInfo = async () => {
             if (formData.speciesName.length > 2) {
+                const requestId = latestSpeciesRequestRef.current + 1;
+                latestSpeciesRequestRef.current = requestId;
                 setIsFetchingInfo(true);
                 const info = await fetchSpeciesInfo(formData.speciesName);
+                if (cancelled || requestId !== latestSpeciesRequestRef.current) {
+                    return;
+                }
                 setSpeciesInfo(info);
                 setIsFetchingInfo(false);
 
@@ -81,21 +94,36 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 }
             } else {
                 setSpeciesInfo(null);
+                setIsFetchingInfo(false);
             }
         };
 
         const timeoutId = setTimeout(fetchInfo, 1000);
-        return () => clearTimeout(timeoutId);
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+        };
     }, [formData.speciesName]);
 
+    useEffect(() => {
+        return () => {
+            if (formData.photo?.startsWith('blob:')) {
+                URL.revokeObjectURL(formData.photo);
+            }
+            if (formData.sound?.startsWith('blob:')) {
+                URL.revokeObjectURL(formData.sound);
+            }
+        };
+    }, [formData.photo, formData.sound]);
 
-    const handleLocationChange = async (lat: number, lon: number, municipality: string, location: string, department: string) => {
+    const handleLocationChange = async (lat: number, lon: number, municipality: string, location: string, department: string, country: string) => {
         setFormData(prev => ({
             ...prev,
             gps: { lat, lon },
             municipality,
             location,
-            department
+            department,
+            country: country || prev.country
         }));
 
         // Fetch altitude automatically
@@ -110,8 +138,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         if (!formData.speciesName) newErrors.speciesName = "Le nom de l'espèce est obligatoire.";
         if (!formData.date) newErrors.date = "La date est obligatoire.";
         if (formData.count < 1) newErrors.count = "Le nombre doit être au moins 1.";
-        if (formData.gps.lat && (formData.gps.lat < -90 || formData.gps.lat > 90)) newErrors.lat = "La latitude doit être entre -90 et 90.";
-        if (formData.gps.lon && (formData.gps.lon < -180 || formData.gps.lon > 180)) newErrors.lon = "La longitude doit être entre -180 et 180.";
+        if (formData.gps.lat !== null && (formData.gps.lat < -90 || formData.gps.lat > 90)) newErrors.lat = "La latitude doit être entre -90 et 90.";
+        if (formData.gps.lon !== null && (formData.gps.lon < -180 || formData.gps.lon > 180)) newErrors.lon = "La longitude doit être entre -180 et 180.";
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -127,8 +155,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                     [name]: value === '' ? null : parseFloat(value)
                 }
             }));
-        } else if (name === 'count' || name === 'altitude') {
-            setFormData(prev => ({ ...prev, [name]: value === '' ? null : parseInt(value, 10) }));
+        } else if (name === 'count') {
+            const parsed = parseInt(value, 10);
+            setFormData(prev => ({ ...prev, count: value === '' || Number.isNaN(parsed) ? 1 : parsed }));
+        } else if (name === 'altitude') {
+            setFormData(prev => ({ ...prev, altitude: value === '' ? null : parseFloat(value) }));
         } else {
             setFormData(prev => ({ ...prev, [name]: value }));
         }
@@ -141,59 +172,82 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 const compressedBlob = await compressImage(files[0]);
                 setPhotoFile(compressedBlob);
 
+                // Revoke previous preview URL to prevent memory leak
+                if (formData.photo?.startsWith('blob:')) {
+                    URL.revokeObjectURL(formData.photo);
+                }
                 // Create preview URL
                 const previewUrl = URL.createObjectURL(compressedBlob);
                 setFormData(prev => ({ ...prev, photo: previewUrl }));
             } catch (error) {
                 console.error("Erreur lors de la compression:", error);
-                alert("Impossible de traiter l'image.");
+                onToast('error', "Impossible de traiter l'image.");
             }
         } else if (files && files[0] && name === 'sound') {
-            // Handle sound as before (base64 for now, or implement upload later)
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const target = event.target;
-                if (target && typeof target.result === 'string') {
-                    setFormData(prev => ({ ...prev, [name]: target.result as string }));
-                }
-            };
-            reader.readAsDataURL(files[0]);
+            setSoundFile(files[0]);
+            if (formData.sound?.startsWith('blob:')) {
+                URL.revokeObjectURL(formData.sound);
+            }
+            const previewUrl = URL.createObjectURL(files[0]);
+            setFormData(prev => ({ ...prev, [name]: previewUrl }));
         }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isUploading) return;
         if (!validate()) {
             return;
         }
 
         setIsUploading(true);
         let photoUrl = formData.photo;
+        let soundUrl = formData.sound;
+        const strippedOfflineMedia: string[] = [];
 
         try {
-            if (photoFile) {
-                photoUrl = await uploadPhoto(photoFile);
+            if (navigator.onLine) {
+                if (photoFile) {
+                    photoUrl = await uploadPhoto(photoFile);
+                }
+                if (soundFile) {
+                    soundUrl = await uploadSound(soundFile);
+                }
+            } else {
+                if (photoFile) {
+                    photoUrl = initialData?.photo || undefined;
+                    strippedOfflineMedia.push('photo');
+                }
+                if (soundFile) {
+                    soundUrl = initialData?.sound || undefined;
+                    strippedOfflineMedia.push('son');
+                }
             }
 
             const observationToSave: Observation = {
-                id: initialData?.id || Date.now().toString(),
+                id: initialData?.id || crypto.randomUUID(),
                 ...formData,
                 photo: photoUrl,
+                sound: soundUrl,
                 count: Number(formData.count),
-                altitude: formData.altitude ? Number(formData.altitude) : null,
+                altitude: formData.altitude !== null ? Number(formData.altitude) : null,
                 gps: {
-                    lat: formData.gps.lat ? Number(formData.gps.lat) : null,
-                    lon: formData.gps.lon ? Number(formData.gps.lon) : null,
+                    lat: formData.gps.lat !== null ? Number(formData.gps.lat) : null,
+                    lon: formData.gps.lon !== null ? Number(formData.gps.lon) : null,
                 },
                 sexe: formData.sexe,
                 age: formData.age,
                 observationCondition: formData.observationCondition,
                 comportement: formData.comportement,
             };
-            onSave(observationToSave);
+            await onSave(observationToSave);
+
+            if (strippedOfflineMedia.length > 0) {
+                onToast('warning', `Observation enregistrée, mais le nouveau ${strippedOfflineMedia.join(' et ')} n'a pas pu être envoyé hors-ligne. Réessayez en ligne.`, 7000);
+            }
         } catch (error) {
             console.error("Erreur lors de l'envoi:", error);
-            alert("Erreur lors de l'envoi de l'observation (Photo ou Données).");
+            onToast('error', "Erreur lors de l'envoi de l'observation (Photo ou Données).");
         } finally {
             setIsUploading(false);
         }
@@ -271,6 +325,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             <input type="text" id="department" name="department" value={formData.department} onChange={handleChange} className={inputClass} />
                         </div>
                         <div>
+                            <label htmlFor="country" className={labelClass}>Pays</label>
+                            <input type="text" id="country" name="country" value={formData.country} onChange={handleChange} className={inputClass} />
+                        </div>
+                        <div>
                             <label htmlFor="lat" className={labelClass}>Latitude</label>
                             <input type="number" step="any" id="lat" name="lat" value={formData.gps.lat ?? ''} onChange={handleChange} className={inputClass} />
                             {errors.lat && <p className={errorClass}>{errors.lat}</p>}
@@ -290,7 +348,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </button>
                             {showMap && (
                                 <div className="mt-4 rounded-2xl overflow-hidden shadow-inner ring-1 ring-black/5">
-                                    <MapInput onLocationChange={handleLocationChange} />
+                                    <MapInput onLocationChange={handleLocationChange} onToast={onToast} />
                                 </div>
                             )}
                         </div>

@@ -31,10 +31,13 @@ export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo
 
         const page = detailsData.query.pages[pageId];
 
-        // Try to extract latin name from the extract (usually inside parentheses)
+        // Try to extract latin name from the extract
+        // First look for a binomial name pattern: Capitalized word + lowercase word (e.g. "Parus major")
         const extract = page.extract || '';
-        const latinNameMatch = extract.match(/\(([^)]+)\)/);
-        const latinName = latinNameMatch ? latinNameMatch[1] : undefined;
+        const binomialMatch = extract.match(/\b([A-Z][a-z]{2,}\s[a-z]{2,})\b/);
+        // Fallback: try first parenthesized text that looks like a binomial
+        const parenBinomial = extract.match(/\(([A-Z][a-z]{2,}\s[a-z]{2,}(?:\s[a-z]+)?)\)/);
+        const latinName = parenBinomial ? parenBinomial[1] : (binomialMatch ? binomialMatch[1] : undefined);
 
         // Infer taxonomic group
         let taxonomicGroup: TaxonomicGroup | undefined;

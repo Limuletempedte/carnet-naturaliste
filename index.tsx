@@ -1,6 +1,7 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
+import { AuthProvider } from './contexts/AuthContext';
 import App from './App';
 import './index.css';
 
@@ -8,10 +9,6 @@ const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("L'élément root est introuvable dans le DOM.");
 }
-
-import { AuthProvider } from './contexts/AuthContext';
-
-import { registerSW } from 'virtual:pwa-register';
 
 const updateSW = registerSW({
   onNeedRefresh() {

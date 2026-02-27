@@ -1,7 +1,40 @@
 import { supabase } from '../supabaseClient';
 import { Observation } from '../types';
 
-// Helper to map Supabase row to Observation
+const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LEGACY_QUEUE_KEY = 'offline_sync_queue';
+const LEGACY_LOCAL_CACHE_KEY = 'local_observations_cache';
+const QUEUE_KEY_PREFIX = 'offline_sync_queue';
+const LOCAL_CACHE_KEY_PREFIX = 'local_observations_cache';
+const STORAGE_NAMESPACE_ERROR = "Storage namespace absent. Réessayez après authentification.";
+
+type OfflineAction = 'INSERT' | 'UPDATE' | 'DELETE';
+
+interface OfflineQueueItem {
+    id: string;
+    action: OfflineAction;
+    payload: Observation | { id: string };
+    timestamp: number;
+}
+
+const isUuid = (value: unknown): value is string => {
+    return typeof value === 'string' && UUID_V4_RE.test(value.trim());
+};
+
+const isTempId = (value: string): boolean => value.startsWith('temp-');
+let storageNamespace: string | null = null;
+
+const scopedKey = (keyPrefix: string, userId: string): string => `${keyPrefix}:${userId}`;
+const getQueueScopedKey = (userId: string): string => scopedKey(QUEUE_KEY_PREFIX, userId);
+const getCacheScopedKey = (userId: string): string => scopedKey(LOCAL_CACHE_KEY_PREFIX, userId);
+
+const ensureStorageNamespace = (): string => {
+    if (!storageNamespace) {
+        throw new Error(STORAGE_NAMESPACE_ERROR);
+    }
+    return storageNamespace;
+};
+
 const mapToObservation = (row: any): Observation => ({
     id: row.id,
     speciesName: row.species_name,
@@ -29,54 +62,234 @@ const mapToObservation = (row: any): Observation => ({
     sound: row.sound_url
 });
 
-// Helper to map Observation to Supabase row
-const mapToRow = (obs: Observation, userId: string) => ({
-    user_id: userId,
-    species_name: obs.speciesName,
-    latin_name: obs.latinName,
-    taxonomic_group: obs.taxonomicGroup,
-    date: obs.date,
-    time: obs.time,
-    count: obs.count,
-    location: obs.location,
-    gps_lat: obs.gps.lat,
-    gps_lon: obs.gps.lon,
-    municipality: obs.municipality,
-    department: obs.department,
-    country: obs.country,
-    altitude: obs.altitude,
-    comment: obs.comment,
-    status: obs.status,
-    atlas_code: obs.atlasCode,
-    protocol: obs.protocol,
-    sexe: obs.sexe,
-    age: obs.age,
-    observation_condition: obs.observationCondition,
-    comportement: obs.comportement,
-    photo_url: obs.photo,
-    wikipedia_image: obs.wikipediaImage,
-    sound_url: obs.sound
-});
+const mapToRow = (obs: Observation, userId: string): Record<string, any> => {
+    const row: Record<string, any> = {
+        user_id: userId,
+        species_name: obs.speciesName,
+        latin_name: obs.latinName,
+        taxonomic_group: obs.taxonomicGroup,
+        date: obs.date,
+        time: obs.time,
+        count: obs.count,
+        location: obs.location,
+        gps_lat: obs.gps.lat,
+        gps_lon: obs.gps.lon,
+        municipality: obs.municipality,
+        department: obs.department,
+        country: obs.country,
+        altitude: obs.altitude,
+        comment: obs.comment,
+        status: obs.status,
+        atlas_code: obs.atlasCode,
+        protocol: obs.protocol,
+        sexe: obs.sexe,
+        age: obs.age,
+        observation_condition: obs.observationCondition,
+        comportement: obs.comportement,
+        photo_url: obs.photo,
+        wikipedia_image: obs.wikipediaImage,
+        sound_url: obs.sound
+    };
 
-// Offline Queue Management
-const QUEUE_KEY = 'offline_sync_queue';
-const LOCAL_CACHE_KEY = 'local_observations_cache';
+    if (isUuid(obs.id)) {
+        row.id = obs.id;
+    }
 
-const addToQueue = (action: 'INSERT' | 'UPDATE' | 'DELETE', payload: any) => {
-    const queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
-    queue.push({ action, payload, timestamp: Date.now() });
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+    return row;
+};
+
+const parseJson = <T,>(raw: string | null, fallback: T): T => {
+    if (!raw) return fallback;
+    try {
+        return JSON.parse(raw) as T;
+    } catch {
+        return fallback;
+    }
+};
+
+export const setStorageNamespace = (userId: string | null): void => {
+    storageNamespace = userId?.trim() || null;
+};
+
+export const clearScopedOfflineData = (userId?: string): void => {
+    const targetUserId = (userId ?? storageNamespace ?? '').trim();
+    if (!targetUserId) return;
+
+    localStorage.removeItem(getQueueScopedKey(targetUserId));
+    localStorage.removeItem(getCacheScopedKey(targetUserId));
+};
+
+export const migrateLegacyLocalStorageToScoped = (userId: string): void => {
+    const normalizedUserId = userId.trim();
+    if (!normalizedUserId) return;
+
+    const scopedQueueKey = getQueueScopedKey(normalizedUserId);
+    const scopedCacheKey = getCacheScopedKey(normalizedUserId);
+
+    const legacyQueue = parseJson<OfflineQueueItem[]>(localStorage.getItem(LEGACY_QUEUE_KEY), []);
+    const legacyCache = parseJson<Observation[]>(localStorage.getItem(LEGACY_LOCAL_CACHE_KEY), []);
+
+    if (!localStorage.getItem(scopedQueueKey) && Array.isArray(legacyQueue) && legacyQueue.length > 0) {
+        localStorage.setItem(scopedQueueKey, JSON.stringify(legacyQueue));
+    }
+    if (!localStorage.getItem(scopedCacheKey) && Array.isArray(legacyCache) && legacyCache.length > 0) {
+        localStorage.setItem(scopedCacheKey, JSON.stringify(legacyCache));
+    }
+
+    localStorage.removeItem(LEGACY_QUEUE_KEY);
+    localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY);
+};
+
+const getScopedKeys = (): { queueKey: string; cacheKey: string } => {
+    const userId = ensureStorageNamespace();
+    return {
+        queueKey: getQueueScopedKey(userId),
+        cacheKey: getCacheScopedKey(userId)
+    };
+};
+
+const getQueue = (): OfflineQueueItem[] => {
+    const { queueKey } = getScopedKeys();
+    const queue = parseJson<OfflineQueueItem[]>(localStorage.getItem(queueKey), []);
+    return Array.isArray(queue) ? queue : [];
+};
+
+const setQueue = (queue: OfflineQueueItem[]) => {
+    const { queueKey } = getScopedKeys();
+    localStorage.setItem(queueKey, JSON.stringify(queue));
+};
+
+const addToQueue = (action: OfflineAction, payload: Observation | { id: string }) => {
+    const queue = getQueue();
+    queue.push({
+        id: crypto.randomUUID(),
+        action,
+        payload,
+        timestamp: Date.now()
+    });
+    setQueue(queue);
 };
 
 const getLocalCache = (): Observation[] => {
-    return JSON.parse(localStorage.getItem(LOCAL_CACHE_KEY) || '[]');
+    const { cacheKey } = getScopedKeys();
+    return parseJson<Observation[]>(localStorage.getItem(cacheKey), []);
 };
 
 const setLocalCache = (observations: Observation[]) => {
-    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(observations));
+    try {
+        const { cacheKey } = getScopedKeys();
+        // Strip heavy media fields to avoid localStorage quota overflow
+        const lightweight = observations.map(({ photo, sound, wikipediaImage, ...rest }) => rest);
+        localStorage.setItem(cacheKey, JSON.stringify(lightweight));
+    } catch (e) {
+        console.warn('localStorage quota exceeded, cache not saved:', e);
+        window.dispatchEvent(new CustomEvent('storage-quota-exceeded'));
+    }
+};
+
+const replaceObservationIdInCache = (oldId: string, newId: string) => {
+    const cache = getLocalCache();
+    const updated = cache.map(obs => (obs.id === oldId ? { ...obs, id: newId } : obs));
+    setLocalCache(updated);
+};
+
+const getItemTargetId = (item: OfflineQueueItem): string => {
+    if (item.action === 'DELETE') {
+        return String((item.payload as { id: string }).id || '');
+    }
+    return String((item.payload as Observation).id || '');
+};
+
+const mergeObservation = (base: Observation, next: Observation): Observation => ({
+    ...base,
+    ...next,
+    gps: {
+        ...base.gps,
+        ...next.gps
+    }
+});
+
+const reduceQueue = (queue: OfflineQueueItem[]): OfflineQueueItem[] => {
+    const reduced = new Map<string, OfflineQueueItem>();
+
+    for (const item of queue) {
+        const key = getItemTargetId(item);
+        if (!key) continue;
+
+        const existing = reduced.get(key);
+        if (!existing) {
+            reduced.set(key, item);
+            continue;
+        }
+
+        if (item.action === 'INSERT') {
+            reduced.set(key, item);
+            continue;
+        }
+
+        if (item.action === 'UPDATE') {
+            if (existing.action === 'INSERT' || existing.action === 'UPDATE') {
+                const mergedPayload = mergeObservation(existing.payload as Observation, item.payload as Observation);
+                reduced.set(key, {
+                    ...item,
+                    action: existing.action,
+                    payload: mergedPayload
+                });
+            } else {
+                reduced.set(key, item);
+            }
+            continue;
+        }
+
+        if (item.action === 'DELETE') {
+            if (existing.action === 'INSERT') {
+                reduced.delete(key);
+            } else {
+                reduced.set(key, item);
+            }
+        }
+    }
+
+    return Array.from(reduced.values()).sort((a, b) => a.timestamp - b.timestamp);
+};
+
+const mapQueueItemIds = (item: OfflineQueueItem, idMap: Map<string, string>): OfflineQueueItem => {
+    if (item.action === 'DELETE') {
+        const deletePayload = item.payload as { id: string };
+        return {
+            ...item,
+            payload: {
+                id: idMap.get(deletePayload.id) ?? deletePayload.id
+            }
+        };
+    }
+
+    const obsPayload = item.payload as Observation;
+    return {
+        ...item,
+        payload: {
+            ...obsPayload,
+            id: idMap.get(obsPayload.id) ?? obsPayload.id
+        }
+    };
+};
+
+const upsertObservationInCache = (observation: Observation) => {
+    const cache = getLocalCache();
+    const index = cache.findIndex(obs => obs.id === observation.id);
+    if (index === -1) {
+        setLocalCache([observation, ...cache]);
+        return;
+    }
+
+    const next = [...cache];
+    next[index] = observation;
+    setLocalCache(next);
 };
 
 export const getObservations = async (): Promise<Observation[]> => {
+    ensureStorageNamespace();
+
     if (!navigator.onLine) {
         return getLocalCache();
     }
@@ -90,35 +303,26 @@ export const getObservations = async (): Promise<Observation[]> => {
         if (error) throw error;
 
         const observations = data.map(mapToObservation);
-        setLocalCache(observations); // Update cache
+        setLocalCache(observations);
         return observations;
     } catch (error: any) {
         console.error('Error fetching observations:', error);
-        // Fallback to cache on error
         return getLocalCache();
     }
 };
 
 export const saveObservation = async (observation: Observation): Promise<Observation> => {
+    ensureStorageNamespace();
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user && navigator.onLine) throw new Error('User not authenticated');
 
-    // For offline, we might not have user, but we need one for the row mapping.
-    // We assume user was logged in before going offline and we can get session or handle it.
-    // If completely offline from start, auth might be an issue. 
-    // For PWA, we assume 'user' object might be null if session expired, 
-    // but usually supabase client persists session.
-
-    const userId = user?.id || 'offline-user'; // Fallback for offline queue if needed
+    const userId = user?.id || 'offline-user';
 
     if (!navigator.onLine) {
-        console.log('Offline: Queuing insert');
         const offlineObs = { ...observation, id: observation.id || `temp-${Date.now()}` };
         addToQueue('INSERT', offlineObs);
-
-        // Optimistic update
-        const currentCache = getLocalCache();
-        setLocalCache([offlineObs, ...currentCache]);
+        upsertObservationInCache(offlineObs);
         return offlineObs;
     }
 
@@ -136,26 +340,20 @@ export const saveObservation = async (observation: Observation): Promise<Observa
     }
 
     const savedObs = mapToObservation(data);
-
-    // Update cache
-    const currentCache = getLocalCache();
-    setLocalCache([savedObs, ...currentCache]);
+    upsertObservationInCache(savedObs);
 
     return savedObs;
 };
 
 export const updateObservation = async (observation: Observation): Promise<void> => {
+    ensureStorageNamespace();
+
     const { data: { user } } = await supabase.auth.getUser();
     const userId = user?.id || 'offline-user';
 
     if (!navigator.onLine) {
-        console.log('Offline: Queuing update');
         addToQueue('UPDATE', observation);
-
-        // Optimistic update
-        const currentCache = getLocalCache();
-        const updatedCache = currentCache.map(obs => obs.id === observation.id ? observation : obs);
-        setLocalCache(updatedCache);
+        upsertObservationInCache(observation);
         return;
     }
 
@@ -171,18 +369,15 @@ export const updateObservation = async (observation: Observation): Promise<void>
         throw new Error(error.message);
     }
 
-    // Update cache
-    const currentCache = getLocalCache();
-    const updatedCache = currentCache.map(obs => obs.id === observation.id ? observation : obs);
-    setLocalCache(updatedCache);
+    upsertObservationInCache(observation);
 };
 
 export const deleteObservation = async (id: string): Promise<void> => {
+    ensureStorageNamespace();
+
     if (!navigator.onLine) {
-        console.log('Offline: Queuing delete');
         addToQueue('DELETE', { id });
 
-        // Optimistic update
         const currentCache = getLocalCache();
         const updatedCache = currentCache.filter(obs => obs.id !== id);
         setLocalCache(updatedCache);
@@ -199,14 +394,15 @@ export const deleteObservation = async (id: string): Promise<void> => {
         throw new Error(error.message);
     }
 
-    // Update cache
     const currentCache = getLocalCache();
     const updatedCache = currentCache.filter(obs => obs.id !== id);
     setLocalCache(updatedCache);
 };
 
 export const syncObservations = async (observations: Observation[]): Promise<void> => {
-    // Legacy bulk import, keeping it simple for now
+    if (observations.length === 0) return;
+    ensureStorageNamespace();
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
@@ -214,12 +410,19 @@ export const syncObservations = async (observations: Observation[]): Promise<voi
 
     const { error } = await supabase
         .from('observations')
-        .upsert(rows);
+        .upsert(rows, { onConflict: 'id' });
 
     if (error) {
         console.error('Error syncing observations:', error);
         throw new Error(error.message);
     }
+
+    const currentCache = getLocalCache();
+    const mergedById = new Map(currentCache.map(obs => [obs.id, obs]));
+    for (const obs of observations) {
+        mergedById.set(obs.id, obs);
+    }
+    setLocalCache(Array.from(mergedById.values()));
 };
 
 export const uploadPhoto = async (file: Blob): Promise<string> => {
@@ -230,7 +433,7 @@ export const uploadPhoto = async (file: Blob): Promise<string> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    const fileName = `${user.id}/${Date.now()}.jpg`;
+    const fileName = `${user.id}/photos/${Date.now()}-${crypto.randomUUID()}.jpg`;
     const { error: uploadError } = await supabase.storage
         .from('photos')
         .upload(fileName, file, {
@@ -250,55 +453,125 @@ export const uploadPhoto = async (file: Blob): Promise<string> => {
     return publicUrl;
 };
 
-// Background Sync Function (to be called when online)
+export const uploadSound = async (file: Blob): Promise<string> => {
+    if (!navigator.onLine) {
+        throw new Error("Impossible d'envoyer un son en mode hors-ligne. Veuillez réessayer une fois connecté.");
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const contentType = file.type || 'audio/mpeg';
+    const extension = contentType.split('/')[1]?.split(';')[0] || 'mp3';
+    const fileName = `${user.id}/sounds/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+        .from('photos')
+        .upload(fileName, file, {
+            contentType,
+            upsert: false
+        });
+
+    if (uploadError) {
+        console.error('Error uploading sound:', uploadError);
+        throw new Error(uploadError.message);
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+        .from('photos')
+        .getPublicUrl(fileName);
+
+    return publicUrl;
+};
+
 export const processOfflineQueue = async () => {
+    ensureStorageNamespace();
+
     if (!navigator.onLine) return;
 
-    const queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
+    const queue = getQueue();
     if (queue.length === 0) return;
 
-    console.log(`Processing ${queue.length} offline actions...`);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const newQueue = [];
+    const reducedQueue = reduceQueue(queue);
+    const failedItems: OfflineQueueItem[] = [];
+    const idMap = new Map<string, string>();
 
-    for (const item of queue) {
+    for (const rawItem of reducedQueue) {
+        const item = mapQueueItemIds(rawItem, idMap);
+
         try {
             if (item.action === 'INSERT') {
-                // Remove temp ID if needed, or handle it. 
-                // For now, we just insert. If ID was temp, Supabase generates new one.
-                // Issue: Optimistic UI has temp ID. We might need to reload data after sync.
+                const payload = item.payload as Observation;
+                const row = mapToRow(payload, user.id);
 
-                // If id starts with temp-, remove it to let DB generate UUID
-                // If id starts with temp-, remove it to let DB generate UUID
-                const row = mapToRow(item.payload, user.id);
-                // Fix: Use item.payload.id instead of undefined 'id'
-                if (String(item.payload.id).startsWith('temp-')) {
-                    // Remove id from row to let DB generate it
-                    const { id, ...rowWithoutId } = row as any;
-                    await supabase.from('observations').insert(rowWithoutId);
+                if (isTempId(payload.id)) {
+                    const rowWithoutId = { ...row };
+                    delete rowWithoutId.id;
+                    const { data, error } = await supabase
+                        .from('observations')
+                        .insert(rowWithoutId)
+                        .select('*')
+                        .single();
+
+                    if (error) throw error;
+
+                    const created = mapToObservation(data);
+                    idMap.set(payload.id, created.id);
+                    replaceObservationIdInCache(payload.id, created.id);
                 } else {
-                    await supabase.from('observations').upsert(row);
+                    const { error } = await supabase
+                        .from('observations')
+                        .upsert(row, { onConflict: 'id' });
+
+                    if (error) throw error;
                 }
             } else if (item.action === 'UPDATE') {
-                const row = mapToRow(item.payload, user.id);
-                await supabase.from('observations').update(row).eq('id', item.payload.id);
+                const payload = item.payload as Observation;
+
+                if (isTempId(payload.id) && !idMap.has(payload.id)) {
+                    failedItems.push(item);
+                    continue;
+                }
+
+                const row = mapToRow(payload, user.id);
+                const { error } = await supabase
+                    .from('observations')
+                    .update(row)
+                    .eq('id', payload.id);
+
+                if (error) throw error;
             } else if (item.action === 'DELETE') {
-                await supabase.from('observations').delete().eq('id', item.payload.id);
+                const payload = item.payload as { id: string };
+
+                if (isTempId(payload.id) && !idMap.has(payload.id)) {
+                    continue;
+                }
+
+                const { error } = await supabase
+                    .from('observations')
+                    .delete()
+                    .eq('id', payload.id);
+
+                if (error) throw error;
             }
         } catch (error) {
             console.error('Error processing queue item:', error);
-            newQueue.push(item); // Keep failed items
+            failedItems.push(mapQueueItemIds(rawItem, idMap));
         }
     }
 
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(newQueue));
+    setQueue(failedItems);
 
-    // Refresh cache from server after sync
-    if (newQueue.length === 0) {
-        const { data } = await supabase.from('observations').select('*').order('date', { ascending: false });
-        if (data) {
+    if (failedItems.length === 0) {
+        const { data, error } = await supabase
+            .from('observations')
+            .select('*')
+            .order('date', { ascending: false });
+
+        if (!error && data) {
             setLocalCache(data.map(mapToObservation));
         }
     }

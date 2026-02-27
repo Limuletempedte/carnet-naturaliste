@@ -1,11 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { SearchResult } from '../services/locationService';
 
 interface MapInputProps {
-    onLocationChange: (lat: number, lon: number, municipality: string, location: string, department: string) => void;
+    onLocationChange: (lat: number, lon: number, municipality: string, location: string, department: string, country: string) => void;
+    onToast: (type: 'warning' | 'error' | 'info' | 'success', message: string, durationMs?: number) => void;
 }
 
-const MapInput: React.FC<MapInputProps> = ({ onLocationChange }) => {
+const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const markerRef = useRef<L.Marker | null>(null);
@@ -26,6 +28,10 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange }) => {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
 
+            // Debounce + AbortController for reverse geocoding
+            let clickTimer: ReturnType<typeof setTimeout> | null = null;
+            let abortCtrl: AbortController | null = null;
+
             map.on('click', (e: L.LeafletMouseEvent) => {
                 const { lat, lng } = e.latlng;
 
@@ -35,14 +41,25 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange }) => {
                     markerRef.current = L.marker(e.latlng).addTo(map);
                 }
 
-                // Use the service for reverse geocoding
-                import('../services/locationService').then(m => m.reverseGeocode(lat, lng)).then(result => {
-                    if (result) {
-                        onLocationChange(lat, lng, result.address?.municipality || '', result.address?.location || '', result.address?.department || '');
-                    } else {
-                        onLocationChange(lat, lng, '', '', '');
-                    }
-                });
+                // Cancel previous pending request
+                if (clickTimer) clearTimeout(clickTimer);
+                if (abortCtrl) abortCtrl.abort();
+
+                clickTimer = setTimeout(() => {
+                    abortCtrl = new AbortController();
+                    import('../services/locationService').then(m => m.reverseGeocode(lat, lng, abortCtrl?.signal)).then(result => {
+                        if (result) {
+                            onLocationChange(lat, lng, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
+                        } else {
+                            onLocationChange(lat, lng, '', '', '', '');
+                        }
+                    }).catch(err => {
+                        if (err.name !== 'AbortError') {
+                            console.error(err);
+                            onToast('warning', "Impossible de récupérer l'adresse exacte pour ce point.");
+                        }
+                    });
+                }, 300);
             });
         }
 
@@ -64,6 +81,15 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange }) => {
 
         return () => {
             clearTimeout(timer);
+            if (markerRef.current && mapRef.current) {
+                markerRef.current.removeFrom(mapRef.current);
+                markerRef.current = null;
+            }
+            if (mapRef.current) {
+                mapRef.current.off();
+                mapRef.current.remove();
+                mapRef.current = null;
+            }
             if (resizeObserver) {
                 resizeObserver.disconnect();
             }
@@ -71,25 +97,29 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange }) => {
     }, []);
 
     const [searchQuery, setSearchQuery] = React.useState('');
-    const [searchResults, setSearchResults] = React.useState<any[]>([]);
+    const [searchResults, setSearchResults] = React.useState<SearchResult[]>([]);
     const [isSearching, setIsSearching] = React.useState(false);
 
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSearch = async (e?: { preventDefault: () => void }) => {
+        e?.preventDefault();
         if (searchQuery.length < 3) return;
 
         setIsSearching(true);
         try {
             const results = await import('../services/locationService').then(m => m.searchAddress(searchQuery));
             setSearchResults(results);
+            if (results.length === 0) {
+                onToast('info', 'Aucun résultat trouvé pour cette recherche.');
+            }
         } catch (error) {
             console.error(error);
+            onToast('warning', (error as Error).message || "Erreur lors de la recherche d'adresse.");
         } finally {
             setIsSearching(false);
         }
     };
 
-    const handleSelectLocation = (result: any) => {
+    const handleSelectLocation = (result: SearchResult) => {
         if (mapRef.current) {
             mapRef.current.flyTo([result.lat, result.lon], 16);
             if (markerRef.current) {
@@ -97,7 +127,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange }) => {
             } else {
                 markerRef.current = L.marker([result.lat, result.lon]).addTo(mapRef.current);
             }
-            onLocationChange(result.lat, result.lon, result.address?.municipality || '', result.address?.location || '', result.address?.department || '');
+            onLocationChange(result.lat, result.lon, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
             setSearchResults([]);
             setSearchQuery('');
         }
@@ -118,18 +148,21 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange }) => {
                     // Reverse geocode to get address details
                     import('../services/locationService').then(m => m.reverseGeocode(latitude, longitude)).then(result => {
                         if (result) {
-                            onLocationChange(latitude, longitude, result.address?.municipality || '', result.address?.location || '', result.address?.department || '');
+                            onLocationChange(latitude, longitude, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
                         } else {
-                            onLocationChange(latitude, longitude, '', '', '');
+                            onLocationChange(latitude, longitude, '', '', '', '');
                         }
+                    }).catch((error) => {
+                        console.error(error);
+                        onToast('warning', (error as Error).message || "Impossible de récupérer l'adresse de votre position.");
                     });
                 }
             }, (error) => {
                 console.error("Erreur de géolocalisation:", error);
-                alert("Impossible de vous localiser. Vérifiez vos autorisations.");
+                onToast('warning', "Impossible de vous localiser. Vérifiez vos autorisations.");
             });
         } else {
-            alert("La géolocalisation n'est pas supportée par votre navigateur.");
+            onToast('warning', "La géolocalisation n'est pas supportée par votre navigateur.");
         }
     };
 

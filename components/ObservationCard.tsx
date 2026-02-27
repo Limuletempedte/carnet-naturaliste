@@ -1,6 +1,7 @@
 import React from 'react';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
+import { isoToFrDisplay } from '../utils/dateUtils';
 
 interface ObservationCardProps {
     observation: Observation;
@@ -9,6 +10,17 @@ interface ObservationCardProps {
     selected: boolean;
     onToggle: (id: string) => void;
 }
+
+const getStatusBadgeClass = (status: string): string => {
+    switch (status) {
+        case 'LC': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        case 'NT': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+        case 'VU': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+        case 'EN':
+        case 'CR': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+        default: return 'bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400';
+    }
+};
 
 const ObservationCard: React.FC<ObservationCardProps> = ({ observation, onEdit, onDelete, selected, onToggle }) => {
     return (
@@ -48,10 +60,7 @@ const ObservationCard: React.FC<ObservationCardProps> = ({ observation, onEdit, 
                             <h3 className="font-bold text-nature-dark dark:text-white truncate pr-2">{observation.speciesName}</h3>
                             <p className="text-xs text-gray-500 dark:text-gray-400 italic truncate">{observation.latinName}</p>
                         </div>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${observation.status === 'LC' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                            observation.status === 'NT' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                            }`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusBadgeClass(observation.status)}`}>
                             {observation.status}
                         </span>
                     </div>
@@ -63,7 +72,7 @@ const ObservationCard: React.FC<ObservationCardProps> = ({ observation, onEdit, 
                         </div>
                         <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
                             <span className="mr-1">📅</span>
-                            <span>{new Date(observation.date).toLocaleDateString()}</span>
+                            <span>{isoToFrDisplay(observation.date, { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
                         </div>
                     </div>
                 </div>
