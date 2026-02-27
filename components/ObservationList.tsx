@@ -194,7 +194,10 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     console.warn(`Import: ${importResult.report.warnings.length} warning(s)`, importResult.report.warnings);
                 }
                 if (importResult.report.errors.length > 0) {
-                    onToast('error', `${importResult.report.errors.length} erreur(s) bloquante(s) détectée(s).`);
+                    onToast('warning', `${importResult.report.errors.length} erreur(s) de validation détectée(s).`);
+                }
+                if (importResult.report.blockingErrors.length > 0) {
+                    onToast('error', `${importResult.report.blockingErrors.length} erreur(s) bloquante(s) avant import.`);
                 }
 
                 setPreviewImportFileName(file.name);
@@ -218,7 +221,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
 
     const handleConfirmPreview = async () => {
         if (!previewImportResult) return;
-        if (previewImportResult.report.errors.length > 0) {
+        if (previewImportResult.report.blockingErrors.length > 0) {
             onToast('error', "Corrigez les erreurs bloquantes avant de confirmer l'import.");
             return;
         }

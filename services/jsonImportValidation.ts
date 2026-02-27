@@ -241,6 +241,7 @@ export const parseJsonImport = (rawJson: unknown): ImportResult => {
             validRows: observations.length,
             warnings,
             errors,
+            blockingErrors: [...errors],
             idCollisions: warnings.filter(w => w.field === 'id' && w.message.includes('doublon')).length
         }
     };

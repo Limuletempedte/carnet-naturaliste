@@ -24,6 +24,7 @@ export interface ImportReport {
     validRows: number;
     warnings: ImportWarning[];
     errors: ImportError[];
+    blockingErrors: ImportError[];
     idCollisions: number;
 }
 
@@ -46,10 +47,100 @@ const isUuid = (value: unknown): value is string => {
 
 const todayIso = (): string => dateToIsoLocal(new Date());
 
+const MAX_IMPORT_ROWS = 10_000;
+
+const isNonEmptyCell = (value: unknown): boolean => {
+    if (value === null || value === undefined) return false;
+    return String(value).trim() !== '';
+};
+
+const normalizeHeader = (value: string): string => {
+    return normalize(value.replace(/[_-]+/g, ' '));
+};
+
+const toText = (value: unknown): string => {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+};
+
+const parseFlexibleNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+    const raw = String(value).trim();
+    if (!raw) return null;
+
+    const normalized = raw.replace(/\s+/g, '').replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const HEADER_ALIASES: Record<string, string[]> = {
+    id: ['ID', 'Id', 'identifiant'],
+    speciesName: ["Nom de l'espèce", 'Nom espece', 'Espèce', 'Espece', 'Species', 'Species Name'],
+    latinName: ['Nom latin', 'Latin', 'Latin name'],
+    taxonomicGroup: ['Groupe taxonomique', 'Groupe', 'Taxon', 'Taxonomic group'],
+    date: ['Date', "Date d'observation", 'Observation date'],
+    time: ['Heure', 'Horaire', 'Time'],
+    count: ['Nombre', 'Nb', 'Effectif', 'Count'],
+    location: ['Lieu-dit', 'Lieu dit', 'Lieu', 'Site', 'Localite', 'Localité'],
+    lat: ['Latitude', 'Lat'],
+    lon: ['Longitude', 'Lon', 'Lng'],
+    municipality: ['Commune', 'Ville', 'Municipalité', 'Municipalite', 'Municipality'],
+    department: ['Département', 'Departement', 'Dept', 'Department'],
+    country: ['Pays', 'Country'],
+    altitude: ['Altitude', 'Alt'],
+    status: ['Statut', 'Status'],
+    atlasCode: ['Code Atlas', 'Atlas', 'Atlas code'],
+    protocol: ['Protocole', 'Protocol'],
+    sexe: ['Sexe', 'Sex', 'Genre'],
+    age: ['Age', 'Âge'],
+    observationCondition: ["Condition d'observation", 'Condition observation', 'Condition'],
+    comportement: ['Comportement', 'Comportement observé', 'Behavior', 'Behaviour'],
+    comment: ['Commentaire', 'Commentaires', 'Comment', 'Notes', 'Note']
+};
+
+const buildNormalizedRow = (rawRow: Record<string, unknown>): Record<string, unknown> => {
+    const row: Record<string, unknown> = {};
+    Object.keys(rawRow).forEach(key => {
+        row[normalizeHeader(key)] = rawRow[key];
+    });
+    return row;
+};
+
+const getRowValue = (row: Record<string, unknown>, aliases: string[]): unknown => {
+    for (const alias of aliases) {
+        const value = row[normalizeHeader(alias)];
+        if (value !== undefined) return value;
+    }
+    return undefined;
+};
+
+const createBlockingResult = (
+    message: string,
+    original: string,
+    totalRows = 0
+): ImportResult => ({
+    observations: [],
+    report: {
+        totalRows,
+        validRows: 0,
+        warnings: [],
+        errors: [],
+        blockingErrors: [{
+            row: 0,
+            field: 'Fichier',
+            message,
+            original
+        }],
+        idCollisions: 0
+    }
+});
+
 // ─── Main Parse Function ────────────────────────────────────────────────────
 
 export const parseExcel = async (file: File): Promise<ImportResult> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const reader = new FileReader();
 
         reader.onload = (e) => {
@@ -57,33 +148,49 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                 const data = e.target?.result;
                 const workbook = XLSX.read(data, { type: 'array', cellDates: true });
                 const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                if (!sheetName) {
+                    resolve(createBlockingResult('Aucune feuille trouvée dans le fichier Excel.', file.name));
+                    return;
+                }
 
-                // Guard: reject files that are too large
-                const MAX_IMPORT_ROWS = 10_000;
-                if (jsonData.length > MAX_IMPORT_ROWS) {
-                    reject(new Error(`Le fichier contient ${jsonData.length} lignes (max: ${MAX_IMPORT_ROWS}).`));
+                const worksheet = workbook.Sheets[sheetName];
+                if (!worksheet) {
+                    resolve(createBlockingResult('Feuille Excel introuvable ou illisible.', sheetName));
+                    return;
+                }
+
+                const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+                const indexedRows = rawRows
+                    .map((row, index) => ({ row, rowNum: index + 2 }))
+                    .filter(({ row }) => Object.values(row).some(isNonEmptyCell));
+
+                if (indexedRows.length === 0) {
+                    resolve(createBlockingResult('Le fichier ne contient aucune ligne exploitable.', file.name));
+                    return;
+                }
+
+                if (indexedRows.length > MAX_IMPORT_ROWS) {
+                    resolve(createBlockingResult(
+                        `Le fichier contient ${indexedRows.length} lignes (max: ${MAX_IMPORT_ROWS}).`,
+                        file.name,
+                        indexedRows.length
+                    ));
                     return;
                 }
 
                 const warnings: ImportWarning[] = [];
+                const errors: ImportError[] = [];
                 let idCollisions = 0;
 
                 // Track IDs already seen for per-line collision detection
                 const seenIds = new Set<string>();
 
-                const observations: Observation[] = jsonData.map((rawRow: any, rowIndex: number) => {
-                    const rowNum = rowIndex + 2; // +2 because row 1 is header, data starts at 2
-
-                    // Normalize keys to handle potential trailing spaces
-                    const row: any = {};
-                    Object.keys(rawRow).forEach(key => {
-                        row[key.trim()] = rawRow[key];
-                    });
+                const observations: Observation[] = indexedRows.map(({ row: rawRow, rowNum }) => {
+                    const row = buildNormalizedRow(rawRow);
 
                     // ── ID handling (per-line collision) ──
-                    let id = (row['ID'] && String(row['ID']).trim() !== '') ? String(row['ID']).trim() : '';
+                    const rawId = getRowValue(row, HEADER_ALIASES.id);
+                    let id = toText(rawId);
 
                     if (id !== '' && !isUuid(id)) {
                         warnings.push({ row: rowNum, field: 'ID', message: 'ID non UUID, nouveau UUID généré', original: id, applied: '(nouveau UUID)' });
@@ -100,29 +207,24 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     seenIds.add(id);
 
                     // ── Numeric parsing (zero-safe) ──
-                    const parsedCount = parseInt(String(row["Nombre"] ?? ''), 10);
-                    const count = Number.isNaN(parsedCount) ? 1 : parsedCount;
+                    const parsedCount = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.count));
+                    const count = parsedCount === null ? 1 : Math.round(parsedCount);
 
-                    const parsedLat = parseFloat(String(row["Latitude"] ?? ''));
-                    const lat = Number.isNaN(parsedLat) ? null : parsedLat;
-
-                    const parsedLon = parseFloat(String(row["Longitude"] ?? ''));
-                    const lon = Number.isNaN(parsedLon) ? null : parsedLon;
-
-                    const parsedAlt = parseFloat(String(row["Altitude"] ?? ''));
-                    const altitude = Number.isNaN(parsedAlt) ? null : parsedAlt;
+                    const lat = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.lat));
+                    const lon = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.lon));
+                    const altitude = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.altitude));
 
                     // ── Enum mapping with warnings ──
-                    const taxonomicGroup = mapTaxonomicGroup(row["Groupe taxonomique"], rowNum, warnings);
-                    const status = mapEnum(row["Statut"], Status, STATUS_SYNONYMS, Status.NE, 'Statut', rowNum, warnings);
-                    const protocol = mapEnum(row["Protocole"], Protocol, PROTOCOL_SYNONYMS, Protocol.OPPORTUNIST, 'Protocole', rowNum, warnings);
-                    const sexe = mapEnum(row["Sexe"], Sexe, SEXE_SYNONYMS, Sexe.UNKNOWN, 'Sexe', rowNum, warnings);
-                    const age = mapEnum(row["Age"], Age, AGE_SYNONYMS, Age.UNKNOWN, 'Age', rowNum, warnings);
-                    const observationCondition = mapEnum(row["Condition d'observation"], ObservationCondition, {}, ObservationCondition.UNKNOWN, "Condition d'observation", rowNum, warnings);
-                    const comportement = mapEnum(row["Comportement"], Comportement, {}, Comportement.UNKNOWN, 'Comportement', rowNum, warnings);
+                    const taxonomicGroup = mapTaxonomicGroup(getRowValue(row, HEADER_ALIASES.taxonomicGroup), rowNum, warnings);
+                    const status = mapEnum(getRowValue(row, HEADER_ALIASES.status), Status, STATUS_SYNONYMS, Status.NE, 'Statut', rowNum, warnings);
+                    const protocol = mapEnum(getRowValue(row, HEADER_ALIASES.protocol), Protocol, PROTOCOL_SYNONYMS, Protocol.OPPORTUNIST, 'Protocole', rowNum, warnings);
+                    const sexe = mapEnum(getRowValue(row, HEADER_ALIASES.sexe), Sexe, SEXE_SYNONYMS, Sexe.UNKNOWN, 'Sexe', rowNum, warnings);
+                    const age = mapEnum(getRowValue(row, HEADER_ALIASES.age), Age, AGE_SYNONYMS, Age.UNKNOWN, 'Age', rowNum, warnings);
+                    const observationCondition = mapEnum(getRowValue(row, HEADER_ALIASES.observationCondition), ObservationCondition, {}, ObservationCondition.UNKNOWN, "Condition d'observation", rowNum, warnings);
+                    const comportement = mapEnum(getRowValue(row, HEADER_ALIASES.comportement), Comportement, {}, Comportement.UNKNOWN, 'Comportement', rowNum, warnings);
 
                     // ── Validation ──
-                    const speciesName = row["Nom de l'espèce"] || '';
+                    const speciesName = toText(getRowValue(row, HEADER_ALIASES.speciesName));
                     if (!speciesName) {
                         warnings.push({ row: rowNum, field: "Nom de l'espèce", message: "Nom d'espèce vide", original: '', applied: 'Espèce inconnue' });
                     }
@@ -130,7 +232,6 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     const safeLat = lat !== null && (lat < -90 || lat > 90) ? null : lat;
                     const safeLon = lon !== null && (lon < -180 || lon > 180) ? null : lon;
                     const safeCount = count < 1 ? 1 : count;
-
                     if (lat !== safeLat) {
                         warnings.push({ row: rowNum, field: 'Latitude', message: 'Latitude hors limites [-90, 90], valeur annulée', original: String(lat), applied: 'null' });
                     }
@@ -144,25 +245,25 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     return {
                         id,
                         speciesName: speciesName || 'Espèce inconnue',
-                        latinName: row["Nom latin"] || '',
+                        latinName: toText(getRowValue(row, HEADER_ALIASES.latinName)),
                         taxonomicGroup,
-                        date: parseDate(row["Date"], rowNum, warnings),
-                        time: parseTime(row["Heure"]),
+                        date: parseDate(getRowValue(row, HEADER_ALIASES.date), rowNum, warnings),
+                        time: parseTime(getRowValue(row, HEADER_ALIASES.time)),
                         count: safeCount,
-                        location: row["Lieu-dit"] || '',
+                        location: toText(getRowValue(row, HEADER_ALIASES.location)),
                         gps: { lat: safeLat, lon: safeLon },
-                        municipality: row["Commune"] || '',
-                        department: row["Département"] || '',
-                        country: row["Pays"] || 'France',
+                        municipality: toText(getRowValue(row, HEADER_ALIASES.municipality)),
+                        department: toText(getRowValue(row, HEADER_ALIASES.department)),
+                        country: toText(getRowValue(row, HEADER_ALIASES.country)) || 'France',
                         altitude,
                         status,
-                        atlasCode: row["Code Atlas"] || '',
+                        atlasCode: toText(getRowValue(row, HEADER_ALIASES.atlasCode)),
                         protocol,
                         sexe,
                         age,
                         observationCondition,
                         comportement,
-                        comment: row["Commentaire"] || '',
+                        comment: toText(getRowValue(row, HEADER_ALIASES.comment)),
                         photo: undefined,
                         sound: undefined,
                         wikipediaImage: undefined
@@ -172,20 +273,26 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                 resolve({
                     observations,
                     report: {
-                        totalRows: jsonData.length,
+                        totalRows: indexedRows.length,
                         validRows: observations.length,
                         warnings,
-                        errors: [],
+                        errors,
+                        blockingErrors: [],
                         idCollisions
                     }
                 });
             } catch (error) {
                 console.error("Excel parse error:", error);
-                reject(error);
+                resolve(createBlockingResult(
+                    "Impossible de lire le fichier Excel (format invalide ou fichier corrompu).",
+                    error instanceof Error ? error.message : String(error)
+                ));
             }
         };
 
-        reader.onerror = (error) => reject(error);
+        reader.onerror = () => {
+            resolve(createBlockingResult("Impossible de lire le fichier Excel.", file.name));
+        };
         reader.readAsArrayBuffer(file);
     });
 };

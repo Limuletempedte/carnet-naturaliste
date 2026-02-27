@@ -20,10 +20,12 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
 
     const previewRows = result.observations.slice(0, 5);
     const warningRows = result.report.warnings.slice(0, 10);
-    const errorRows = result.report.errors.slice(0, 10);
+    const validationErrorRows = result.report.errors.slice(0, 10);
+    const blockingErrorRows = result.report.blockingErrors.slice(0, 10);
     const hiddenWarnings = Math.max(0, result.report.warnings.length - warningRows.length);
-    const hiddenErrors = Math.max(0, result.report.errors.length - errorRows.length);
-    const hasBlockingErrors = result.report.errors.length > 0;
+    const hiddenValidationErrors = Math.max(0, result.report.errors.length - validationErrorRows.length);
+    const hiddenBlockingErrors = Math.max(0, result.report.blockingErrors.length - blockingErrorRows.length);
+    const hasBlockingErrors = result.report.blockingErrors.length > 0;
 
     return (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
@@ -33,7 +35,7 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                     Fichier: <span className="font-semibold">{fileName}</span>
                 </p>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
                     <div className="rounded-xl bg-gray-100 dark:bg-white/10 p-3">
                         <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Lignes</p>
                         <p className="text-lg font-bold dark:text-white">{result.report.totalRows}</p>
@@ -50,9 +52,13 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                         <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Collisions ID</p>
                         <p className="text-lg font-bold dark:text-white">{result.report.idCollisions}</p>
                     </div>
-                    <div className="rounded-xl bg-red-100 dark:bg-red-500/10 p-3 md:col-span-4">
-                        <p className="text-xs uppercase tracking-wide text-red-700 dark:text-red-300">Erreurs bloquantes</p>
-                        <p className="text-lg font-bold text-red-700 dark:text-red-200">{result.report.errors.length}</p>
+                    <div className="rounded-xl bg-orange-100 dark:bg-orange-500/10 p-3">
+                        <p className="text-xs uppercase tracking-wide text-orange-700 dark:text-orange-300">Erreurs validation</p>
+                        <p className="text-lg font-bold text-orange-700 dark:text-orange-200">{result.report.errors.length}</p>
+                    </div>
+                    <div className="rounded-xl bg-red-100 dark:bg-red-500/10 p-3 md:col-span-5">
+                        <p className="text-xs uppercase tracking-wide text-red-700 dark:text-red-300">Erreurs bloquantes avant import</p>
+                        <p className="text-lg font-bold text-red-700 dark:text-red-200">{result.report.blockingErrors.length}</p>
                     </div>
                 </div>
 
@@ -100,23 +106,44 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                     </div>
                 )}
 
-                {errorRows.length > 0 && (
+                {validationErrorRows.length > 0 && (
                     <div className="mb-6">
-                        <h4 className="text-sm font-semibold text-red-700 dark:text-red-300 mb-2">Erreurs bloquantes</h4>
-                        <div className="rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 p-3 space-y-2 max-h-48 overflow-y-auto">
-                            {errorRows.map((e, idx) => (
-                                <p key={`${e.row}-${e.field}-${idx}`} className="text-xs text-red-800 dark:text-red-200">
+                        <h4 className="text-sm font-semibold text-orange-700 dark:text-orange-300 mb-2">Erreurs de validation fichier</h4>
+                        <div className="rounded-xl bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-500/30 p-3 space-y-2 max-h-48 overflow-y-auto">
+                            {validationErrorRows.map((e, idx) => (
+                                <p key={`${e.row}-${e.field}-${idx}`} className="text-xs text-orange-800 dark:text-orange-200">
                                     Ligne {e.row} - {e.field}: {e.message} ({e.original || 'vide'})
                                 </p>
                             ))}
-                            {hiddenErrors > 0 && (
-                                <p className="text-xs font-semibold text-red-800 dark:text-red-200">
-                                    + {hiddenErrors} erreur(s) supplémentaire(s)
+                            {hiddenValidationErrors > 0 && (
+                                <p className="text-xs font-semibold text-orange-800 dark:text-orange-200">
+                                    + {hiddenValidationErrors} erreur(s) supplémentaire(s)
                                 </p>
                             )}
                         </div>
                     </div>
                 )}
+                {blockingErrorRows.length > 0 && (
+                    <div className="mb-6">
+                        <h4 className="text-sm font-semibold text-red-700 dark:text-red-300 mb-2">Erreurs bloquantes avant import</h4>
+                        <div className="rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 p-3 space-y-2 max-h-48 overflow-y-auto">
+                            {blockingErrorRows.map((e, idx) => (
+                                <p key={`${e.row}-${e.field}-${idx}`} className="text-xs text-red-800 dark:text-red-200">
+                                    Ligne {e.row} - {e.field}: {e.message} ({e.original || 'vide'})
+                                </p>
+                            ))}
+                            {hiddenBlockingErrors > 0 && (
+                                <p className="text-xs font-semibold text-red-800 dark:text-red-200">
+                                    + {hiddenBlockingErrors} erreur(s) bloquante(s) supplémentaire(s)
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <p className="text-xs text-gray-600 dark:text-gray-300 mb-6">
+                    Note: des erreurs serveur (droits, connexion, contraintes base) peuvent encore survenir au moment de l'import.
+                </p>
 
                 <div className="flex justify-end gap-3">
                     <button
@@ -135,7 +162,7 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                             : 'bg-nature-green hover:bg-green-700'
                             }`}
                     >
-                        {hasBlockingErrors ? 'Import bloqué (corriger erreurs)' : "Confirmer l'import"}
+                        {hasBlockingErrors ? 'Import bloqué (corriger blocages)' : "Confirmer l'import"}
                     </button>
                 </div>
             </div>

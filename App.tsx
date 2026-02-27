@@ -1,7 +1,7 @@
 import 'leaflet/dist/leaflet.css';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Observation, View, TaxonomicGroup, Status } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, syncObservations, processOfflineQueue } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ObservationForm from './components/ObservationForm';
 import ObservationMap from './components/ObservationMap';
@@ -249,61 +249,95 @@ const App: React.FC = () => {
 
     const handleImportRequest = async (importResult: ImportResult): Promise<void> => {
         try {
-            if (importResult.report.errors.length > 0) {
-                throw new Error(`Le fichier contient ${importResult.report.errors.length} erreur(s) bloquante(s).`);
+            if (importResult.report.blockingErrors.length > 0) {
+                throw new Error(`Le fichier contient ${importResult.report.blockingErrors.length} erreur(s) bloquante(s).`);
             }
 
-            let regeneratedIds = 0;
-            const normalizedImported = importResult.observations.map(obs => {
-                if (!UUID_RE.test(String(obs.id).trim())) {
-                    regeneratedIds++;
-                    return { ...obs, id: crypto.randomUUID() };
-                }
-                return obs;
-            });
-
-            // Deduplicate imported rows by ID, keeping the latest occurrence.
-            const importedObservations = Array.from(
-                new Map(normalizedImported.map(obs => [obs.id, obs])).values()
-            );
-
-            const mergedObservations = [...observations];
+            const existingIds = new Set(observations.map(obs => obs.id));
+            const mergedById = new Map(observations.map(obs => [obs.id, obs]));
+            const failureReasons = new Map<string, number>();
             let addedCount = 0;
             let updatedCount = 0;
+            let failedCount = 0;
+            let forcedNewIds = 0;
 
-            importedObservations.forEach(newObs => {
-                const index = mergedObservations.findIndex(existingObs => existingObs.id === newObs.id);
-                if (index !== -1) {
-                    mergedObservations[index] = newObs;
-                    updatedCount++;
-                } else {
-                    mergedObservations.push(newObs);
-                    addedCount++;
+            const captureFailure = (reason: string) => {
+                failureReasons.set(reason, (failureReasons.get(reason) || 0) + 1);
+            };
+
+            const toErrorMessage = (error: unknown): string => {
+                if (error instanceof Error && error.message) return error.message;
+                return String(error);
+            };
+
+            for (const imported of importResult.observations) {
+                const importedId = String(imported.id || '').trim();
+                const hasExistingId = existingIds.has(importedId);
+
+                const observationToPersist: Observation = hasExistingId
+                    ? { ...imported, id: importedId }
+                    : { ...imported, id: crypto.randomUUID() };
+
+                if (!hasExistingId && observationToPersist.id !== importedId) {
+                    forcedNewIds++;
                 }
-            });
 
-            if (navigator.onLine) {
-                await syncObservations(importedObservations);
-            } else {
-                const existingIds = new Set(observations.map(obs => obs.id));
-                for (const imported of importedObservations) {
-                    if (existingIds.has(imported.id)) {
-                        await updateObservation(imported);
+                if (!UUID_RE.test(observationToPersist.id)) {
+                    observationToPersist.id = crypto.randomUUID();
+                    forcedNewIds++;
+                }
+
+                try {
+                    if (hasExistingId) {
+                        await updateObservation(observationToPersist);
+                        mergedById.set(observationToPersist.id, observationToPersist);
+                        updatedCount++;
                     } else {
-                        await saveObservation(imported);
+                        const savedObs = await saveObservation(observationToPersist);
+                        const persisted = { ...observationToPersist, id: savedObs.id };
+                        mergedById.set(persisted.id, persisted);
+                        addedCount++;
                     }
+                } catch (importError) {
+                    failedCount++;
+                    captureFailure(toErrorMessage(importError));
                 }
             }
+
+            const successCount = addedCount + updatedCount;
+            const failureSummary = Array.from(failureReasons.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([reason, count]) => `${count}x ${reason}`)
+                .join(' ; ');
+
+            if (successCount === 0) {
+                throw new Error(failureSummary
+                    ? `Aucune ligne n'a pu être importée. ${failureSummary}`
+                    : "Aucune ligne n'a pu être importée.");
+            }
+
+            const mergedObservations = Array.from(mergedById.values()).sort((a, b) => compareIsoDate(b.date, a.date));
             setObservations(mergedObservations);
             setView(View.LIST);
             setError(null);
 
-            pushToast('success', `Import terminé: ${addedCount} ajoutée(s), ${updatedCount} mise(s) à jour.`);
+            pushToast(
+                failedCount > 0 ? 'warning' : 'success',
+                `Import terminé: ${addedCount} ajoutée(s), ${updatedCount} mise(s) à jour, ${failedCount} échec(s).`,
+                failedCount > 0 ? 7000 : 4500
+            );
             if (importResult.report.warnings.length > 0) {
                 pushToast('warning', `Import avec ${importResult.report.warnings.length} warning(s).`, 7000);
             }
-            if (regeneratedIds > 0) {
-                pushToast('warning', `${regeneratedIds} ID(s) non valides ont été régénérés en UUID.`, 7000);
+            if (importResult.report.errors.length > 0) {
+                pushToast('warning', `${importResult.report.errors.length} erreur(s) de validation ont été détectées dans le fichier.`, 7000);
+            }
+            if (forcedNewIds > 0) {
+                pushToast('info', `${forcedNewIds} ligne(s) ont été importées comme nouvelles observations avec un nouvel ID.`, 7000);
+            }
+            if (failedCount > 0 && failureSummary) {
+                pushToast('error', `Échecs partiels: ${failureSummary}`, 9000);
             }
         } catch (e: any) {
             const errorMessage = e instanceof Error ? e.message : String(e);
