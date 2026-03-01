@@ -200,6 +200,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                     <div className="absolute top-full left-0 right-0 mt-1 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 dark:border-white/10 overflow-hidden max-h-48 overflow-y-auto">
                         {searchResults.map((result, index) => (
                             <button
+                                type="button"
                                 key={index}
                                 onClick={() => handleSelectLocation(result)}
                                 className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 text-sm"

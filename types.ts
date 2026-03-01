@@ -23,6 +23,7 @@ export enum TaxonomicGroup {
     CHIROPTERA = 'Chiroptères',
     ORCHID = 'Orchidées',
     BOTANY = 'Botaniques générales',
+    MUSHROOM = 'Champignons',
     OTHER = 'Autre'
 }
 

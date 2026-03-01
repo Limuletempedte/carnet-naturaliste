@@ -108,10 +108,10 @@ export const searchAddress = async (query: string): Promise<SearchResult[]> => {
             lon: parseFloat(item.lon),
             displayName: item.display_name,
             address: {
-                municipality: item.address.village || item.address.town || item.address.city || '',
-                location: item.address.road || '',
-                department: item.address.postcode ? (item.address.postcode.startsWith('97') ? item.address.postcode.substring(0, 3) : item.address.postcode.substring(0, 2)) : '',
-                country: item.address.country || ''
+                municipality: item.address?.village || item.address?.town || item.address?.city || '',
+                location: item.address?.road || '',
+                department: item.address?.postcode ? (item.address.postcode.startsWith('97') ? item.address.postcode.substring(0, 3) : item.address.postcode.substring(0, 2)) : '',
+                country: item.address?.country || ''
             }
         }));
     } catch (error) {

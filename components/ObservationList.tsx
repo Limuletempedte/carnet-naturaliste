@@ -1,7 +1,4 @@
-import React, { useRef } from 'react';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import React, { useRef, useState, useEffect } from 'react';
 import { Observation, TaxonomicGroup, Status } from '../types';
 import ObservationRow from './ObservationRow';
 import ObservationCard from './ObservationCard';
@@ -10,6 +7,7 @@ import { ImportResult } from '../services/excelImportService';
 import { parseJsonImport } from '../services/jsonImportValidation';
 import ImportPreviewDialog from './ImportPreviewDialog';
 import { ToastType } from './ToastContainer';
+import ExportScopeDialog from './ExportScopeDialog';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -36,6 +34,7 @@ interface ObservationListProps {
     sortConfig: { key: keyof Observation | ''; direction: 'ascending' | 'descending' };
     requestSort: (key: keyof Observation) => void;
     isMobileView: boolean;
+    isBulkDeleting?: boolean;
 }
 
 const ObservationList: React.FC<ObservationListProps> = ({
@@ -62,22 +61,31 @@ const ObservationList: React.FC<ObservationListProps> = ({
     availableYears,
     sortConfig,
     requestSort,
-    isMobileView
+    isMobileView,
+    isBulkDeleting = false
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const tableRef = useRef<HTMLDivElement>(null);
     const [isParsingImport, setIsParsingImport] = React.useState(false);
     const [previewImportResult, setPreviewImportResult] = React.useState<ImportResult | null>(null);
     const [previewImportFileName, setPreviewImportFileName] = React.useState('');
+    const [pendingExportType, setPendingExportType] = React.useState<'json' | 'excel' | 'pdf' | null>(null);
+    const [isExporting, setIsExporting] = React.useState(false);
 
-    const getExportData = (): Observation[] => {
-        if (observations.length === allObservations.length) return allObservations;
-        const choice = confirm('Exporter uniquement les observations filtrées ?\n\nOK = Filtrées uniquement\nAnnuler = Toutes les observations');
-        return choice ? observations : allObservations;
+    // FAB visibility on scroll
+    const [showFab, setShowFab] = useState(false);
+    useEffect(() => {
+        const onScroll = () => setShowFab(window.scrollY > 150);
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => window.removeEventListener('scroll', onScroll);
+    }, []);
+
+    const resolveExportData = (scope: 'filtered' | 'all'): Observation[] => {
+        return scope === 'filtered' ? observations : allObservations;
     };
 
-    const handleExportExcel = () => {
-        const exportData = getExportData();
+    const handleExportExcel = async (exportData: Observation[]) => {
+        const XLSX = await import('xlsx');
         const headers = [
             "ID", "Nom de l'espèce", "Nom latin", "Groupe taxonomique", "Date", "Heure",
             "Nombre", "Lieu-dit", "Latitude", "Longitude", "Commune", "Département",
@@ -117,8 +125,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
         XLSX.writeFile(workbook, "export_observations.xlsx");
     };
 
-    const handleExportJSON = () => {
-        const exportData = getExportData();
+    const handleExportJSON = (exportData: Observation[]) => {
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -130,40 +137,72 @@ const ObservationList: React.FC<ObservationListProps> = ({
         URL.revokeObjectURL(url);
     };
 
-    const handleExportPDF = async () => {
-        if (!tableRef.current) return;
-
+    const handleExportPDF = async (exportData: Observation[]) => {
         try {
-            const canvas = await html2canvas(tableRef.current, {
-                scale: 2,
-                backgroundColor: '#ffffff',
-                ignoreElements: (element) => element.classList.contains('no-print')
-            });
-
-            const imgData = canvas.toDataURL('image/png');
+            const { default: jsPDF } = await import('jspdf');
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
-            const imageHeight = (canvas.height * pageWidth) / canvas.width;
+            const left = 10;
+            const right = pageWidth - 10;
+            let y = 12;
 
-            let heightLeft = imageHeight;
-            let position = 0;
+            pdf.setFontSize(16);
+            pdf.text('Carnet naturaliste - Observations', left, y);
+            y += 8;
+            pdf.setFontSize(10);
+            pdf.text(`Nombre d'observations: ${exportData.length}`, left, y);
+            y += 8;
 
-            pdf.addImage(imgData, 'PNG', 0, position, pageWidth, imageHeight);
-            heightLeft -= pageHeight;
+            exportData.forEach((obs, index) => {
+                const lines = pdf.splitTextToSize(
+                    [
+                        `${index + 1}. ${obs.speciesName} (${obs.latinName || 'Nom latin non renseigné'})`,
+                        `Date: ${obs.date} ${obs.time || ''} | Nombre: ${obs.count} | Groupe: ${obs.taxonomicGroup}`,
+                        `Lieu: ${obs.location || 'Lieu non renseigné'} ${obs.municipality ? `(${obs.municipality})` : ''}`,
+                        `Commentaire: ${obs.comment || 'Aucun'}`
+                    ].join('\n'),
+                    right - left
+                );
 
-            while (heightLeft > 0) {
-                position = heightLeft - imageHeight;
-                pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, pageWidth, imageHeight);
-                heightLeft -= pageHeight;
-            }
+                const blockHeight = lines.length * 5 + 3;
+                if (y + blockHeight > pageHeight - 10) {
+                    pdf.addPage();
+                    y = 12;
+                }
+
+                pdf.text(lines, left, y);
+                y += blockHeight;
+            });
 
             pdf.save('carnet-naturaliste-observations.pdf');
         } catch (error) {
             console.error('Erreur export PDF:', error);
             onToast('error', "Impossible d'exporter le PDF.");
         }
+    };
+
+    const runExport = async (scope: 'filtered' | 'all') => {
+        if (!pendingExportType) return;
+
+        const exportData = resolveExportData(scope);
+        setPendingExportType(null);
+        setIsExporting(true);
+        try {
+            if (pendingExportType === 'json') {
+                handleExportJSON(exportData);
+            } else if (pendingExportType === 'excel') {
+                await handleExportExcel(exportData);
+            } else {
+                await handleExportPDF(exportData);
+            }
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const openExportDialog = (type: 'json' | 'excel' | 'pdf') => {
+        setPendingExportType(type);
     };
 
     const handleImportClick = () => {
@@ -276,9 +315,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
     };
 
     const handleDeleteSelected = () => {
-        if (selectedIds.size === 0) return;
+        if (selectedIds.size === 0 || isBulkDeleting) return;
         onBulkDelete(Array.from(selectedIds));
-        setSelectedIds(new Set()); // Clear selection after request (optimistic)
     };
 
     if (isMobileView) {
@@ -291,8 +329,12 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <h2 className="text-xl font-bold text-nature-dark dark:text-white">Observations</h2>
                             <div className="flex gap-2">
                                 {selectedIds.size > 0 && (
-                                    <button onClick={handleDeleteSelected} className="bg-red-500 text-white p-2 rounded-full shadow-lg">
-                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    <button onClick={handleDeleteSelected} disabled={isBulkDeleting} className="bg-red-500 text-white p-2 rounded-full shadow-lg disabled:opacity-50">
+                                        {isBulkDeleting ? (
+                                            <span className="animate-spin block w-6 h-6">⏳</span>
+                                        ) : (
+                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        )}
                                     </button>
                                 )}
                                 <button onClick={onAdd} className="bg-nature-green text-white p-2 rounded-full shadow-lg">
@@ -309,31 +351,34 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             accept=".json,.xlsx,.xls"
                         />
 
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                             <button
                                 onClick={handleImportClick}
                                 disabled={isParsingImport}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-500 text-white disabled:opacity-60"
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-500 text-white disabled:opacity-60 flex-shrink-0"
                             >
                                 {isParsingImport ? 'Analyse...' : 'Importer'}
                             </button>
                             <button
-                                onClick={handleExportJSON}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white"
+                                onClick={() => openExportDialog('json')}
+                                disabled={isExporting}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white disabled:opacity-60 flex-shrink-0"
                             >
-                                JSON
+                                {isExporting && pendingExportType === 'json' ? 'Export...' : 'JSON'}
                             </button>
                             <button
-                                onClick={handleExportExcel}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white"
+                                onClick={() => openExportDialog('excel')}
+                                disabled={isExporting}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white disabled:opacity-60 flex-shrink-0"
                             >
-                                Excel
+                                {isExporting && pendingExportType === 'excel' ? 'Export...' : 'Excel'}
                             </button>
                             <button
-                                onClick={handleExportPDF}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white"
+                                onClick={() => openExportDialog('pdf')}
+                                disabled={isExporting}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white disabled:opacity-60 flex-shrink-0"
                             >
-                                PDF
+                                {isExporting && pendingExportType === 'pdf' ? 'Export...' : 'PDF'}
                             </button>
                         </div>
 
@@ -400,6 +445,17 @@ const ObservationList: React.FC<ObservationListProps> = ({
                         )}
                     </div>
                 </div>
+
+                {/* Floating Action Button */}
+                {showFab && (
+                    <button
+                        onClick={onAdd}
+                        className="fixed bottom-24 right-4 z-40 w-14 h-14 bg-nature-green text-white rounded-full shadow-xl flex items-center justify-center text-3xl hover:scale-110 active:scale-95 transition-all duration-200 animate-fade-in"
+                        title="Ajouter une observation"
+                    >
+                        +
+                    </button>
+                )}
                 <ImportPreviewDialog
                     isOpen={!!previewImportResult}
                     fileName={previewImportFileName}
@@ -431,8 +487,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
                         </h1>
                         <div className="flex items-center flex-wrap gap-3">
                             {selectedIds.size > 0 && (
-                                <button onClick={handleDeleteSelected} className={`${secondaryButtonClass} bg-red-500/80 hover:bg-red-600 backdrop-blur-md`}>
-                                    Supprimer ({selectedIds.size})
+                                <button onClick={handleDeleteSelected} disabled={isBulkDeleting} className={`${secondaryButtonClass} bg-red-500/80 hover:bg-red-600 backdrop-blur-md disabled:opacity-50 disabled:cursor-not-allowed`}>
+                                    {isBulkDeleting ? 'Suppression...' : `Supprimer (${selectedIds.size})`}
                                 </button>
                             )}
                             <input
@@ -449,9 +505,9 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             >
                                 {isParsingImport ? 'Analyse...' : 'Importer'}
                             </button>
-                            <button onClick={handleExportJSON} className={`${secondaryButtonClass} bg-blue-500/80 hover:bg-blue-600 backdrop-blur-md`}>JSON</button>
-                            <button onClick={handleExportExcel} className={`${secondaryButtonClass} bg-emerald-500/80 hover:bg-emerald-600 backdrop-blur-md`}>Excel</button>
-                            <button onClick={handleExportPDF} className={`${secondaryButtonClass} bg-red-500/80 hover:bg-red-600 backdrop-blur-md`}>PDF</button>
+                            <button onClick={() => openExportDialog('json')} disabled={isExporting} className={`${secondaryButtonClass} bg-blue-500/80 hover:bg-blue-600 backdrop-blur-md disabled:opacity-60`}>JSON</button>
+                            <button onClick={() => openExportDialog('excel')} disabled={isExporting} className={`${secondaryButtonClass} bg-emerald-500/80 hover:bg-emerald-600 backdrop-blur-md disabled:opacity-60`}>Excel</button>
+                            <button onClick={() => openExportDialog('pdf')} disabled={isExporting} className={`${secondaryButtonClass} bg-red-500/80 hover:bg-red-600 backdrop-blur-md disabled:opacity-60`}>PDF</button>
                             <button onClick={onAdd} className={`${primaryButtonClass} shadow-lg shadow-nature-green/30`}>
                                 <span className="mr-1">+</span> Observation
                             </button>
@@ -613,12 +669,32 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     </div>
                 </div>
             </div >
+
+            {/* Desktop Floating Action Button */}
+            {showFab && (
+                <button
+                    onClick={onAdd}
+                    className="fixed bottom-8 right-8 z-40 w-14 h-14 bg-nature-green text-white rounded-full shadow-xl flex items-center justify-center text-3xl hover:scale-110 active:scale-95 transition-all duration-200"
+                    title="Ajouter une observation"
+                >
+                    +
+                </button>
+            )}
+
             <ImportPreviewDialog
                 isOpen={!!previewImportResult}
                 fileName={previewImportFileName}
                 result={previewImportResult}
                 onCancel={handleCancelPreview}
                 onConfirm={handleConfirmPreview}
+            />
+            <ExportScopeDialog
+                isOpen={pendingExportType !== null}
+                filteredCount={observations.length}
+                totalCount={allObservations.length}
+                onCancel={() => setPendingExportType(null)}
+                onSelectFiltered={() => void runExport('filtered')}
+                onSelectAll={() => void runExport('all')}
             />
         </>
     );

@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient';
 import { Observation } from '../types';
+import { sanitizeCachedMediaValue } from './storageCacheUtils';
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEGACY_QUEUE_KEY = 'offline_sync_queue';
@@ -15,6 +16,18 @@ interface OfflineQueueItem {
     action: OfflineAction;
     payload: Observation | { id: string };
     timestamp: number;
+}
+
+export interface ObservationLoadResult {
+    observations: Observation[];
+    source: 'remote' | 'cache';
+    warning?: string;
+}
+
+export interface OfflineSyncResult {
+    processed: number;
+    failed: number;
+    failureReasons: string[];
 }
 
 const isUuid = (value: unknown): value is string => {
@@ -178,8 +191,12 @@ const getLocalCache = (): Observation[] => {
 const setLocalCache = (observations: Observation[]) => {
     try {
         const { cacheKey } = getScopedKeys();
-        // Strip heavy media fields to avoid localStorage quota overflow
-        const lightweight = observations.map(({ photo, sound, wikipediaImage, ...rest }) => rest);
+        const lightweight = observations.map(observation => ({
+            ...observation,
+            photo: sanitizeCachedMediaValue(observation.photo),
+            sound: sanitizeCachedMediaValue(observation.sound),
+            wikipediaImage: sanitizeCachedMediaValue(observation.wikipediaImage)
+        }));
         localStorage.setItem(cacheKey, JSON.stringify(lightweight));
     } catch (e) {
         console.warn('localStorage quota exceeded, cache not saved:', e);
@@ -287,11 +304,12 @@ const upsertObservationInCache = (observation: Observation) => {
     setLocalCache(next);
 };
 
-export const getObservations = async (): Promise<Observation[]> => {
+export const getObservations = async (): Promise<ObservationLoadResult> => {
     ensureStorageNamespace();
+    const cached = getLocalCache();
 
     if (!navigator.onLine) {
-        return getLocalCache();
+        return { observations: cached, source: 'cache' };
     }
 
     try {
@@ -304,10 +322,17 @@ export const getObservations = async (): Promise<Observation[]> => {
 
         const observations = data.map(mapToObservation);
         setLocalCache(observations);
-        return observations;
+        return { observations, source: 'remote' };
     } catch (error: any) {
         console.error('Error fetching observations:', error);
-        return getLocalCache();
+        if (cached.length > 0) {
+            return {
+                observations: cached,
+                source: 'cache',
+                warning: error?.message || "Chargement distant impossible, affichage du cache local."
+            };
+        }
+        throw new Error(error?.message || 'Chargement des observations impossible');
     }
 };
 
@@ -484,20 +509,31 @@ export const uploadSound = async (file: Blob): Promise<string> => {
     return publicUrl;
 };
 
-export const processOfflineQueue = async () => {
+export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
     ensureStorageNamespace();
 
-    if (!navigator.onLine) return;
+    if (!navigator.onLine) {
+        return { processed: 0, failed: 0, failureReasons: [] };
+    }
 
     const queue = getQueue();
-    if (queue.length === 0) return;
+    if (queue.length === 0) {
+        return { processed: 0, failed: 0, failureReasons: [] };
+    }
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+        return {
+            processed: queue.length,
+            failed: queue.length,
+            failureReasons: ['User not authenticated']
+        };
+    }
 
     const reducedQueue = reduceQueue(queue);
     const failedItems: OfflineQueueItem[] = [];
     const idMap = new Map<string, string>();
+    const failureReasons = new Map<string, number>();
 
     for (const rawItem of reducedQueue) {
         const item = mapQueueItemIds(rawItem, idMap);
@@ -560,6 +596,8 @@ export const processOfflineQueue = async () => {
         } catch (error) {
             console.error('Error processing queue item:', error);
             failedItems.push(mapQueueItemIds(rawItem, idMap));
+            const reason = error instanceof Error ? error.message : String(error);
+            failureReasons.set(reason, (failureReasons.get(reason) || 0) + 1);
         }
     }
 
@@ -575,4 +613,10 @@ export const processOfflineQueue = async () => {
             setLocalCache(data.map(mapToObservation));
         }
     }
+
+    return {
+        processed: reducedQueue.length,
+        failed: failedItems.length,
+        failureReasons: Array.from(failureReasons.entries()).map(([reason, count]) => `${count}x ${reason}`)
+    };
 };

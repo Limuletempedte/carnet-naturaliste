@@ -152,6 +152,15 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
             if (resizeObserver) {
                 resizeObserver.disconnect();
             }
+            if (userLocationMarkerRef.current && mapRef.current) {
+                userLocationMarkerRef.current.removeFrom(mapRef.current);
+                userLocationMarkerRef.current = null;
+            }
+            if (mapRef.current) {
+                mapRef.current.off();
+                mapRef.current.remove();
+                mapRef.current = null;
+            }
         };
     }, [isDarkMode]);
 
@@ -311,6 +320,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-2xl shadow-xl border border-gray-100 dark:border-white/10 overflow-hidden">
                         {searchResults.map((result, index) => (
                             <button
+                                type="button"
                                 key={index}
                                 onClick={() => handleSelectLocation(result)}
                                 className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0"
@@ -324,6 +334,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
 
             {/* Locate Me Button */}
             <button
+                type="button"
                 onClick={handleLocateMe}
                 className={`absolute z-[1000] p-3 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-full shadow-lg border border-gray-200 dark:border-white/10 hover:scale-110 transition-transform text-nature-accent ${isMobileView ? 'bottom-8 right-4' : 'top-4 right-4'}`}
                 title="Me localiser"
