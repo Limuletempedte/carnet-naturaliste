@@ -16,6 +16,10 @@ interface ObservationFormProps {
     onToast: (type: ToastType, message: string, durationMs?: number) => void;
 }
 
+type ObservationFormData = Omit<Observation, 'id' | 'count'> & {
+    count: number | '';
+};
+
 const FormSection: React.FC<{ title: string, children: React.ReactNode }> = ({ title, children }) => (
     <div className="bg-white/80 dark:bg-nature-dark-surface/80 p-6 rounded-lg shadow-md">
         <h3 className="text-xl font-serif font-bold text-nature-dark dark:text-white mb-4 border-b-2 border-nature-green/30 pb-2">{title}</h3>
@@ -27,7 +31,7 @@ const FormSection: React.FC<{ title: string, children: React.ReactNode }> = ({ t
 
 const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, onToast }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
-    const [formData, setFormData] = useState<Omit<Observation, 'id'>>({
+    const [formData, setFormData] = useState<ObservationFormData>({
         speciesName: '',
         latinName: '',
         taxonomicGroup: defaultTaxonomicGroup,
@@ -157,9 +161,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
     const validate = () => {
         const newErrors: Record<string, string> = {};
+        const numericCount = Number(formData.count);
         if (!formData.speciesName) newErrors.speciesName = "Le nom de l'espèce est obligatoire.";
         if (!formData.date) newErrors.date = "La date est obligatoire.";
-        if (formData.count < 1) newErrors.count = "Le nombre doit être au moins 1.";
+        if (!Number.isInteger(numericCount) || numericCount < 1) newErrors.count = "Le nombre doit être au moins 1.";
         if (formData.gps.lat !== null && (formData.gps.lat < -90 || formData.gps.lat > 90)) newErrors.lat = "La latitude doit être entre -90 et 90.";
         if (formData.gps.lon !== null && (formData.gps.lon < -180 || formData.gps.lon > 180)) newErrors.lon = "La longitude doit être entre -180 et 180.";
         setErrors(newErrors);
@@ -178,8 +183,12 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 }
             }));
         } else if (name === 'count') {
+            if (value === '') {
+                setFormData(prev => ({ ...prev, count: '' }));
+                return;
+            }
             const parsed = parseInt(value, 10);
-            setFormData(prev => ({ ...prev, count: value === '' || Number.isNaN(parsed) ? 1 : parsed }));
+            setFormData(prev => ({ ...prev, count: Number.isNaN(parsed) ? '' : parsed }));
         } else if (name === 'altitude') {
             setFormData(prev => ({ ...prev, altitude: value === '' ? null : parseFloat(value) }));
         } else {
@@ -188,6 +197,16 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             }
             setFormData(prev => ({ ...prev, [name]: value }));
         }
+    };
+
+    const handleCountBlur = () => {
+        setFormData(prev => {
+            const numericCount = Number(prev.count);
+            if (prev.count === '' || !Number.isInteger(numericCount) || numericCount < 1) {
+                return { ...prev, count: 1 };
+            }
+            return prev;
+        });
     };
 
     const applySpeciesSuggestions = () => {
@@ -334,7 +353,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </div>
                             <div className="lg:col-span-1">
                                 <label htmlFor="count" className={labelClass}>Nombre d'individus</label>
-                                <input type="number" id="count" name="count" value={formData.count} onChange={handleChange} min="1" className={inputClass} />
+                                <input type="number" id="count" name="count" value={formData.count} onChange={handleChange} onBlur={handleCountBlur} min="1" className={inputClass} />
                                 {errors.count && <p className={errorClass}>{errors.count}</p>}
                             </div>
                         </FormSection>
