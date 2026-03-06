@@ -9,7 +9,42 @@ export interface SpeciesInfo {
 }
 
 // ---------------------------------------------------------------------------
-// GBIF Taxonomy API  (free, no key required)
+// iNaturalist API  (primary source — supports French common names)
+// Docs: https://api.inaturalist.org/v1/docs/
+// ---------------------------------------------------------------------------
+
+interface INatTaxonResult {
+    name?: string;                  // Scientific name (e.g. "Cyanistes caeruleus")
+    rank?: string;                  // "species", "genus", "family", etc.
+    iconic_taxon_name?: string;     // "Aves", "Mammalia", "Insecta", etc.
+    preferred_common_name?: string; // Localized common name
+    default_photo?: {
+        medium_url?: string;
+        square_url?: string;
+    };
+    wikipedia_summary?: string;
+    wikipedia_url?: string;
+}
+
+/**
+ * Search iNaturalist for a species by common or scientific name.
+ * Returns the best match with photo, description, and scientific name.
+ */
+const fetchINatTaxon = async (query: string): Promise<INatTaxonResult | null> => {
+    try {
+        const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=1&locale=fr`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data?.results?.[0] ?? null;
+    } catch (e) {
+        console.error('iNaturalist fetch error:', e);
+        return null;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// GBIF Taxonomy API  (secondary — used for precise classification)
 // Docs: https://www.gbif.org/developer/species
 // ---------------------------------------------------------------------------
 
@@ -23,7 +58,6 @@ interface GBIFMatchResult {
     order?: string;
     family?: string;
     matchType?: string;
-    confidence?: number;
 }
 
 interface GBIFSuggestResult {
@@ -39,13 +73,13 @@ interface GBIFSuggestResult {
 const GBIF_BASE = 'https://api.gbif.org/v1/species';
 
 /**
- * Match a species name to the GBIF backbone taxonomy.
- * Returns the best match with classification details.
+ * Match a latin/scientific name to the GBIF backbone taxonomy.
+ * NOTE: GBIF does NOT support French common names — always pass a latin name.
  */
-export const matchSpecies = async (name: string): Promise<GBIFMatchResult | null> => {
-    if (!name || name.trim().length < 2) return null;
+export const matchSpecies = async (latinName: string): Promise<GBIFMatchResult | null> => {
+    if (!latinName || latinName.trim().length < 2) return null;
     try {
-        const url = `${GBIF_BASE}/match?name=${encodeURIComponent(name.trim())}&verbose=true`;
+        const url = `${GBIF_BASE}/match?name=${encodeURIComponent(latinName.trim())}&verbose=true`;
         const res = await fetch(url);
         if (!res.ok) return null;
         const data: GBIFMatchResult = await res.json();
@@ -58,7 +92,7 @@ export const matchSpecies = async (name: string): Promise<GBIFMatchResult | null
 };
 
 /**
- * Suggest species names for autocomplete.
+ * Suggest species names for autocomplete (accepts partial latin names).
  */
 export const suggestSpecies = async (query: string, limit = 5): Promise<GBIFSuggestResult[]> => {
     if (!query || query.trim().length < 2) return [];
@@ -74,49 +108,9 @@ export const suggestSpecies = async (query: string, limit = 5): Promise<GBIFSugg
 };
 
 // ---------------------------------------------------------------------------
-// iNaturalist API  (free, no key required for taxa autocomplete)
-// Docs: https://api.inaturalist.org/v1/docs/
+// Strip HTML tags
 // ---------------------------------------------------------------------------
 
-interface INatTaxon {
-    default_photo?: {
-        medium_url?: string;
-        square_url?: string;
-    };
-    wikipedia_summary?: string;
-    wikipedia_url?: string;
-    preferred_common_name?: string;
-}
-
-/**
- * Fetch a species photo + short description from iNaturalist.
- */
-const fetchINatInfo = async (
-    name: string
-): Promise<{ imageUrl: string | null; description: string; sourceUrl: string }> => {
-    const fallback = { imageUrl: null, description: '', sourceUrl: '' };
-    try {
-        const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(name.trim())}&per_page=1&locale=fr`;
-        const res = await fetch(url);
-        if (!res.ok) return fallback;
-        const data = await res.json();
-        const taxon: INatTaxon | undefined = data?.results?.[0];
-        if (!taxon) return fallback;
-
-        return {
-            imageUrl: taxon.default_photo?.medium_url ?? taxon.default_photo?.square_url ?? null,
-            description: taxon.wikipedia_summary
-                ? stripHtml(taxon.wikipedia_summary).substring(0, 300) + '...'
-                : '',
-            sourceUrl: taxon.wikipedia_url || ''
-        };
-    } catch (e) {
-        console.error('iNaturalist fetch error:', e);
-        return fallback;
-    }
-};
-
-/** Strip HTML tags from a string */
 const stripHtml = (html: string): string =>
     html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -132,7 +126,6 @@ const mapGBIFToTaxonomicGroup = (
 ): TaxonomicGroup | undefined => {
     if (!gbifClass && !kingdom) return undefined;
 
-    // Fungi → Champignons
     if (kingdom === 'Fungi') return TaxonomicGroup.MUSHROOM;
 
     switch (gbifClass) {
@@ -142,8 +135,6 @@ const mapGBIFToTaxonomicGroup = (
         case 'Mammalia':
             if (order === 'Chiroptera') return TaxonomicGroup.CHIROPTERA;
             if (['Cetacea', 'Sirenia', 'Cetartiodactyla'].includes(order || '')) {
-                // Cetartiodactyla includes whales/dolphins in modern taxonomy
-                // Check family to distinguish actual marine mammals from terrestrial artiodactyls
                 const marineFamilies = [
                     'Balaenopteridae', 'Balaenidae', 'Delphinidae', 'Phocoenidae',
                     'Physeteridae', 'Ziphiidae', 'Kogiidae', 'Eschrichtiidae',
@@ -169,8 +160,6 @@ const mapGBIFToTaxonomicGroup = (
         case 'Insecta':
             switch (order) {
                 case 'Lepidoptera':
-                    // Rhopalocera (butterflies) vs Heterocera (moths) distinction is approximate
-                    // Most common butterfly families:
                     if (family && ['Nymphalidae', 'Papilionidae', 'Pieridae', 'Lycaenidae', 'Hesperiidae', 'Riodinidae'].includes(family)) {
                         return TaxonomicGroup.BUTTERFLY;
                     }
@@ -205,7 +194,6 @@ const mapGBIFToTaxonomicGroup = (
         case 'Maxillopoda':
             return TaxonomicGroup.CRUSTACEAN;
 
-        // Plants
         case 'Magnoliopsida':
         case 'Liliopsida':
         case 'Polypodiopsida':
@@ -215,13 +203,11 @@ const mapGBIFToTaxonomicGroup = (
             if (family === 'Orchidaceae') return TaxonomicGroup.ORCHID;
             return TaxonomicGroup.BOTANY;
 
-        // Mosses / liverworts → Botany
         case 'Bryopsida':
         case 'Jungermanniopsida':
         case 'Marchantiopsida':
             return TaxonomicGroup.BOTANY;
 
-        // Fungi classes
         case 'Agaricomycetes':
         case 'Sordariomycetes':
         case 'Eurotiomycetes':
@@ -230,49 +216,70 @@ const mapGBIFToTaxonomicGroup = (
             return TaxonomicGroup.MUSHROOM;
 
         default:
-            // Fallback: try kingdom
             if (kingdom === 'Plantae') return TaxonomicGroup.BOTANY;
             if (kingdom === 'Animalia') return TaxonomicGroup.OTHER;
             return undefined;
     }
 };
 
+/**
+ * Fallback: map iNaturalist iconic_taxon_name to TaxonomicGroup.
+ * Less precise than GBIF (no order/family info) but always available.
+ */
+const mapINatIconicToTaxonomicGroup = (iconicName?: string): TaxonomicGroup | undefined => {
+    switch (iconicName) {
+        case 'Aves': return TaxonomicGroup.BIRD;
+        case 'Mammalia': return TaxonomicGroup.MAMMAL;
+        case 'Reptilia': return TaxonomicGroup.REPTILE;
+        case 'Amphibia': return TaxonomicGroup.AMPHIBIAN;
+        case 'Actinopterygii': return TaxonomicGroup.FISH;
+        case 'Insecta': return TaxonomicGroup.OTHER; // Too broad without order
+        case 'Arachnida': return TaxonomicGroup.ARACHNID;
+        case 'Mollusca': return TaxonomicGroup.OTHER;
+        case 'Plantae': return TaxonomicGroup.BOTANY;
+        case 'Fungi': return TaxonomicGroup.MUSHROOM;
+        default: return undefined;
+    }
+};
+
 // ---------------------------------------------------------------------------
-// Combined fetchSpeciesInfo  (drop-in replacement for Wikipedia version)
+// fetchSpeciesInfo — main public function (drop-in replacement)
+// Strategy: iNaturalist first (handles French names), then GBIF for taxonomy
 // ---------------------------------------------------------------------------
 
-/**
- * Fetch species information from GBIF (taxonomy) and iNaturalist (photo + description).
- * Returns `SpeciesInfo | null`, fully backward-compatible with the old Wikipedia version.
- */
 export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo | null> => {
     if (!speciesName || speciesName.trim().length < 2) return null;
 
     try {
-        // Run GBIF match + iNaturalist in parallel
-        const [gbif, inat] = await Promise.all([
-            matchSpecies(speciesName),
-            fetchINatInfo(speciesName)
-        ]);
+        // Step 1: Query iNaturalist (supports French common names)
+        const inat = await fetchINatTaxon(speciesName);
+        if (!inat) return null;
 
-        // If both return nothing, give up
-        if (!gbif && !inat.imageUrl && !inat.description) return null;
+        const latinName = inat.name || undefined;
+        const imageUrl = inat.default_photo?.medium_url ?? inat.default_photo?.square_url ?? null;
+        const description = inat.wikipedia_summary
+            ? stripHtml(inat.wikipedia_summary).substring(0, 300) + '...'
+            : '';
+        const sourceUrl = inat.wikipedia_url || '';
 
-        const taxonomicGroup = gbif
-            ? mapGBIFToTaxonomicGroup(gbif.class, gbif.order, gbif.family, gbif.kingdom)
-            : undefined;
+        // Step 2: If we got a latin name from iNaturalist, enrich with GBIF taxonomy
+        let taxonomicGroup: TaxonomicGroup | undefined;
 
-        const latinName = gbif?.canonicalName || gbif?.scientificName || undefined;
+        if (latinName) {
+            const gbif = await matchSpecies(latinName);
+            if (gbif) {
+                taxonomicGroup = mapGBIFToTaxonomicGroup(gbif.class, gbif.order, gbif.family, gbif.kingdom);
+            }
+        }
 
-        const description = inat.description
-            || (gbif ? `${gbif.kingdom || ''} › ${gbif.phylum || ''} › ${gbif.class || ''} › ${gbif.order || ''} › ${gbif.family || ''}`.replace(/\s*›\s*›/g, ' ›').replace(/^\s*›\s*/, '').replace(/\s*›\s*$/, '') : 'Aucune description disponible.');
-
-        const sourceUrl = inat.sourceUrl
-            || (gbif?.usageKey ? `https://www.gbif.org/species/${gbif.usageKey}` : '');
+        // Fallback: use iNaturalist iconic_taxon_name if GBIF didn't yield a group
+        if (!taxonomicGroup && inat.iconic_taxon_name) {
+            taxonomicGroup = mapINatIconicToTaxonomicGroup(inat.iconic_taxon_name);
+        }
 
         return {
-            description,
-            imageUrl: inat.imageUrl,
+            description: description || 'Aucune description disponible.',
+            imageUrl,
             sourceUrl,
             latinName,
             taxonomicGroup
