@@ -8,6 +8,13 @@ export interface SpeciesInfo {
     taxonomicGroup?: TaxonomicGroup;
 }
 
+export interface SpeciesSuggestion {
+    displayName: string;
+    latinName: string;
+    commonName?: string;
+    source: 'inat' | 'gbif';
+}
+
 // ---------------------------------------------------------------------------
 // iNaturalist API  (primary source — supports French common names)
 // Docs: https://api.inaturalist.org/v1/docs/
@@ -40,6 +47,19 @@ const fetchINatTaxon = async (query: string): Promise<INatTaxonResult | null> =>
     } catch (e) {
         console.error('iNaturalist fetch error:', e);
         return null;
+    }
+};
+
+const fetchINatSuggestions = async (query: string, limit: number): Promise<INatTaxonResult[]> => {
+    try {
+        const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=${limit}&locale=fr`;
+        const res = await fetch(url);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return Array.isArray(data?.results) ? data.results : [];
+    } catch (e) {
+        console.error('iNaturalist suggest error:', e);
+        return [];
     }
 };
 
@@ -105,6 +125,68 @@ export const suggestSpecies = async (query: string, limit = 5): Promise<GBIFSugg
         console.error('GBIF suggest error:', e);
         return [];
     }
+};
+
+const normalizeSuggestionKey = (value: string): string => value.trim().toLowerCase();
+
+const dedupeAndLimitSuggestions = (suggestions: SpeciesSuggestion[], limit: number): SpeciesSuggestion[] => {
+    const seen = new Set<string>();
+    const deduped: SpeciesSuggestion[] = [];
+
+    for (const suggestion of suggestions) {
+        const key = normalizeSuggestionKey(suggestion.latinName || suggestion.displayName);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(suggestion);
+        if (deduped.length >= limit) break;
+    }
+
+    return deduped;
+};
+
+/**
+ * Unified autocomplete suggestions for the species field.
+ * Strategy: iNaturalist first (French common names), then GBIF fallback.
+ */
+export const suggestSpeciesAutocomplete = async (query: string, limit = 5): Promise<SpeciesSuggestion[]> => {
+    if (!query || query.trim().length < 2) return [];
+    const safeLimit = Math.max(1, Math.min(limit, 10));
+
+    const inatSuggestions = await fetchINatSuggestions(query, safeLimit);
+    if (inatSuggestions.length > 0) {
+        const normalized = inatSuggestions
+            .map((item): SpeciesSuggestion | null => {
+                const latinName = (item.name || '').trim();
+                const commonName = item.preferred_common_name?.trim();
+                const displayName = commonName || latinName;
+                if (!displayName || !latinName) return null;
+                return {
+                    displayName,
+                    latinName,
+                    commonName,
+                    source: 'inat'
+                };
+            })
+            .filter((item): item is SpeciesSuggestion => item !== null);
+
+        return dedupeAndLimitSuggestions(normalized, safeLimit);
+    }
+
+    const gbifSuggestions = await suggestSpecies(query, safeLimit);
+    const normalized = gbifSuggestions
+        .map((item): SpeciesSuggestion | null => {
+            const latinName = (item.scientificName || item.canonicalName || '').trim();
+            const displayName = (item.canonicalName || item.scientificName || '').trim();
+            if (!displayName || !latinName) return null;
+            return {
+                displayName,
+                latinName,
+                source: 'gbif'
+            };
+        })
+        .filter((item): item is SpeciesSuggestion => item !== null);
+
+    return dedupeAndLimitSuggestions(normalized, safeLimit);
 };
 
 // ---------------------------------------------------------------------------

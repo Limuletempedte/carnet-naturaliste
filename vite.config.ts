@@ -1,10 +1,78 @@
 
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig(() => {
+const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const buildSupabaseStoragePattern = (supabaseUrl?: string): RegExp | null => {
+  if (!supabaseUrl) return null;
+
+  try {
+    const hostname = new URL(supabaseUrl).hostname;
+    if (!hostname) return null;
+
+    return new RegExp(`^https://${escapeRegex(hostname)}/storage/v1/object/public/.*`, 'i');
+  } catch {
+    return null;
+  }
+};
+
+type RuntimeCachingRule = {
+  urlPattern: RegExp | (({ url }: { url: URL }) => boolean);
+  handler: 'StaleWhileRevalidate';
+  options: {
+    cacheName: string;
+    expiration: {
+      maxEntries: number;
+      maxAgeSeconds: number;
+    };
+    cacheableResponse: {
+      statuses: number[];
+    };
+  };
+};
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const supabaseStoragePattern = buildSupabaseStoragePattern(env.VITE_SUPABASE_URL);
+  const runtimeCaching: RuntimeCachingRule[] = [
+    {
+      urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/Logo/'),
+      handler: 'StaleWhileRevalidate' as const,
+      options: {
+        cacheName: 'logo-assets-cache',
+        expiration: {
+          maxEntries: 80,
+          maxAgeSeconds: 60 * 60 * 24 * 30
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
+        }
+      }
+    }
+  ];
+
+  if (supabaseStoragePattern) {
+    runtimeCaching.push({
+      urlPattern: supabaseStoragePattern,
+      handler: 'StaleWhileRevalidate' as const,
+      options: {
+        cacheName: 'supabase-storage-cache',
+        expiration: {
+          maxEntries: 50,
+          maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
+        }
+      }
+    });
+  } else {
+    console.warn('[vite-config] Supabase storage cache rule disabled: invalid or missing VITE_SUPABASE_URL.');
+  }
+
   return {
     plugins: [
       react(),
@@ -36,36 +104,7 @@ export default defineConfig(() => {
           maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MiB to accommodate the large main bundle
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           globIgnores: ['**/Logo/*'],
-          runtimeCaching: [
-            {
-              urlPattern: ({ url }) => url.pathname.startsWith('/Logo/'),
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'logo-assets-cache',
-                expiration: {
-                  maxEntries: 80,
-                  maxAgeSeconds: 60 * 60 * 24 * 30
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                }
-              }
-            },
-            {
-              urlPattern: /^https:\/\/xowiezzqehadcfnbjio\.supabase\.co\/storage\/v1\/object\/public\/.*/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'supabase-storage-cache',
-                expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-                },
-                cacheableResponse: {
-                  statuses: [0, 200]
-                }
-              }
-            }
-          ]
+          runtimeCaching
         }
       })
     ],

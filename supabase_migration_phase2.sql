@@ -50,6 +50,10 @@ create index if not exists idx_observations_user_taxonomic_group
 create index if not exists idx_observations_user_status
   on observations (user_id, status);
 
+-- Already applied in DB manually; kept here for migration traceability.
+create index if not exists idx_observations_user_species_name
+  on observations (user_id, species_name);
+
 create index if not exists idx_observations_user_gps_present
   on observations (user_id, gps_lat, gps_lon)
   where gps_lat is not null and gps_lon is not null;

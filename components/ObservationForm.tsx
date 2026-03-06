@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement } from '../types';
-import { fetchSpeciesInfo, SpeciesInfo } from '../services/speciesService';
+import { fetchSpeciesInfo, SpeciesInfo, SpeciesSuggestion, suggestSpeciesAutocomplete } from '../services/speciesService';
 import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
 import { buildObservationFromForm, ObservationFormData, validateObservationForm } from '../services/observationFormService';
@@ -57,12 +57,18 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showMap, setShowMap] = useState(false);
     const [speciesInfo, setSpeciesInfo] = useState<SpeciesInfo | null>(null);
+    const [speciesSuggestions, setSpeciesSuggestions] = useState<SpeciesSuggestion[]>([]);
+    const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
     const [isFetchingInfo, setIsFetchingInfo] = useState(false);
     const [photoFile, setPhotoFile] = useState<Blob | null>(null);
 
     const [isUploading, setIsUploading] = useState(false);
     const latestSpeciesRequestRef = useRef(0);
     const bottomButtonsRef = useRef<HTMLDivElement>(null);
+    const speciesInputWrapperRef = useRef<HTMLDivElement>(null);
+    const skipNextSuggestionsFetchRef = useRef(false);
     const [showStickyBar, setShowStickyBar] = useState(false);
     const [fieldTouched, setFieldTouched] = useState<{ latinName: boolean; taxonomicGroup: boolean }>({
         latinName: false,
@@ -73,6 +79,9 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         if (initialData) {
             setFormData({ ...initialData });
             setPhotoFile(null);
+            setSpeciesSuggestions([]);
+            setShowSuggestions(false);
+            setActiveSuggestionIndex(-1);
             setFieldTouched({
                 latinName: !!initialData.latinName,
                 taxonomicGroup: initialData.taxonomicGroup !== defaultTaxonomicGroup
@@ -92,6 +101,61 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         );
         observer.observe(el);
         return () => observer.disconnect();
+    }, []);
+
+    // Debounce species autocomplete suggestions (French-first via iNaturalist).
+    useEffect(() => {
+        let cancelled = false;
+        const query = formData.speciesName.trim();
+
+        if (skipNextSuggestionsFetchRef.current) {
+            skipNextSuggestionsFetchRef.current = false;
+            return;
+        }
+
+        if (query.length < 2) {
+            setSpeciesSuggestions([]);
+            setShowSuggestions(false);
+            setActiveSuggestionIndex(-1);
+            setIsFetchingSuggestions(false);
+            return;
+        }
+
+        setIsFetchingSuggestions(true);
+        const timeoutId = window.setTimeout(async () => {
+            const suggestions = await suggestSpeciesAutocomplete(query, 5);
+            if (cancelled) return;
+
+            setSpeciesSuggestions(suggestions);
+            setShowSuggestions(suggestions.length > 0);
+            setActiveSuggestionIndex(suggestions.length > 0 ? 0 : -1);
+            setIsFetchingSuggestions(false);
+        }, 300);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+        };
+    }, [formData.speciesName]);
+
+    // Close autocomplete when clicking/tapping outside the species input area.
+    useEffect(() => {
+        const handlePointerDownOutside = (event: MouseEvent | TouchEvent) => {
+            const wrapper = speciesInputWrapperRef.current;
+            const target = event.target as Node | null;
+            if (!wrapper || !target) return;
+            if (!wrapper.contains(target)) {
+                setShowSuggestions(false);
+                setActiveSuggestionIndex(-1);
+            }
+        };
+
+        document.addEventListener('mousedown', handlePointerDownOutside);
+        document.addEventListener('touchstart', handlePointerDownOutside);
+        return () => {
+            document.removeEventListener('mousedown', handlePointerDownOutside);
+            document.removeEventListener('touchstart', handlePointerDownOutside);
+        };
     }, []);
 
     // Debounce fetching species info
@@ -201,6 +265,56 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         });
     };
 
+    const applySpeciesAutocompleteSuggestion = (suggestion: SpeciesSuggestion) => {
+        skipNextSuggestionsFetchRef.current = true;
+        setShowSuggestions(false);
+        setSpeciesSuggestions([]);
+        setActiveSuggestionIndex(-1);
+
+        setFormData(prev => ({
+            ...prev,
+            speciesName: suggestion.displayName,
+            latinName: !fieldTouched.latinName ? (suggestion.latinName || prev.latinName || '') : prev.latinName
+        }));
+    };
+
+    const handleSpeciesNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (speciesSuggestions.length === 0) return;
+
+        if (!showSuggestions && e.key === 'ArrowDown') {
+            e.preventDefault();
+            setShowSuggestions(true);
+            setActiveSuggestionIndex(0);
+            return;
+        }
+
+        if (!showSuggestions) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveSuggestionIndex(prev => (prev + 1) % speciesSuggestions.length);
+            return;
+        }
+
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveSuggestionIndex(prev => (prev <= 0 ? speciesSuggestions.length - 1 : prev - 1));
+            return;
+        }
+
+        if (e.key === 'Enter' && activeSuggestionIndex >= 0) {
+            e.preventDefault();
+            applySpeciesAutocompleteSuggestion(speciesSuggestions[activeSuggestionIndex]);
+            return;
+        }
+
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setShowSuggestions(false);
+            setActiveSuggestionIndex(-1);
+        }
+    };
+
     const applySpeciesSuggestions = () => {
         if (!speciesInfo) return;
 
@@ -295,8 +409,55 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                         <FormSection title="Identification">
                             <div className="lg:col-span-1">
                                 <label htmlFor="speciesName" className={labelClass}>Nom de l'espèce *</label>
-                                <input type="text" id="speciesName" name="speciesName" value={formData.speciesName} onChange={handleChange} className={inputClass} required placeholder="Ex: Mésange charbonnière" />
+                                <div className="relative" ref={speciesInputWrapperRef}>
+                                    <input
+                                        type="text"
+                                        id="speciesName"
+                                        name="speciesName"
+                                        value={formData.speciesName}
+                                        onChange={handleChange}
+                                        onKeyDown={handleSpeciesNameKeyDown}
+                                        onFocus={() => {
+                                            if (speciesSuggestions.length > 0) {
+                                                setShowSuggestions(true);
+                                            }
+                                        }}
+                                        onBlur={() => {
+                                            window.setTimeout(() => {
+                                                setShowSuggestions(false);
+                                            }, 120);
+                                        }}
+                                        className={inputClass}
+                                        required
+                                        autoComplete="off"
+                                        placeholder="Ex: Mésange charbonnière"
+                                    />
+                                    {showSuggestions && speciesSuggestions.length > 0 && (
+                                        <ul className="absolute z-30 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg max-h-64 overflow-y-auto dark:border-white/10 dark:bg-nature-dark-surface" role="listbox" aria-label="Suggestions espèces">
+                                            {speciesSuggestions.map((suggestion, index) => (
+                                                <li key={`${suggestion.source}-${suggestion.latinName}-${index}`}>
+                                                    <button
+                                                        type="button"
+                                                        className={`w-full text-left px-3 py-2 transition-colors ${index === activeSuggestionIndex ? 'bg-nature-green/15 dark:bg-nature-green/20' : 'hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                                                        onMouseDown={(event) => {
+                                                            event.preventDefault();
+                                                            applySpeciesAutocompleteSuggestion(suggestion);
+                                                        }}
+                                                        onTouchStart={(event) => {
+                                                            event.preventDefault();
+                                                            applySpeciesAutocompleteSuggestion(suggestion);
+                                                        }}
+                                                    >
+                                                        <p className="text-sm font-semibold text-nature-dark dark:text-white">{suggestion.displayName}</p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-300">{suggestion.latinName}</p>
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
                                 {errors.speciesName && <p className={errorClass}>{errors.speciesName}</p>}
+                                {isFetchingSuggestions && <p className="text-xs text-gray-500 mt-1 ml-1">Suggestions...</p>}
                                 {isFetchingInfo && <p className="text-xs text-gray-500 mt-1 ml-1">Recherche d'infos...</p>}
                             </div>
                             <div className="lg:col-span-1">
