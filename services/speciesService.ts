@@ -8,83 +8,277 @@ export interface SpeciesInfo {
     taxonomicGroup?: TaxonomicGroup;
 }
 
-export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo | null> => {
-    if (!speciesName) return null;
+// ---------------------------------------------------------------------------
+// GBIF Taxonomy API  (free, no key required)
+// Docs: https://www.gbif.org/developer/species
+// ---------------------------------------------------------------------------
 
+interface GBIFMatchResult {
+    usageKey?: number;
+    scientificName?: string;
+    canonicalName?: string;
+    kingdom?: string;
+    phylum?: string;
+    class?: string;
+    order?: string;
+    family?: string;
+    matchType?: string;
+    confidence?: number;
+}
+
+interface GBIFSuggestResult {
+    key?: number;
+    canonicalName?: string;
+    scientificName?: string;
+    class?: string;
+    order?: string;
+    family?: string;
+    kingdom?: string;
+}
+
+const GBIF_BASE = 'https://api.gbif.org/v1/species';
+
+/**
+ * Match a species name to the GBIF backbone taxonomy.
+ * Returns the best match with classification details.
+ */
+export const matchSpecies = async (name: string): Promise<GBIFMatchResult | null> => {
+    if (!name || name.trim().length < 2) return null;
     try {
-        // First, search for the page
-        const searchUrl = `https://fr.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(speciesName)}&format=json&origin=*`;
-        const searchResponse = await fetch(searchUrl);
-        const searchData = await searchResponse.json();
+        const url = `${GBIF_BASE}/match?name=${encodeURIComponent(name.trim())}&verbose=true`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const data: GBIFMatchResult = await res.json();
+        if (data.matchType === 'NONE') return null;
+        return data;
+    } catch (e) {
+        console.error('GBIF match error:', e);
+        return null;
+    }
+};
 
-        if (!searchData.query || !searchData.query.search || searchData.query.search.length === 0) {
-            return null;
-        }
+/**
+ * Suggest species names for autocomplete.
+ */
+export const suggestSpecies = async (query: string, limit = 5): Promise<GBIFSuggestResult[]> => {
+    if (!query || query.trim().length < 2) return [];
+    try {
+        const url = `${GBIF_BASE}/suggest?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
+        const res = await fetch(url);
+        if (!res.ok) return [];
+        return await res.json();
+    } catch (e) {
+        console.error('GBIF suggest error:', e);
+        return [];
+    }
+};
 
-        const pageId = searchData.query.search[0].pageid;
-        const pageTitle = searchData.query.search[0].title;
+// ---------------------------------------------------------------------------
+// iNaturalist API  (free, no key required for taxa autocomplete)
+// Docs: https://api.inaturalist.org/v1/docs/
+// ---------------------------------------------------------------------------
 
-        // Then, get page details (extract and image)
-        const detailsUrl = `https://fr.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages&exintro&explaintext&pithumbsize=500&pageids=${pageId}&format=json&origin=*`;
-        const detailsResponse = await fetch(detailsUrl);
-        const detailsData = await detailsResponse.json();
+interface INatTaxon {
+    default_photo?: {
+        medium_url?: string;
+        square_url?: string;
+    };
+    wikipedia_summary?: string;
+    wikipedia_url?: string;
+    preferred_common_name?: string;
+}
 
-        const page = detailsData.query.pages[pageId];
-
-        // Try to extract latin name from the extract
-        // First look for a binomial name pattern: Capitalized word + lowercase word (e.g. "Parus major")
-        const extract = page.extract || '';
-        const binomialMatch = extract.match(/\b([A-Z][a-z]{2,}\s[a-z]{2,})\b/);
-        // Fallback: try first parenthesized text that looks like a binomial
-        const parenBinomial = extract.match(/\(([A-Z][a-z]{2,}\s[a-z]{2,}(?:\s[a-z]+)?)\)/);
-        const latinName = parenBinomial ? parenBinomial[1] : (binomialMatch ? binomialMatch[1] : undefined);
-
-        // Infer taxonomic group
-        let taxonomicGroup: TaxonomicGroup | undefined;
-        const lowerExtract = extract.toLowerCase();
-
-        if (lowerExtract.includes('oiseau') || lowerExtract.includes('passereau') || lowerExtract.includes('rapace')) {
-            taxonomicGroup = TaxonomicGroup.BIRD;
-        } else if (lowerExtract.includes('mammifère marin') || lowerExtract.includes('cétacé') || lowerExtract.includes('dauphin') || lowerExtract.includes('baleine')) {
-            taxonomicGroup = TaxonomicGroup.MARINE_MAMMAL;
-        } else if (lowerExtract.includes('chauve-souris') || lowerExtract.includes('chiroptère')) {
-            taxonomicGroup = TaxonomicGroup.CHIROPTERA;
-        } else if (lowerExtract.includes('mammifère')) {
-            taxonomicGroup = TaxonomicGroup.MAMMAL;
-        } else if (lowerExtract.includes('amphibien') || lowerExtract.includes('grenouille') || lowerExtract.includes('crapaud') || lowerExtract.includes('triton')) {
-            taxonomicGroup = TaxonomicGroup.AMPHIBIAN;
-        } else if (lowerExtract.includes('reptile') || lowerExtract.includes('serpent') || lowerExtract.includes('lézard') || lowerExtract.includes('tortue')) {
-            taxonomicGroup = TaxonomicGroup.REPTILE;
-        } else if (lowerExtract.includes('poisson')) {
-            taxonomicGroup = TaxonomicGroup.FISH;
-        } else if (lowerExtract.includes('papillon') && !lowerExtract.includes('nuit')) {
-            taxonomicGroup = TaxonomicGroup.BUTTERFLY;
-        } else if (lowerExtract.includes('papillon') && lowerExtract.includes('nuit')) {
-            taxonomicGroup = TaxonomicGroup.MOTH;
-        } else if (lowerExtract.includes('libellule') || lowerExtract.includes('demoiselle') || lowerExtract.includes('odonate')) {
-            taxonomicGroup = TaxonomicGroup.ODONATE;
-        } else if (lowerExtract.includes('sauterelle') || lowerExtract.includes('criquet') || lowerExtract.includes('grillon') || lowerExtract.includes('orthoptère')) {
-            taxonomicGroup = TaxonomicGroup.ORTHOPTERA;
-        } else if (lowerExtract.includes('coléoptère') || lowerExtract.includes('scarabée') || lowerExtract.includes('coccinelle')) {
-            taxonomicGroup = TaxonomicGroup.COLEOPTERA;
-        } else if (lowerExtract.includes('abeille') || lowerExtract.includes('guêpe') || lowerExtract.includes('fourmi') || lowerExtract.includes('hyménoptère')) {
-            taxonomicGroup = TaxonomicGroup.HYMENOPTERA;
-        } else if (lowerExtract.includes('araignée') || lowerExtract.includes('arachnide')) {
-            taxonomicGroup = TaxonomicGroup.ARACHNID;
-        } else if (lowerExtract.includes('plante') || lowerExtract.includes('fleur') || lowerExtract.includes('arbre') || lowerExtract.includes('arbuste')) {
-            taxonomicGroup = TaxonomicGroup.BOTANY;
-        }
+/**
+ * Fetch a species photo + short description from iNaturalist.
+ */
+const fetchINatInfo = async (
+    name: string
+): Promise<{ imageUrl: string | null; description: string; sourceUrl: string }> => {
+    const fallback = { imageUrl: null, description: '', sourceUrl: '' };
+    try {
+        const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(name.trim())}&per_page=1&locale=fr`;
+        const res = await fetch(url);
+        if (!res.ok) return fallback;
+        const data = await res.json();
+        const taxon: INatTaxon | undefined = data?.results?.[0];
+        if (!taxon) return fallback;
 
         return {
-            description: extract ? extract.substring(0, 300) + '...' : 'Aucune description disponible.',
-            imageUrl: page.thumbnail ? page.thumbnail.source : null,
-            sourceUrl: `https://fr.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`,
-            latinName: latinName,
-            taxonomicGroup: taxonomicGroup
+            imageUrl: taxon.default_photo?.medium_url ?? taxon.default_photo?.square_url ?? null,
+            description: taxon.wikipedia_summary
+                ? stripHtml(taxon.wikipedia_summary).substring(0, 300) + '...'
+                : '',
+            sourceUrl: taxon.wikipedia_url || ''
         };
+    } catch (e) {
+        console.error('iNaturalist fetch error:', e);
+        return fallback;
+    }
+};
 
+/** Strip HTML tags from a string */
+const stripHtml = (html: string): string =>
+    html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+
+// ---------------------------------------------------------------------------
+// GBIF class/order → TaxonomicGroup mapping
+// ---------------------------------------------------------------------------
+
+const mapGBIFToTaxonomicGroup = (
+    gbifClass?: string,
+    order?: string,
+    family?: string,
+    kingdom?: string
+): TaxonomicGroup | undefined => {
+    if (!gbifClass && !kingdom) return undefined;
+
+    // Fungi → Champignons
+    if (kingdom === 'Fungi') return TaxonomicGroup.MUSHROOM;
+
+    switch (gbifClass) {
+        case 'Aves':
+            return TaxonomicGroup.BIRD;
+
+        case 'Mammalia':
+            if (order === 'Chiroptera') return TaxonomicGroup.CHIROPTERA;
+            if (['Cetacea', 'Sirenia', 'Cetartiodactyla'].includes(order || '')) {
+                // Cetartiodactyla includes whales/dolphins in modern taxonomy
+                // Check family to distinguish actual marine mammals from terrestrial artiodactyls
+                const marineFamilies = [
+                    'Balaenopteridae', 'Balaenidae', 'Delphinidae', 'Phocoenidae',
+                    'Physeteridae', 'Ziphiidae', 'Kogiidae', 'Eschrichtiidae',
+                    'Trichechidae', 'Dugongidae'
+                ];
+                if (order === 'Sirenia' || (family && marineFamilies.includes(family))) {
+                    return TaxonomicGroup.MARINE_MAMMAL;
+                }
+            }
+            return TaxonomicGroup.MAMMAL;
+
+        case 'Reptilia':
+            return TaxonomicGroup.REPTILE;
+
+        case 'Amphibia':
+            return TaxonomicGroup.AMPHIBIAN;
+
+        case 'Actinopterygii':
+        case 'Chondrichthyes':
+        case 'Cephalaspidomorphi':
+            return TaxonomicGroup.FISH;
+
+        case 'Insecta':
+            switch (order) {
+                case 'Lepidoptera':
+                    // Rhopalocera (butterflies) vs Heterocera (moths) distinction is approximate
+                    // Most common butterfly families:
+                    if (family && ['Nymphalidae', 'Papilionidae', 'Pieridae', 'Lycaenidae', 'Hesperiidae', 'Riodinidae'].includes(family)) {
+                        return TaxonomicGroup.BUTTERFLY;
+                    }
+                    return TaxonomicGroup.MOTH;
+                case 'Odonata':
+                    return TaxonomicGroup.ODONATE;
+                case 'Orthoptera':
+                    return TaxonomicGroup.ORTHOPTERA;
+                case 'Coleoptera':
+                    return TaxonomicGroup.COLEOPTERA;
+                case 'Hymenoptera':
+                    return TaxonomicGroup.HYMENOPTERA;
+                case 'Mantodea':
+                    return TaxonomicGroup.MANTIS;
+                case 'Hemiptera':
+                    return TaxonomicGroup.HETEROPTERA;
+                case 'Diptera':
+                    return TaxonomicGroup.DIPTERA;
+                case 'Neuroptera':
+                    return TaxonomicGroup.NEUROPTERA;
+                case 'Phasmatodea':
+                    return TaxonomicGroup.PHASMID;
+                default:
+                    return TaxonomicGroup.OTHER;
+            }
+
+        case 'Arachnida':
+            return TaxonomicGroup.ARACHNID;
+
+        case 'Malacostraca':
+        case 'Branchiopoda':
+        case 'Maxillopoda':
+            return TaxonomicGroup.CRUSTACEAN;
+
+        // Plants
+        case 'Magnoliopsida':
+        case 'Liliopsida':
+        case 'Polypodiopsida':
+        case 'Pinopsida':
+        case 'Gnetopsida':
+        case 'Cycadopsida':
+            if (family === 'Orchidaceae') return TaxonomicGroup.ORCHID;
+            return TaxonomicGroup.BOTANY;
+
+        // Mosses / liverworts → Botany
+        case 'Bryopsida':
+        case 'Jungermanniopsida':
+        case 'Marchantiopsida':
+            return TaxonomicGroup.BOTANY;
+
+        // Fungi classes
+        case 'Agaricomycetes':
+        case 'Sordariomycetes':
+        case 'Eurotiomycetes':
+        case 'Lecanoromycetes':
+        case 'Pezizomycetes':
+            return TaxonomicGroup.MUSHROOM;
+
+        default:
+            // Fallback: try kingdom
+            if (kingdom === 'Plantae') return TaxonomicGroup.BOTANY;
+            if (kingdom === 'Animalia') return TaxonomicGroup.OTHER;
+            return undefined;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Combined fetchSpeciesInfo  (drop-in replacement for Wikipedia version)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch species information from GBIF (taxonomy) and iNaturalist (photo + description).
+ * Returns `SpeciesInfo | null`, fully backward-compatible with the old Wikipedia version.
+ */
+export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo | null> => {
+    if (!speciesName || speciesName.trim().length < 2) return null;
+
+    try {
+        // Run GBIF match + iNaturalist in parallel
+        const [gbif, inat] = await Promise.all([
+            matchSpecies(speciesName),
+            fetchINatInfo(speciesName)
+        ]);
+
+        // If both return nothing, give up
+        if (!gbif && !inat.imageUrl && !inat.description) return null;
+
+        const taxonomicGroup = gbif
+            ? mapGBIFToTaxonomicGroup(gbif.class, gbif.order, gbif.family, gbif.kingdom)
+            : undefined;
+
+        const latinName = gbif?.canonicalName || gbif?.scientificName || undefined;
+
+        const description = inat.description
+            || (gbif ? `${gbif.kingdom || ''} › ${gbif.phylum || ''} › ${gbif.class || ''} › ${gbif.order || ''} › ${gbif.family || ''}`.replace(/\s*›\s*›/g, ' ›').replace(/^\s*›\s*/, '').replace(/\s*›\s*$/, '') : 'Aucune description disponible.');
+
+        const sourceUrl = inat.sourceUrl
+            || (gbif?.usageKey ? `https://www.gbif.org/species/${gbif.usageKey}` : '');
+
+        return {
+            description,
+            imageUrl: inat.imageUrl,
+            sourceUrl,
+            latinName,
+            taxonomicGroup
+        };
     } catch (error) {
-        console.error("Erreur lors de la récupération des infos Wikipédia:", error);
+        console.error('Erreur lors de la récupération des infos espèce:', error);
         return null;
     }
 };

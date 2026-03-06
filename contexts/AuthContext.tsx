@@ -8,6 +8,8 @@ import {
 } from '../services/storageService';
 
 const CACHED_SESSION_KEY = 'cached_auth_session';
+const CACHED_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CACHED_SESSION_SCHEMA_VERSION = 2;
 
 interface AuthContextType {
     session: Session | null;
@@ -30,8 +32,8 @@ const cacheSession = (session: Session | null) => {
     try {
         if (session) {
             localStorage.setItem(CACHED_SESSION_KEY, JSON.stringify({
+                schema_version: CACHED_SESSION_SCHEMA_VERSION,
                 user: session.user,
-                access_token: session.access_token,
                 cached_at: Date.now()
             }));
         } else {
@@ -46,15 +48,33 @@ const cacheSession = (session: Session | null) => {
 const getCachedSession = (): { user: User } | null => {
     try {
         const cached = localStorage.getItem(CACHED_SESSION_KEY);
-        if (cached) {
-            const parsed = JSON.parse(cached);
-            // Accept cache up to 30 days old
-            if (Date.now() - parsed.cached_at < 30 * 24 * 60 * 60 * 1000) {
-                return { user: parsed.user };
-            }
+        if (!cached) {
+            return null;
+        }
+
+        const parsed = JSON.parse(cached) as {
+            schema_version?: number;
+            cached_at?: unknown;
+            user?: User;
+        };
+
+        if (parsed.schema_version !== CACHED_SESSION_SCHEMA_VERSION) {
+            localStorage.removeItem(CACHED_SESSION_KEY);
+            return null;
+        }
+
+        const cachedAt = typeof parsed.cached_at === 'number' ? parsed.cached_at : NaN;
+        if (!Number.isFinite(cachedAt) || Date.now() - cachedAt >= CACHED_SESSION_TTL_MS) {
+            localStorage.removeItem(CACHED_SESSION_KEY);
+            return null;
+        }
+
+        if (parsed.user?.id) {
+            return { user: parsed.user };
         }
     } catch (e) {
         console.warn('Failed to restore cached session:', e);
+        localStorage.removeItem(CACHED_SESSION_KEY);
     }
     return null;
 };

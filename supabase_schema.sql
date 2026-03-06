@@ -33,6 +33,53 @@ create table observations (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- Data integrity constraints
+alter table observations
+  add constraint observations_count_positive_check
+  check (count is not null and count >= 1);
+
+alter table observations
+  add constraint observations_species_name_not_blank_check
+  check (char_length(btrim(species_name)) > 0);
+
+alter table observations
+  add constraint observations_gps_lat_range_check
+  check (gps_lat is null or (gps_lat >= -90 and gps_lat <= 90));
+
+alter table observations
+  add constraint observations_gps_lon_range_check
+  check (gps_lon is null or (gps_lon >= -180 and gps_lon <= 180));
+
+-- Read/query indexes used by current app filters and sort
+create index if not exists idx_observations_user_date_created
+  on observations (user_id, date desc, created_at desc);
+
+create index if not exists idx_observations_user_taxonomic_group
+  on observations (user_id, taxonomic_group);
+
+create index if not exists idx_observations_user_status
+  on observations (user_id, status);
+
+create index if not exists idx_observations_user_gps_present
+  on observations (user_id, gps_lat, gps_lon)
+  where gps_lat is not null and gps_lon is not null;
+
+-- Keep updated_at synchronized
+create or replace function public.set_observations_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = timezone('utc'::text, now());
+  return new;
+end;
+$$;
+
+create trigger trg_set_observations_updated_at
+before update on observations
+for each row
+execute function public.set_observations_updated_at();
+
 -- Enable Row Level Security (RLS)
 alter table observations enable row level security;
 

@@ -1,31 +1,29 @@
-import 'leaflet/dist/leaflet.css';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Observation, View, TaxonomicGroup, Status } from './types';
 import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue } from './services/storageService';
 import ObservationList from './components/ObservationList';
-import ObservationForm from './components/ObservationForm';
-import ObservationMap from './components/ObservationMap';
-import ObservationStats from './components/ObservationStats';
-import ObservationGallery from './components/ObservationGallery';
-import ObservationCalendar from './components/ObservationCalendar';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
 import { fetchSpeciesInfo } from './services/speciesService';
 import { ImportResult } from './services/excelImportService';
 import FilterBar from './components/FilterBar';
 import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
-import { compareIsoDate, getYearFromIsoDate } from './utils/dateUtils';
+import { compareIsoDate } from './utils/dateUtils';
 import { buildImportPersistencePlan, isUuid } from './services/importPolicy';
-import { normalizeSearchText } from './utils/textUtils';
+import { useObservationFilters } from './hooks/useObservationFilters';
 
-type SortDirection = 'ascending' | 'descending';
-type SortKey = keyof Observation | '';
 type AppConnectionStatus = 'online' | 'offline' | 'degraded';
 
 import Login from './components/Auth/Login';
 import UserProfile from './components/Auth/UserProfile';
 import { useAuth } from './contexts/AuthContext';
 import { supabaseConfigError } from './supabaseClient';
+
+const ObservationForm = lazy(() => import('./components/ObservationForm'));
+const ObservationMap = lazy(() => import('./components/ObservationMap'));
+const ObservationStats = lazy(() => import('./components/ObservationStats'));
+const ObservationGallery = lazy(() => import('./components/ObservationGallery'));
+const ObservationCalendar = lazy(() => import('./components/ObservationCalendar'));
 
 const App: React.FC = () => {
     const ENRICHMENT_BATCH_LIMIT = 20;
@@ -40,7 +38,6 @@ const App: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
     const [startDateFilter, setStartDateFilter] = useState<string>('');
     const [endDateFilter, setEndDateFilter] = useState<string>('');
-    const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'descending' });
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [confirmation, setConfirmation] = useState<{ title: string; message: string; onConfirm: () => void; } | null>(null);
@@ -409,86 +406,17 @@ const App: React.FC = () => {
         }
     };
 
-    const requestSort = (key: SortKey) => {
-        let direction: SortDirection = 'ascending';
-        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
+    const { sortConfig, requestSort, sortedAndFilteredObservations, availableYears } = useObservationFilters(
+        observations,
+        {
+            searchTerm,
+            yearFilter,
+            taxonomicGroupFilter,
+            statusFilter,
+            startDateFilter,
+            endDateFilter
         }
-        setSortConfig({ key, direction });
-    };
-
-    const sortedAndFilteredObservations = useMemo(() => {
-        let sortableItems = [...observations];
-
-        // Filtering
-        sortableItems = sortableItems
-            .filter(obs => {
-                if (yearFilter === 'all') return true;
-                return getYearFromIsoDate(obs.date) === yearFilter;
-            })
-            .filter(obs => {
-                if (taxonomicGroupFilter === 'all') return true;
-                return obs.taxonomicGroup === taxonomicGroupFilter;
-            })
-            .filter(obs => {
-                if (statusFilter === 'all') return true;
-                return obs.status === statusFilter;
-            })
-            .filter(obs => {
-                if (!startDateFilter) return true;
-                return compareIsoDate(obs.date, startDateFilter) >= 0;
-            })
-            .filter(obs => {
-                if (!endDateFilter) return true;
-                return compareIsoDate(obs.date, endDateFilter) <= 0;
-            })
-            .filter(obs => {
-                if (!searchTerm) return true;
-                const normalizedSearchTerm = normalizeSearchText(searchTerm);
-                return (
-                    normalizeSearchText(obs.speciesName).includes(normalizedSearchTerm) ||
-                    (obs.latinName && normalizeSearchText(obs.latinName).includes(normalizedSearchTerm)) ||
-                    (obs.location && normalizeSearchText(obs.location).includes(normalizedSearchTerm)) ||
-                    (obs.municipality && normalizeSearchText(obs.municipality).includes(normalizedSearchTerm))
-                );
-            });
-
-        // Sorting
-        if (sortConfig.key) {
-            sortableItems.sort((a, b) => {
-                const key = sortConfig.key as keyof Observation;
-                const aValue = a[key];
-                const bValue = b[key];
-
-                if (aValue === null || aValue === undefined) return 1;
-                if (bValue === null || bValue === undefined) return -1;
-
-                if (key === 'date' && typeof aValue === 'string' && typeof bValue === 'string') {
-                    const dateCmp = compareIsoDate(aValue, bValue);
-                    return sortConfig.direction === 'ascending' ? dateCmp : -dateCmp;
-                }
-
-                if (aValue < bValue) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (aValue > bValue) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
-                return 0;
-            });
-        }
-
-        return sortableItems;
-    }, [observations, searchTerm, yearFilter, taxonomicGroupFilter, statusFilter, startDateFilter, endDateFilter, sortConfig]);
-
-    const availableYears = useMemo(() => {
-        const years = new Set(
-            observations
-                .map(obs => getYearFromIsoDate(obs.date))
-                .filter((year): year is string => !!year)
-        );
-        return Array.from(years).sort((a, b) => parseInt(b) - parseInt(a));
-    }, [observations]);
+    );
 
     const [isMobileView, setIsMobileView] = useState<boolean>(() => {
         if (typeof window === 'undefined') return false;
@@ -565,6 +493,12 @@ const App: React.FC = () => {
         : connectionStatus === 'degraded'
             ? 'Connexion partielle: affichage du cache ou synchronisation incomplète'
             : 'Connecté au serveur';
+
+    const lazyFallback = (
+        <div className={`flex items-center justify-center py-12 ${isMobileView ? 'pb-20' : ''}`}>
+            <p>Chargement de la vue...</p>
+        </div>
+    );
 
     return (
         <div className={`min-h-screen font-sans transition-colors duration-500 bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface text-nature-dark dark:text-nature-dark-text ${isMobileView ? 'pb-20' : ''}`}>
@@ -697,110 +631,112 @@ const App: React.FC = () => {
                     <BottomNavigation currentView={view} onViewChange={setView} />
                 )}
 
-                {view === View.LIST ? (
-                    <ObservationList
-                        observations={sortedAndFilteredObservations}
-                        onAdd={handleAddObservation}
-                        onEdit={handleEditObservation}
-                        onDelete={handleDeleteRequest}
-                        onBulkDelete={handleBulkDeleteRequest}
-                        onImport={handleImportRequest}
-                        onToast={pushToast}
-                        searchTerm={searchTerm}
-                        onSearchChange={setSearchTerm}
-                        yearFilter={yearFilter}
-                        onYearChange={setYearFilter}
-                        startDateFilter={startDateFilter}
-                        onStartDateChange={setStartDateFilter}
-                        endDateFilter={endDateFilter}
-                        onEndDateChange={setEndDateFilter}
-                        taxonomicGroupFilter={taxonomicGroupFilter}
-                        onTaxonomicGroupChange={setTaxonomicGroupFilter}
-                        statusFilter={statusFilter}
-                        onStatusChange={setStatusFilter}
-                        availableYears={availableYears}
-                        allObservations={observations}
-                        sortConfig={sortConfig}
-                        requestSort={requestSort}
-                        isMobileView={isMobileView}
-                        isBulkDeleting={isBulkDeleting}
-                    />
-                ) : view === View.MAP ? (
-                    <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
-                        {/* Filters for Map view */}
-                        <FilterBar
+                <Suspense fallback={lazyFallback}>
+                    {view === View.LIST ? (
+                        <ObservationList
+                            observations={sortedAndFilteredObservations}
+                            onAdd={handleAddObservation}
+                            onEdit={handleEditObservation}
+                            onDelete={handleDeleteRequest}
+                            onBulkDelete={handleBulkDeleteRequest}
+                            onImport={handleImportRequest}
+                            onToast={pushToast}
                             searchTerm={searchTerm}
                             onSearchChange={setSearchTerm}
                             yearFilter={yearFilter}
                             onYearChange={setYearFilter}
+                            startDateFilter={startDateFilter}
+                            onStartDateChange={setStartDateFilter}
+                            endDateFilter={endDateFilter}
+                            onEndDateChange={setEndDateFilter}
+                            taxonomicGroupFilter={taxonomicGroupFilter}
+                            onTaxonomicGroupChange={setTaxonomicGroupFilter}
                             statusFilter={statusFilter}
                             onStatusChange={setStatusFilter}
                             availableYears={availableYears}
+                            allObservations={observations}
+                            sortConfig={sortConfig}
+                            requestSort={requestSort}
                             isMobileView={isMobileView}
-                            searchId="search-input-map"
+                            isBulkDeleting={isBulkDeleting}
                         />
+                    ) : view === View.MAP ? (
+                        <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
+                            {/* Filters for Map view */}
+                            <FilterBar
+                                searchTerm={searchTerm}
+                                onSearchChange={setSearchTerm}
+                                yearFilter={yearFilter}
+                                onYearChange={setYearFilter}
+                                statusFilter={statusFilter}
+                                onStatusChange={setStatusFilter}
+                                availableYears={availableYears}
+                                isMobileView={isMobileView}
+                                searchId="search-input-map"
+                            />
 
-                        <ObservationMap
-                            observations={sortedAndFilteredObservations}
-                            isDarkMode={isDarkMode}
+                            <ObservationMap
+                                observations={sortedAndFilteredObservations}
+                                isDarkMode={isDarkMode}
+                                isMobileView={isMobileView}
+                                onToast={pushToast}
+                            />
+
+                            <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
+                                <button
+                                    onClick={handleAddObservation}
+                                    className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                >
+                                    {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
+                                </button>
+                            </div>
+                        </div>
+                    ) : view === View.STATS ? (
+                        <ObservationStats observations={observations} isMobileView={isMobileView} />
+                    ) : view === View.CALENDAR ? (
+                        <ObservationCalendar
+                            observations={observations}
+                            onEdit={handleEditObservation}
+                            onDelete={handleDeleteRequest}
                             isMobileView={isMobileView}
+                        />
+                    ) : view === View.GALLERY ? (
+                        <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
+                            {/* Filters for Gallery view */}
+                            <FilterBar
+                                searchTerm={searchTerm}
+                                onSearchChange={setSearchTerm}
+                                yearFilter={yearFilter}
+                                onYearChange={setYearFilter}
+                                statusFilter={statusFilter}
+                                onStatusChange={setStatusFilter}
+                                availableYears={availableYears}
+                                isMobileView={isMobileView}
+                                searchId="search-input-gallery"
+                            />
+                            <ObservationGallery
+                                observations={sortedAndFilteredObservations}
+                                onEdit={handleEditObservation}
+                                isMobileView={isMobileView}
+                            />
+                            <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
+                                <button
+                                    onClick={handleAddObservation}
+                                    className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                >
+                                    {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <ObservationForm
+                            onSave={handleSaveObservation}
+                            onCancel={handleCancel}
+                            initialData={editingObservation}
                             onToast={pushToast}
                         />
-
-                        <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
-                            <button
-                                onClick={handleAddObservation}
-                                className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
-                            >
-                                {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
-                            </button>
-                        </div>
-                    </div>
-                ) : view === View.STATS ? (
-                    <ObservationStats observations={observations} isMobileView={isMobileView} />
-                ) : view === View.CALENDAR ? (
-                    <ObservationCalendar
-                        observations={observations}
-                        onEdit={handleEditObservation}
-                        onDelete={handleDeleteRequest}
-                        isMobileView={isMobileView}
-                    />
-                ) : view === View.GALLERY ? (
-                    <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
-                        {/* Filters for Gallery view */}
-                        <FilterBar
-                            searchTerm={searchTerm}
-                            onSearchChange={setSearchTerm}
-                            yearFilter={yearFilter}
-                            onYearChange={setYearFilter}
-                            statusFilter={statusFilter}
-                            onStatusChange={setStatusFilter}
-                            availableYears={availableYears}
-                            isMobileView={isMobileView}
-                            searchId="search-input-gallery"
-                        />
-                        <ObservationGallery
-                            observations={sortedAndFilteredObservations}
-                            onEdit={handleEditObservation}
-                            isMobileView={isMobileView}
-                        />
-                        <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
-                            <button
-                                onClick={handleAddObservation}
-                                className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
-                            >
-                                {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
-                            </button>
-                        </div>
-                    </div>
-                ) : (
-                    <ObservationForm
-                        onSave={handleSaveObservation}
-                        onCancel={handleCancel}
-                        initialData={editingObservation}
-                        onToast={pushToast}
-                    />
-                )}
+                    )}
+                </Suspense>
             </div>
         </div>
     );

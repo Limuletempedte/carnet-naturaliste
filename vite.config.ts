@@ -69,6 +69,37 @@ export default defineConfig(() => {
         }
       })
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+
+            if (id.includes('leaflet') || id.includes('leaflet.markercluster')) {
+              return 'vendor-leaflet';
+            }
+
+            if (id.includes('/xlsx/')) {
+              return 'vendor-xlsx';
+            }
+
+            if (id.includes('/jspdf/')) {
+              return 'vendor-jspdf';
+            }
+
+            if (id.includes('/html2canvas/')) {
+              return 'vendor-html2canvas';
+            }
+
+            if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/@supabase/')) {
+              return 'vendor-core';
+            }
+
+            return undefined;
+          }
+        }
+      }
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import MapInput from './MapInput';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement } from '../types';
 import { fetchSpeciesInfo, SpeciesInfo } from '../services/speciesService';
 import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
+import { buildObservationFromForm, ObservationFormData, validateObservationForm } from '../services/observationFormService';
 import { uploadPhoto } from '../services/storageService';
 import { dateToIsoLocal } from '../utils/dateUtils';
 import { ToastType } from './ToastContainer';
+
+const MapInput = lazy(() => import('./MapInput'));
 
 interface ObservationFormProps {
     onSave: (observation: Observation) => Promise<void>;
@@ -15,10 +17,6 @@ interface ObservationFormProps {
     initialData: Observation | null;
     onToast: (type: ToastType, message: string, durationMs?: number) => void;
 }
-
-type ObservationFormData = Omit<Observation, 'id' | 'count'> & {
-    count: number | '';
-};
 
 const FormSection: React.FC<{ title: string, children: React.ReactNode }> = ({ title, children }) => (
     <div className="bg-white/80 dark:bg-nature-dark-surface/80 p-6 rounded-lg shadow-md">
@@ -160,15 +158,9 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     };
 
     const validate = () => {
-        const newErrors: Record<string, string> = {};
-        const numericCount = Number(formData.count);
-        if (!formData.speciesName) newErrors.speciesName = "Le nom de l'espèce est obligatoire.";
-        if (!formData.date) newErrors.date = "La date est obligatoire.";
-        if (!Number.isInteger(numericCount) || numericCount < 1) newErrors.count = "Le nombre doit être au moins 1.";
-        if (formData.gps.lat !== null && (formData.gps.lat < -90 || formData.gps.lat > 90)) newErrors.lat = "La latitude doit être entre -90 et 90.";
-        if (formData.gps.lon !== null && (formData.gps.lon < -180 || formData.gps.lon > 180)) newErrors.lon = "La longitude doit être entre -180 et 180.";
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+        const nextErrors = validateObservationForm(formData);
+        setErrors(nextErrors);
+        return Object.keys(nextErrors).length === 0;
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -267,22 +259,12 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 }
             }
 
-            const observationToSave: Observation = {
-                id: initialData?.id || crypto.randomUUID(),
-                ...formData,
-                photo: photoUrl,
-                sound: soundUrl,
-                count: Number(formData.count),
-                altitude: formData.altitude !== null ? Number(formData.altitude) : null,
-                gps: {
-                    lat: formData.gps.lat !== null ? Number(formData.gps.lat) : null,
-                    lon: formData.gps.lon !== null ? Number(formData.gps.lon) : null,
-                },
-                sexe: formData.sexe,
-                age: formData.age,
-                observationCondition: formData.observationCondition,
-                comportement: formData.comportement,
-            };
+            const observationToSave: Observation = buildObservationFromForm(
+                formData,
+                initialData?.id || crypto.randomUUID(),
+                photoUrl,
+                soundUrl
+            );
             await onSave(observationToSave);
 
             if (strippedOfflineMedia.length > 0) {
@@ -395,7 +377,9 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 </button>
                                 {showMap && (
                                     <div className="mt-4 rounded-2xl overflow-hidden shadow-inner ring-1 ring-black/5">
-                                        <MapInput onLocationChange={handleLocationChange} onToast={onToast} />
+                                        <Suspense fallback={<div className="p-4 text-sm text-gray-500">Chargement de la carte...</div>}>
+                                            <MapInput onLocationChange={handleLocationChange} onToast={onToast} />
+                                        </Suspense>
                                     </div>
                                 )}
                             </div>
@@ -485,9 +469,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                     <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-nature-green scrollbar-track-transparent pr-2">
                                         {speciesInfo.description}
                                     </p>
-                                    <a href={speciesInfo.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-nature-green hover:text-green-600 block mt-2">
-                                        Voir sur Wikipédia →
-                                    </a>
+                                    {speciesInfo.sourceUrl && (
+                                        <a href={speciesInfo.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-nature-green hover:text-green-600 block mt-2">
+                                            Voir la source →
+                                        </a>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="text-center text-gray-500 dark:text-gray-400 py-8">

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import { SearchResult } from '../services/locationService';
+import { SearchResult, reverseGeocode, searchAddress } from '../services/locationService';
 
 interface MapInputProps {
     onLocationChange: (lat: number, lon: number, municipality: string, location: string, department: string, country: string) => void;
@@ -47,7 +47,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
 
                 clickTimer = setTimeout(() => {
                     abortCtrl = new AbortController();
-                    import('../services/locationService').then(m => m.reverseGeocode(lat, lng, abortCtrl?.signal)).then(result => {
+                    reverseGeocode(lat, lng, abortCtrl?.signal).then(result => {
                         if (result) {
                             onLocationChange(lat, lng, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
                         } else {
@@ -106,7 +106,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
 
         setIsSearching(true);
         try {
-            const results = await import('../services/locationService').then(m => m.searchAddress(searchQuery));
+            const results = await searchAddress(searchQuery);
             setSearchResults(results);
             if (results.length === 0) {
                 onToast('info', 'Aucun résultat trouvé pour cette recherche.');
@@ -146,7 +146,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                     }
 
                     // Reverse geocode to get address details
-                    import('../services/locationService').then(m => m.reverseGeocode(latitude, longitude)).then(result => {
+                    reverseGeocode(latitude, longitude).then(result => {
                         if (result) {
                             onLocationChange(latitude, longitude, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
                         } else {

@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const orderMock = vi.fn();
 const selectMock = vi.fn(() => ({ order: orderMock }));
 const fromMock = vi.fn(() => ({ select: selectMock }));
+const storageUploadMock = vi.fn();
+const storageGetPublicUrlMock = vi.fn(() => ({ data: { publicUrl: 'https://example.com/file' } }));
+const storageFromMock = vi.fn(() => ({
+    upload: storageUploadMock,
+    getPublicUrl: storageGetPublicUrlMock
+}));
 
 vi.mock('../supabaseClient', () => ({
     supabase: {
@@ -11,10 +17,7 @@ vi.mock('../supabaseClient', () => ({
             getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } } }))
         },
         storage: {
-            from: vi.fn(() => ({
-                upload: vi.fn(),
-                getPublicUrl: vi.fn(() => ({ data: { publicUrl: 'https://example.com/file' } }))
-            }))
+            from: storageFromMock
         }
     }
 }));
@@ -26,8 +29,17 @@ describe('storageService.getObservations', () => {
         fromMock.mockReset();
         selectMock.mockReset();
         orderMock.mockReset();
+        storageUploadMock.mockReset();
+        storageGetPublicUrlMock.mockReset();
+        storageFromMock.mockReset();
+
         fromMock.mockReturnValue({ select: selectMock });
         selectMock.mockReturnValue({ order: orderMock });
+        storageGetPublicUrlMock.mockReturnValue({ data: { publicUrl: 'https://example.com/file' } });
+        storageFromMock.mockReturnValue({
+            upload: storageUploadMock,
+            getPublicUrl: storageGetPublicUrlMock
+        });
     });
 
     it('returns remote observations when the API succeeds', async () => {
@@ -112,5 +124,43 @@ describe('storageService.getObservations', () => {
         expect(result.source).toBe('cache');
         expect(result.warning).toContain('boom');
         expect(result.observations[0].speciesName).toBe('Cache');
+    });
+});
+
+describe('storageService.uploadSound', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        storageFromMock.mockReturnValue({
+            upload: storageUploadMock,
+            getPublicUrl: storageGetPublicUrlMock
+        });
+        storageUploadMock.mockResolvedValue({ error: null });
+        storageGetPublicUrlMock.mockReturnValue({ data: { publicUrl: 'https://example.com/file' } });
+    });
+
+    it('uploads sound file under user sounds path with derived extension', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const storageService = await import('../services/storageService');
+        const file = new Blob(['audio-data'], { type: 'audio/wav' });
+
+        const publicUrl = await storageService.uploadSound(file);
+
+        expect(storageFromMock).toHaveBeenCalledWith('photos');
+        expect(storageUploadMock).toHaveBeenCalledTimes(1);
+
+        const [uploadedFileName, uploadedBlob, options] = storageUploadMock.mock.calls[0];
+        expect(String(uploadedFileName)).toContain('/sounds/');
+        expect(String(uploadedFileName)).toMatch(/\.wav$/);
+        expect(uploadedBlob).toBe(file);
+        expect(options).toMatchObject({ contentType: 'audio/wav', upsert: false });
+        expect(publicUrl).toBe('https://example.com/file');
+    });
+
+    it('rejects uploads while offline', async () => {
+        vi.stubGlobal('navigator', { onLine: false });
+        const storageService = await import('../services/storageService');
+        const file = new Blob(['audio-data'], { type: 'audio/mpeg' });
+
+        await expect(storageService.uploadSound(file)).rejects.toThrow("Impossible d'envoyer un son en mode hors-ligne");
     });
 });

@@ -6,7 +6,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
-import { SearchResult } from '../services/locationService';
+import { SearchResult, searchAddress } from '../services/locationService';
 import { isoToFrDisplay } from '../utils/dateUtils';
 
 // Fix for default marker icon
@@ -244,7 +244,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
 
         setIsSearching(true);
         try {
-            const results = await import('../services/locationService').then(m => m.searchAddress(searchQuery));
+            const results = await searchAddress(searchQuery);
             setSearchResults(results);
             if (results.length === 0) {
                 onToast('info', 'Aucun résultat trouvé pour cette recherche.');

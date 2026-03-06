@@ -1,6 +1,7 @@
 import { supabase } from '../supabaseClient';
 import { Observation } from '../types';
 import { sanitizeCachedMediaValue } from './storageCacheUtils';
+import { OfflineAction, OfflineQueueItem, isTempId, mapQueueItemIds, reduceQueue } from './storageQueueUtils';
 
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEGACY_QUEUE_KEY = 'offline_sync_queue';
@@ -8,15 +9,6 @@ const LEGACY_LOCAL_CACHE_KEY = 'local_observations_cache';
 const QUEUE_KEY_PREFIX = 'offline_sync_queue';
 const LOCAL_CACHE_KEY_PREFIX = 'local_observations_cache';
 const STORAGE_NAMESPACE_ERROR = "Storage namespace absent. Réessayez après authentification.";
-
-type OfflineAction = 'INSERT' | 'UPDATE' | 'DELETE';
-
-interface OfflineQueueItem {
-    id: string;
-    action: OfflineAction;
-    payload: Observation | { id: string };
-    timestamp: number;
-}
 
 export interface ObservationLoadResult {
     observations: Observation[];
@@ -34,7 +26,6 @@ const isUuid = (value: unknown): value is string => {
     return typeof value === 'string' && UUID_V4_RE.test(value.trim());
 };
 
-const isTempId = (value: string): boolean => value.startsWith('temp-');
 let storageNamespace: string | null = null;
 
 const scopedKey = (keyPrefix: string, userId: string): string => `${keyPrefix}:${userId}`;
@@ -208,87 +199,6 @@ const replaceObservationIdInCache = (oldId: string, newId: string) => {
     const cache = getLocalCache();
     const updated = cache.map(obs => (obs.id === oldId ? { ...obs, id: newId } : obs));
     setLocalCache(updated);
-};
-
-const getItemTargetId = (item: OfflineQueueItem): string => {
-    if (item.action === 'DELETE') {
-        return String((item.payload as { id: string }).id || '');
-    }
-    return String((item.payload as Observation).id || '');
-};
-
-const mergeObservation = (base: Observation, next: Observation): Observation => ({
-    ...base,
-    ...next,
-    gps: {
-        ...base.gps,
-        ...next.gps
-    }
-});
-
-const reduceQueue = (queue: OfflineQueueItem[]): OfflineQueueItem[] => {
-    const reduced = new Map<string, OfflineQueueItem>();
-
-    for (const item of queue) {
-        const key = getItemTargetId(item);
-        if (!key) continue;
-
-        const existing = reduced.get(key);
-        if (!existing) {
-            reduced.set(key, item);
-            continue;
-        }
-
-        if (item.action === 'INSERT') {
-            reduced.set(key, item);
-            continue;
-        }
-
-        if (item.action === 'UPDATE') {
-            if (existing.action === 'INSERT' || existing.action === 'UPDATE') {
-                const mergedPayload = mergeObservation(existing.payload as Observation, item.payload as Observation);
-                reduced.set(key, {
-                    ...item,
-                    action: existing.action,
-                    payload: mergedPayload
-                });
-            } else {
-                reduced.set(key, item);
-            }
-            continue;
-        }
-
-        if (item.action === 'DELETE') {
-            if (existing.action === 'INSERT') {
-                reduced.delete(key);
-            } else {
-                reduced.set(key, item);
-            }
-        }
-    }
-
-    return Array.from(reduced.values()).sort((a, b) => a.timestamp - b.timestamp);
-};
-
-const mapQueueItemIds = (item: OfflineQueueItem, idMap: Map<string, string>): OfflineQueueItem => {
-    if (item.action === 'DELETE') {
-        const deletePayload = item.payload as { id: string };
-        return {
-            ...item,
-            payload: {
-                id: idMap.get(deletePayload.id) ?? deletePayload.id
-            }
-        };
-    }
-
-    const obsPayload = item.payload as Observation;
-    return {
-        ...item,
-        payload: {
-            ...obsPayload,
-            id: idMap.get(obsPayload.id) ?? obsPayload.id
-        }
-    };
 };
 
 const upsertObservationInCache = (observation: Observation) => {
