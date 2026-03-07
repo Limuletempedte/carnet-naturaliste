@@ -227,9 +227,12 @@ const ObservationList: React.FC<ObservationListProps> = ({
             <>
                 <div className="space-y-4 pb-20">
                     {/* Mobile Header & Filters */}
-                    <div className="sticky top-0 z-30 bg-white/90 dark:bg-nature-dark-bg/90 backdrop-blur-md p-4 -mx-4 shadow-sm space-y-3">
+                    <div
+                        className="sticky z-40 bg-white/90 dark:bg-nature-dark-bg/90 backdrop-blur-md p-3 -mx-4 shadow-sm space-y-2"
+                        style={{ top: 'var(--mobile-topbar-h, 0px)' }}
+                    >
                         <div className="flex justify-between items-center">
-                            <h2 className="text-xl font-bold text-nature-dark dark:text-white">Observations</h2>
+                            <h2 className="text-lg font-bold text-nature-dark dark:text-white">Observations</h2>
                             <div className="flex gap-2">
                                 {selectedIds.size > 0 && (
                                     <button onClick={handleDeleteSelected} disabled={isBulkDeleting} className="bg-red-500 text-white p-2 rounded-full shadow-lg disabled:opacity-50">
@@ -254,32 +257,32 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             accept=".json,.xlsx,.xls"
                         />
 
-                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
                             <button
                                 onClick={handleImportClick}
                                 disabled={isParsingImport}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-500 text-white disabled:opacity-60 flex-shrink-0"
+                                className="h-8 px-3 rounded-lg text-xs font-medium bg-gray-500 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
                             >
                                 {isParsingImport ? 'Analyse...' : 'Importer'}
                             </button>
                             <button
                                 onClick={() => openExportDialog('json')}
                                 disabled={isExporting}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500 text-white disabled:opacity-60 flex-shrink-0"
+                                className="h-8 px-3 rounded-lg text-xs font-medium bg-blue-500 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
                             >
                                 {isExporting && pendingExportType === 'json' ? 'Export...' : 'JSON'}
                             </button>
                             <button
                                 onClick={() => openExportDialog('excel')}
                                 disabled={isExporting}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500 text-white disabled:opacity-60 flex-shrink-0"
+                                className="h-8 px-3 rounded-lg text-xs font-medium bg-emerald-500 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
                             >
                                 {isExporting && pendingExportType === 'excel' ? 'Export...' : 'Excel'}
                             </button>
                             <button
                                 onClick={() => openExportDialog('pdf')}
                                 disabled={isExporting}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500 text-white disabled:opacity-60 flex-shrink-0"
+                                className="h-8 px-3 rounded-lg text-xs font-medium bg-red-500 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
                             >
                                 {isExporting && pendingExportType === 'pdf' ? 'Export...' : 'PDF'}
                             </button>
@@ -298,7 +301,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                         </div>
 
                         {/* Horizontal Filter Scroll */}
-                        <div className="flex flex-wrap gap-2 pt-2 no-scrollbar">
+                        <div className="flex flex-wrap gap-2 pt-1.5 no-scrollbar">
                             <button
                                 onClick={handleSelectAll}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap border-none outline-none ${selectedIds.size === observations.length && observations.length > 0 ? 'bg-nature-green text-white' : 'bg-gray-100 dark:bg-white/10 dark:text-white'}`}
