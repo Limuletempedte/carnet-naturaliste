@@ -227,10 +227,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
             <>
                 <div className="space-y-4 pb-20">
                     {/* Mobile Header & Filters */}
-                    <div
-                        className="sticky z-40 bg-white/90 dark:bg-nature-dark-bg/90 backdrop-blur-md p-3 -mx-4 shadow-sm space-y-2"
-                        style={{ top: 'var(--mobile-topbar-h, 0px)' }}
-                    >
+                    <div className="bg-white/90 dark:bg-nature-dark-bg/90 backdrop-blur-md p-3 -mx-4 shadow-sm space-y-2">
                         <div className="flex justify-between items-center">
                             <h2 className="text-lg font-bold text-nature-dark dark:text-white">Observations</h2>
                             <div className="flex gap-2">

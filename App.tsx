@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Observation, View, TaxonomicGroup, Status } from './types';
 import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue } from './services/storageService';
 import ObservationList from './components/ObservationList';
@@ -44,7 +44,6 @@ const App: React.FC = () => {
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-    const mobileHeaderRef = useRef<HTMLElement | null>(null);
 
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
 
@@ -435,47 +434,6 @@ const App: React.FC = () => {
         return () => mediaQuery.removeEventListener('change', handleChange);
     }, []);
 
-    useEffect(() => {
-        const root = document.documentElement;
-
-        const updateMobileTopbarHeight = () => {
-            if (!isMobileView || !mobileHeaderRef.current) {
-                root.style.setProperty('--mobile-topbar-h', '0px');
-                return;
-            }
-            const height = Math.ceil(mobileHeaderRef.current.getBoundingClientRect().height);
-            root.style.setProperty('--mobile-topbar-h', `${height}px`);
-        };
-
-        updateMobileTopbarHeight();
-
-        if (!isMobileView) {
-            return () => {
-                root.style.setProperty('--mobile-topbar-h', '0px');
-            };
-        }
-
-        const resizeObserver = typeof ResizeObserver !== 'undefined' && mobileHeaderRef.current
-            ? new ResizeObserver(updateMobileTopbarHeight)
-            : null;
-
-        if (resizeObserver && mobileHeaderRef.current) {
-            resizeObserver.observe(mobileHeaderRef.current);
-        }
-
-        window.addEventListener('resize', updateMobileTopbarHeight);
-        window.addEventListener('orientationchange', updateMobileTopbarHeight);
-
-        return () => {
-            resizeObserver?.disconnect();
-            window.removeEventListener('resize', updateMobileTopbarHeight);
-            window.removeEventListener('orientationchange', updateMobileTopbarHeight);
-            root.style.setProperty('--mobile-topbar-h', '0px');
-        };
-    }, [isMobileView]);
-
-
-
     if (supabaseConfigError) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
@@ -545,7 +503,7 @@ const App: React.FC = () => {
 
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
-                <header ref={mobileHeaderRef} className="fixed top-0 left-0 right-0 z-50 px-4 py-2 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
+                <header className="fixed top-0 left-0 right-0 z-50 px-4 py-2 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
                     <UserProfile />
                     <div className="flex items-center gap-1.5">
                         {/* Server Status Mobile */}
@@ -632,7 +590,7 @@ const App: React.FC = () => {
 
             <div
                 className={`container mx-auto p-4 md:p-8 max-w-7xl ${isMobileView ? 'px-2' : ''}`}
-                style={isMobileView ? { paddingTop: 'calc(var(--mobile-topbar-h, 0px) + 0.75rem)' } : undefined}
+                style={isMobileView ? { paddingTop: '6rem' } : undefined}
             >
                 {/* Navigation Tabs - Desktop Only */}
                 {!isMobileView && view !== View.FORM && (
