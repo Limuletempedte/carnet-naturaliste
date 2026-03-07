@@ -55,7 +55,7 @@ const BADGES_DEFINITIONS: Badge[] = [
         condition: (obs) => {
             const insectGroups = [
                 TaxonomicGroup.ODONATE, TaxonomicGroup.BUTTERFLY, TaxonomicGroup.MOTH,
-                TaxonomicGroup.ORTHOPTERA, TaxonomicGroup.HYMENOPTERA, TaxonomicGroup.MANTIS,
+                TaxonomicGroup.ORTHOPTERA, TaxonomicGroup.HYMENOPTERA, TaxonomicGroup.ANT, TaxonomicGroup.MANTIS,
                 TaxonomicGroup.CICADA, TaxonomicGroup.HETEROPTERA, TaxonomicGroup.COLEOPTERA,
                 TaxonomicGroup.NEUROPTERA, TaxonomicGroup.DIPTERA, TaxonomicGroup.PHASMID
             ];

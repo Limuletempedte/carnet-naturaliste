@@ -180,6 +180,17 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                         latinName: prev.latinName || info.latinName || ''
                     }));
                 }
+
+                // Auto-apply taxonomic group and wikipedia image
+                if (info) {
+                    setFormData(prev => ({
+                        ...prev,
+                        wikipediaImage: prev.wikipediaImage || info.imageUrl || undefined,
+                        taxonomicGroup: !fieldTouched.taxonomicGroup && prev.taxonomicGroup === defaultTaxonomicGroup && info.taxonomicGroup
+                            ? info.taxonomicGroup
+                            : prev.taxonomicGroup
+                    }));
+                }
             } else {
                 setSpeciesInfo(null);
                 setIsFetchingInfo(false);
@@ -191,7 +202,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             cancelled = true;
             clearTimeout(timeoutId);
         };
-    }, [fieldTouched.latinName, formData.speciesName]);
+    }, [fieldTouched.latinName, fieldTouched.taxonomicGroup, defaultTaxonomicGroup, formData.speciesName]);
 
     useEffect(() => {
         return () => {
@@ -315,18 +326,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         }
     };
 
-    const applySpeciesSuggestions = () => {
-        if (!speciesInfo) return;
 
-        setFormData(prev => ({
-            ...prev,
-            latinName: prev.latinName || speciesInfo.latinName || '',
-            wikipediaImage: prev.wikipediaImage || speciesInfo.imageUrl || undefined,
-            taxonomicGroup: !fieldTouched.taxonomicGroup && prev.taxonomicGroup === defaultTaxonomicGroup && speciesInfo.taxonomicGroup
-                ? speciesInfo.taxonomicGroup
-                : prev.taxonomicGroup
-        }));
-    };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, files } = e.target;
@@ -620,13 +620,6 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                         <img src={speciesInfo.imageUrl} alt={formData.speciesName} className="w-full h-48 object-cover rounded-2xl shadow-sm" />
                                     )}
                                     <h4 className="font-bold text-lg text-nature-dark dark:text-white">{formData.speciesName}</h4>
-                                    <button
-                                        type="button"
-                                        onClick={applySpeciesSuggestions}
-                                        className="w-full px-4 py-2 rounded-xl bg-nature-green/10 text-nature-green font-semibold hover:bg-nature-green/20 transition-colors"
-                                    >
-                                        Appliquer les suggestions
-                                    </button>
                                     <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-nature-green scrollbar-track-transparent pr-2">
                                         {speciesInfo.description}
                                     </p>

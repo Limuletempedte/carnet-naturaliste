@@ -512,14 +512,6 @@ const App: React.FC = () => {
                         <div className={`w-3 h-3 rounded-full ${statusColorClass}`} title={statusTitle}></div>
 
                         <button
-                            onClick={() => import('./services/backupService').then(m => m.createBackup(observations))}
-                            className="p-2 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all"
-                            title="Sauvegarde Complète (ZIP)"
-                        >
-                            💾
-                        </button>
-
-                        <button
                             onClick={handleRefresh}
                             className="p-2 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all"
                             title="Actualiser les données"
@@ -542,25 +534,27 @@ const App: React.FC = () => {
                         <UserProfile />
                     </div>
 
-                    <button
-                        onClick={() => setIsDarkMode(!isDarkMode)}
-                        className="fixed top-6 right-6 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10"
-                        title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
-                    >
-                        {isDarkMode ? '☀️' : '🌙'}
-                    </button>
+                    <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${statusBadgeClass}`} title={statusTitle}>
+                            <div className={`w-2 h-2 rounded-full ${statusColorClass}`}></div>
+                            <span className="text-xs font-bold hidden md:inline">{statusLabel}</span>
+                        </div>
 
-                    <button
-                        onClick={handleRefresh}
-                        className="fixed top-6 right-[4.5rem] z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10"
-                        title="Actualiser les données"
-                    >
-                        🔄
-                    </button>
+                        <button
+                            onClick={handleRefresh}
+                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10"
+                            title="Actualiser les données"
+                        >
+                            🔄
+                        </button>
 
-                    <div className={`fixed top-6 right-28 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${statusBadgeClass}`} title={statusTitle}>
-                        <div className={`w-2 h-2 rounded-full ${statusColorClass}`}></div>
-                        <span className="text-xs font-bold hidden md:inline">{statusLabel}</span>
+                        <button
+                            onClick={() => setIsDarkMode(!isDarkMode)}
+                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10"
+                            title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
+                        >
+                            {isDarkMode ? '☀️' : '🌙'}
+                        </button>
                     </div>
                 </>
             )}
@@ -596,7 +590,7 @@ const App: React.FC = () => {
                 </button>
             )}
 
-            <div className={`container mx-auto p-4 md:p-8 max-w-7xl ${isMobileView ? 'pt-24 px-2' : ''}`}>
+            <div className={`container mx-auto p-4 md:p-8 max-w-7xl ${isMobileView ? 'pt-28 px-2' : ''}`}>
                 {/* Navigation Tabs - Desktop Only */}
                 {!isMobileView && view !== View.FORM && (
                     <div className="flex justify-center mb-10 sticky top-4 z-40">
@@ -680,6 +674,7 @@ const App: React.FC = () => {
                                 isDarkMode={isDarkMode}
                                 isMobileView={isMobileView}
                                 onToast={pushToast}
+                                onEdit={handleEditObservation}
                             />
 
                             <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>

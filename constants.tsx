@@ -12,6 +12,7 @@ export const TAXON_LOGOS: Record<TaxonomicGroup, string> = {
     [TaxonomicGroup.MOTH]: '/Logo/Papillons de nuit.png',
     [TaxonomicGroup.ORTHOPTERA]: '/Logo/Orthoptères.png',
     [TaxonomicGroup.HYMENOPTERA]: '/Logo/Hyménoptères.png',
+    [TaxonomicGroup.ANT]: '/Logo/Fourmis.png',
     [TaxonomicGroup.MANTIS]: '/Logo/Mantes.png',
     [TaxonomicGroup.CICADA]: '/Logo/Cigales.png',
     [TaxonomicGroup.HETEROPTERA]: '/Logo/Punaises.png',

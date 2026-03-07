@@ -27,6 +27,7 @@ interface ObservationMapProps {
     isDarkMode: boolean;
     isMobileView?: boolean;
     onToast: (type: 'warning' | 'error' | 'info' | 'success', message: string, durationMs?: number) => void;
+    onEdit?: (id: string) => void;
 }
 
 const isSafeImageUrl = (value: string): boolean => {
@@ -38,7 +39,7 @@ const isSafeImageUrl = (value: string): boolean => {
     }
 };
 
-const buildPopupContent = (obs: Observation, isDark: boolean): HTMLElement => {
+const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: string) => void): HTMLElement => {
     const root = document.createElement('div');
     root.style.minWidth = '200px';
     root.style.color = isDark ? '#e5e7eb' : '#1f2937';
@@ -87,10 +88,28 @@ const buildPopupContent = (obs: Observation, isDark: boolean): HTMLElement => {
     details.appendChild(count);
 
     root.appendChild(details);
+
+    if (onEdit) {
+        const btn = document.createElement('button');
+        btn.textContent = 'Voir l\'observation';
+        btn.style.marginTop = '10px';
+        btn.style.width = '100%';
+        btn.style.padding = '6px 12px';
+        btn.style.backgroundColor = '#5D7B45';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '8px';
+        btn.style.cursor = 'pointer';
+        btn.style.fontWeight = '600';
+        btn.style.fontSize = '13px';
+        btn.addEventListener('click', () => onEdit(obs.id));
+        root.appendChild(btn);
+    }
+
     return root;
 };
 
-const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false, onToast }) => {
+const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false, onToast, onEdit }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const markersRef = useRef<L.Marker[]>([]);
@@ -209,7 +228,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 }
 
                 const marker = L.marker([obs.gps.lat, obs.gps.lon], { icon: customIcon });
-                marker.bindPopup(buildPopupContent(obs, isDarkMode));
+                marker.bindPopup(buildPopupContent(obs, isDarkMode, onEdit));
 
                 // Hover effect
                 marker.on('mouseover', function (this: L.Marker) {

@@ -10,6 +10,7 @@ export enum TaxonomicGroup {
     MOTH = 'Papillon de nuit',
     ORTHOPTERA = 'Orthoptère',
     HYMENOPTERA = 'Hyménoptères',
+    ANT = 'Fourmis',
     MANTIS = 'Mantes',
     CICADA = 'Cigale',
     HETEROPTERA = 'Punaises',

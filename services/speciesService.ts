@@ -253,6 +253,7 @@ const mapGBIFToTaxonomicGroup = (
                 case 'Coleoptera':
                     return TaxonomicGroup.COLEOPTERA;
                 case 'Hymenoptera':
+                    if (family === 'Formicidae') return TaxonomicGroup.ANT;
                     return TaxonomicGroup.HYMENOPTERA;
                 case 'Mantodea':
                     return TaxonomicGroup.MANTIS;

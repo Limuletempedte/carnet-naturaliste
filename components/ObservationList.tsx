@@ -81,11 +81,14 @@ const ObservationList: React.FC<ObservationListProps> = ({
         return () => window.removeEventListener('scroll', onScroll);
     }, []);
 
-    const resolveExportData = (scope: 'filtered' | 'all'): Observation[] => {
+    const resolveExportData = (scope: 'filtered' | 'all' | 'selected'): Observation[] => {
+        if (scope === 'selected') {
+            return observations.filter(obs => selectedIds.has(obs.id));
+        }
         return scope === 'filtered' ? observations : allObservations;
     };
 
-    const runExport = async (scope: 'filtered' | 'all') => {
+    const runExport = async (scope: 'filtered' | 'all' | 'selected') => {
         if (!pendingExportType) return;
 
         const exportData = resolveExportData(scope);
@@ -592,9 +595,11 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 isOpen={pendingExportType !== null}
                 filteredCount={observations.length}
                 totalCount={allObservations.length}
+                selectedCount={selectedIds.size}
                 onCancel={() => setPendingExportType(null)}
                 onSelectFiltered={() => void runExport('filtered')}
                 onSelectAll={() => void runExport('all')}
+                onSelectSelected={() => void runExport('selected')}
             />
         </>
     );

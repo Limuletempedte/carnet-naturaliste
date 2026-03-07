@@ -4,9 +4,11 @@ interface ExportScopeDialogProps {
     isOpen: boolean;
     filteredCount: number;
     totalCount: number;
+    selectedCount?: number;
     onCancel: () => void;
     onSelectFiltered: () => void;
     onSelectAll: () => void;
+    onSelectSelected?: () => void;
 }
 
 const buttonClass = "px-4 py-2 rounded-lg font-semibold transition-colors";
@@ -15,9 +17,11 @@ const ExportScopeDialog: React.FC<ExportScopeDialogProps> = ({
     isOpen,
     filteredCount,
     totalCount,
+    selectedCount = 0,
     onCancel,
     onSelectFiltered,
-    onSelectAll
+    onSelectAll,
+    onSelectSelected
 }) => {
     if (!isOpen) return null;
 
@@ -30,6 +34,15 @@ const ExportScopeDialog: React.FC<ExportScopeDialogProps> = ({
                 </p>
 
                 <div className="space-y-3">
+                    {selectedCount > 0 && onSelectSelected && (
+                        <button
+                            type="button"
+                            onClick={onSelectSelected}
+                            className={`${buttonClass} w-full text-left bg-purple-500/10 text-purple-700 hover:bg-purple-500/20 dark:text-purple-300`}
+                        >
+                            Exporter la sélection ({selectedCount})
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={onSelectFiltered}
@@ -61,3 +74,4 @@ const ExportScopeDialog: React.FC<ExportScopeDialogProps> = ({
 };
 
 export default ExportScopeDialog;
+
