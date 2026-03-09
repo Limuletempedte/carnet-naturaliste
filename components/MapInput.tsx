@@ -1,6 +1,20 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { SearchResult, reverseGeocode, searchAddress } from '../services/locationService';
+
+// Fix for default marker icon (Vite breaks the default paths)
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+const DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 interface MapInputProps {
     onLocationChange: (lat: number, lon: number, municipality: string, location: string, department: string, country: string) => void;

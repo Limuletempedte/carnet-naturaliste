@@ -11,6 +11,7 @@ import ToastContainer, { ToastItem, ToastType } from './components/ToastContaine
 import { compareIsoDate } from './utils/dateUtils';
 import { buildImportPersistencePlan, isUuid } from './services/importPolicy';
 import { useObservationFilters } from './hooks/useObservationFilters';
+import { selectStartupEnrichmentCandidates } from './services/startupEnrichmentUtils';
 
 type AppConnectionStatus = 'online' | 'offline' | 'degraded';
 
@@ -136,9 +137,14 @@ const App: React.FC = () => {
 
                 // Auto-fetch missing images for existing observations
                 if (!navigator.onLine) return;
-                const obsWithMissingImages = loadResult.observations
-                    .filter(obs => !obs.photo && !obs.wikipediaImage && obs.speciesName)
-                    .slice(0, ENRICHMENT_BATCH_LIMIT);
+                const startupSelection = selectStartupEnrichmentCandidates(loadResult.observations, ENRICHMENT_BATCH_LIMIT);
+                const skippedForAmbiguity = startupSelection.skippedDueToMissingLatin;
+
+                if (skippedForAmbiguity > 0) {
+                    console.info(`[startup-enrichment] ${skippedForAmbiguity} observation(s) ignorée(s) (nom latin absent, source ambiguë).`);
+                }
+
+                const obsWithMissingImages = startupSelection.candidates;
 
                 if (obsWithMissingImages.length > 0) {
                     const updatedObs = [...loadResult.observations];
@@ -152,7 +158,7 @@ const App: React.FC = () => {
                             const obs = obsWithMissingImages[currentIndex];
 
                             try {
-                                const info = await fetchSpeciesInfo(obs.speciesName);
+                                const info = await fetchSpeciesInfo(obs.latinName.trim());
                                 if (!mounted || !info) continue;
 
                                 const index = updatedObs.findIndex(o => o.id === obs.id);
@@ -173,7 +179,7 @@ const App: React.FC = () => {
                                 hasUpdates = true;
                                 await updateObservation(nextObservation);
                             } catch (err) {
-                                console.error(`Failed to fetch info for ${obs.speciesName}`, err);
+                                console.error(`Failed to fetch info for ${obs.latinName}`, err);
                             }
                             await new Promise(resolve => setTimeout(resolve, 200));
                         }

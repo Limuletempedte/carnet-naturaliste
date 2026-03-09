@@ -1,12 +1,13 @@
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement } from '../types';
-import { fetchSpeciesInfo, SpeciesInfo, SpeciesSuggestion, suggestSpeciesAutocomplete } from '../services/speciesService';
+import { fetchSpeciesInfo, SpeciesInfo, SpeciesSuggestion, suggestSpeciesAutocomplete, mapINatIconicToTaxonomicGroup } from '../services/speciesService';
 import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
 import { buildObservationFromForm, ObservationFormData, validateObservationForm } from '../services/observationFormService';
 import { uploadPhoto } from '../services/storageService';
 import { dateToIsoLocal } from '../utils/dateUtils';
+import { normalizeSearchText } from '../utils/textUtils';
 import { ToastType } from './ToastContainer';
 
 const MapInput = lazy(() => import('./MapInput'));
@@ -26,6 +27,12 @@ const FormSection: React.FC<{ title: string, children: React.ReactNode }> = ({ t
         </div>
     </div>
 );
+
+const getObservationLookupKey = (speciesName: string, latinName: string): string => {
+    return latinName.trim() || speciesName.trim();
+};
+
+const normalizeLookupKey = (value: string): string => normalizeSearchText(value || '');
 
 const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, onToast }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
@@ -66,6 +73,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
     const [isUploading, setIsUploading] = useState(false);
     const latestSpeciesRequestRef = useRef(0);
+    const lastAutoImageLookupKeyRef = useRef('');
+    const lastAutoImageUrlRef = useRef('');
     const bottomButtonsRef = useRef<HTMLDivElement>(null);
     const speciesInputWrapperRef = useRef<HTMLDivElement>(null);
     const skipNextSuggestionsFetchRef = useRef(false);
@@ -74,6 +83,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         latinName: false,
         taxonomicGroup: false
     });
+    const lookupKey = getObservationLookupKey(formData.speciesName, formData.latinName);
+    const normalizedLookupKey = normalizeLookupKey(lookupKey);
 
     useEffect(() => {
         if (initialData) {
@@ -89,6 +100,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         } else {
             setFieldTouched({ latinName: false, taxonomicGroup: false });
         }
+        lastAutoImageLookupKeyRef.current = '';
+        lastAutoImageUrlRef.current = '';
     }, [defaultTaxonomicGroup, initialData]);
 
     // IntersectionObserver: show sticky bar when bottom buttons are out of view
@@ -158,15 +171,34 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         };
     }, []);
 
+    useEffect(() => {
+        // Invalidate stale async species enrichment when identity changes.
+        latestSpeciesRequestRef.current += 1;
+        setSpeciesInfo(null);
+        setFormData(prev => {
+            const shouldClearAutoImage = (
+                !prev.photo
+                && !!lastAutoImageLookupKeyRef.current
+                && !!lastAutoImageUrlRef.current
+                && lastAutoImageLookupKeyRef.current !== normalizedLookupKey
+                && prev.wikipediaImage === lastAutoImageUrlRef.current
+            );
+            if (!shouldClearAutoImage) return prev;
+            return { ...prev, wikipediaImage: undefined };
+        });
+    }, [normalizedLookupKey]);
+
     // Debounce fetching species info
     useEffect(() => {
         let cancelled = false;
+        const lookupForRequest = lookupKey;
+        const normalizedLookupForRequest = normalizedLookupKey;
         const fetchInfo = async () => {
-            if (formData.speciesName.length > 2) {
+            if (lookupForRequest.length > 2) {
                 const requestId = latestSpeciesRequestRef.current + 1;
                 latestSpeciesRequestRef.current = requestId;
                 setIsFetchingInfo(true);
-                const info = await fetchSpeciesInfo(formData.speciesName);
+                const info = await fetchSpeciesInfo(lookupForRequest);
                 if (cancelled || requestId !== latestSpeciesRequestRef.current) {
                     return;
                 }
@@ -183,13 +215,31 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
                 // Auto-apply taxonomic group and wikipedia image
                 if (info) {
-                    setFormData(prev => ({
-                        ...prev,
-                        wikipediaImage: prev.wikipediaImage || info.imageUrl || undefined,
-                        taxonomicGroup: !fieldTouched.taxonomicGroup && prev.taxonomicGroup === defaultTaxonomicGroup && info.taxonomicGroup
-                            ? info.taxonomicGroup
-                            : prev.taxonomicGroup
-                    }));
+                    setFormData(prev => {
+                        const currentLookup = normalizeLookupKey(getObservationLookupKey(prev.speciesName, prev.latinName));
+                        if (currentLookup !== normalizedLookupForRequest) {
+                            return prev;
+                        }
+
+                        const next = { ...prev };
+                        let hasChanges = false;
+
+                        if (!prev.photo && info.imageUrl) {
+                            if (prev.wikipediaImage !== info.imageUrl) {
+                                next.wikipediaImage = info.imageUrl;
+                                hasChanges = true;
+                            }
+                            lastAutoImageLookupKeyRef.current = normalizedLookupForRequest;
+                            lastAutoImageUrlRef.current = info.imageUrl;
+                        }
+
+                        if (!fieldTouched.taxonomicGroup && info.taxonomicGroup && prev.taxonomicGroup !== info.taxonomicGroup) {
+                            next.taxonomicGroup = info.taxonomicGroup;
+                            hasChanges = true;
+                        }
+
+                        return hasChanges ? next : prev;
+                    });
                 }
             } else {
                 setSpeciesInfo(null);
@@ -202,7 +252,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             cancelled = true;
             clearTimeout(timeoutId);
         };
-    }, [fieldTouched.latinName, fieldTouched.taxonomicGroup, defaultTaxonomicGroup, formData.speciesName]);
+    }, [fieldTouched.latinName, fieldTouched.taxonomicGroup, lookupKey, normalizedLookupKey]);
 
     useEffect(() => {
         return () => {
@@ -282,11 +332,36 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         setSpeciesSuggestions([]);
         setActiveSuggestionIndex(-1);
 
-        setFormData(prev => ({
-            ...prev,
-            speciesName: suggestion.displayName,
-            latinName: !fieldTouched.latinName ? (suggestion.latinName || prev.latinName || '') : prev.latinName
-        }));
+        // Immediately map iconic taxon name to taxonomic group
+        const suggestedGroup = suggestion.iconicTaxonName
+            ? mapINatIconicToTaxonomicGroup(suggestion.iconicTaxonName)
+            : undefined;
+
+        setFormData(prev => {
+            const next = {
+                ...prev,
+                speciesName: suggestion.displayName,
+                latinName: !fieldTouched.latinName ? (suggestion.latinName || prev.latinName || '') : prev.latinName,
+                taxonomicGroup: !fieldTouched.taxonomicGroup && suggestedGroup
+                    ? suggestedGroup
+                    : prev.taxonomicGroup,
+            };
+
+            if (!prev.photo) {
+                next.wikipediaImage = suggestion.imageUrl || undefined;
+            }
+
+            const normalizedNextLookup = normalizeLookupKey(getObservationLookupKey(next.speciesName, next.latinName));
+            if (!prev.photo && suggestion.imageUrl) {
+                lastAutoImageLookupKeyRef.current = normalizedNextLookup;
+                lastAutoImageUrlRef.current = suggestion.imageUrl;
+            } else if (!prev.photo && !suggestion.imageUrl) {
+                lastAutoImageLookupKeyRef.current = '';
+                lastAutoImageUrlRef.current = '';
+            }
+
+            return next;
+        });
     };
 
     const handleSpeciesNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

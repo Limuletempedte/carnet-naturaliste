@@ -6,6 +6,8 @@ export interface SpeciesInfo {
     sourceUrl: string;
     latinName?: string;
     taxonomicGroup?: TaxonomicGroup;
+    matchedBy: 'latin' | 'common';
+    confidence: 'high' | 'medium' | 'low';
 }
 
 export interface SpeciesSuggestion {
@@ -13,6 +15,8 @@ export interface SpeciesSuggestion {
     latinName: string;
     commonName?: string;
     source: 'inat' | 'gbif';
+    iconicTaxonName?: string;   // e.g. "Aves", "Mammalia" (iNat only)
+    imageUrl?: string;          // medium_url from iNaturalist
 }
 
 // ---------------------------------------------------------------------------
@@ -23,6 +27,8 @@ export interface SpeciesSuggestion {
 interface INatTaxonResult {
     name?: string;                  // Scientific name (e.g. "Cyanistes caeruleus")
     rank?: string;                  // "species", "genus", "family", etc.
+    rank_level?: number;            // 10 = species, 20 = genus, etc.
+    matched_term?: string;          // iNat matched term when available
     iconic_taxon_name?: string;     // "Aves", "Mammalia", "Insecta", etc.
     preferred_common_name?: string; // Localized common name
     default_photo?: {
@@ -33,17 +39,110 @@ interface INatTaxonResult {
     wikipedia_url?: string;
 }
 
+const normalizeTaxonText = (value?: string): string => {
+    return (value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, ' ');
+};
+
+const isSpeciesRank = (rank?: string): boolean => rank === 'species' || rank === 'subspecies';
+
+const compareScoreTuples = (left: number[], right: number[]): number => {
+    const length = Math.max(left.length, right.length);
+    for (let index = 0; index < length; index += 1) {
+        const l = left[index] || 0;
+        const r = right[index] || 0;
+        if (l !== r) return l - r;
+    }
+    return 0;
+};
+
+const scoreINatTaxonResult = (item: INatTaxonResult, query: string): number[] => {
+    const normalizedQuery = normalizeTaxonText(query);
+    const latin = normalizeTaxonText(item.name);
+    const common = normalizeTaxonText(item.preferred_common_name);
+    const matchedTerm = normalizeTaxonText(item.matched_term);
+
+    const exactLatin = normalizedQuery.length > 0 && latin === normalizedQuery ? 1 : 0;
+    const exactCommon = normalizedQuery.length > 0 && (common === normalizedQuery || matchedTerm === normalizedQuery) ? 1 : 0;
+    const startsWith = normalizedQuery.length > 0
+        && [latin, common, matchedTerm].some(value => value.length > 0 && value.startsWith(normalizedQuery))
+        ? 1
+        : 0;
+
+    return [
+        isSpeciesRank(item.rank) ? 1 : 0,
+        exactLatin,
+        exactCommon,
+        startsWith
+    ];
+};
+
+const pickBestINatTaxonResult = (results: INatTaxonResult[], query: string): INatTaxonResult | null => {
+    if (results.length === 0) return null;
+
+    let best = results[0];
+    let bestScore = scoreINatTaxonResult(best, query);
+
+    for (let index = 1; index < results.length; index += 1) {
+        const candidate = results[index];
+        const candidateScore = scoreINatTaxonResult(candidate, query);
+        if (compareScoreTuples(candidateScore, bestScore) > 0) {
+            best = candidate;
+            bestScore = candidateScore;
+        }
+    }
+
+    return best;
+};
+
+const resolveSpeciesMatchMeta = (
+    query: string,
+    inat: INatTaxonResult
+): { matchedBy: 'latin' | 'common'; confidence: 'high' | 'medium' | 'low' } => {
+    const normalizedQuery = normalizeTaxonText(query);
+    const latin = normalizeTaxonText(inat.name);
+    const common = normalizeTaxonText(inat.preferred_common_name);
+    const matchedTerm = normalizeTaxonText(inat.matched_term);
+
+    if (normalizedQuery.length > 0 && latin === normalizedQuery) {
+        return { matchedBy: 'latin', confidence: 'high' };
+    }
+
+    if (normalizedQuery.length > 0 && (common === normalizedQuery || matchedTerm === normalizedQuery)) {
+        return { matchedBy: 'common', confidence: 'high' };
+    }
+
+    if (normalizedQuery.length > 0 && latin.startsWith(normalizedQuery)) {
+        return { matchedBy: 'latin', confidence: 'medium' };
+    }
+
+    if (normalizedQuery.length > 0 && (common.startsWith(normalizedQuery) || matchedTerm.startsWith(normalizedQuery))) {
+        return { matchedBy: 'common', confidence: 'medium' };
+    }
+
+    if (common.length > 0) {
+        return { matchedBy: 'common', confidence: 'low' };
+    }
+
+    return { matchedBy: 'latin', confidence: 'low' };
+};
+
 /**
  * Search iNaturalist for a species by common or scientific name.
  * Returns the best match with photo, description, and scientific name.
  */
 const fetchINatTaxon = async (query: string): Promise<INatTaxonResult | null> => {
     try {
-        const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=1&locale=fr`;
+        const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=8&locale=fr`;
         const res = await fetch(url);
         if (!res.ok) return null;
         const data = await res.json();
-        return data?.results?.[0] ?? null;
+        const results: INatTaxonResult[] = data?.results ?? [];
+        return pickBestINatTaxonResult(results, query);
     } catch (e) {
         console.error('iNaturalist fetch error:', e);
         return null;
@@ -154,7 +253,10 @@ export const suggestSpeciesAutocomplete = async (query: string, limit = 5): Prom
 
     const inatSuggestions = await fetchINatSuggestions(query, safeLimit);
     if (inatSuggestions.length > 0) {
-        const normalized = inatSuggestions
+        // Prioritize species/subspecies; if none found keep everything
+        const speciesOnly = inatSuggestions.filter(r => r.rank === 'species' || r.rank === 'subspecies');
+        const bestResults = speciesOnly.length > 0 ? speciesOnly : inatSuggestions;
+        const normalized = bestResults
             .map((item): SpeciesSuggestion | null => {
                 const latinName = (item.name || '').trim();
                 const commonName = item.preferred_common_name?.trim();
@@ -164,7 +266,9 @@ export const suggestSpeciesAutocomplete = async (query: string, limit = 5): Prom
                     displayName,
                     latinName,
                     commonName,
-                    source: 'inat'
+                    source: 'inat',
+                    iconicTaxonName: item.iconic_taxon_name,
+                    imageUrl: item.default_photo?.medium_url
                 };
             })
             .filter((item): item is SpeciesSuggestion => item !== null);
@@ -309,7 +413,7 @@ const mapGBIFToTaxonomicGroup = (
  * Fallback: map iNaturalist iconic_taxon_name to TaxonomicGroup.
  * Less precise than GBIF (no order/family info) but always available.
  */
-const mapINatIconicToTaxonomicGroup = (iconicName?: string): TaxonomicGroup | undefined => {
+export const mapINatIconicToTaxonomicGroup = (iconicName?: string): TaxonomicGroup | undefined => {
     switch (iconicName) {
         case 'Aves': return TaxonomicGroup.BIRD;
         case 'Mammalia': return TaxonomicGroup.MAMMAL;
@@ -344,6 +448,7 @@ export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo
             ? stripHtml(inat.wikipedia_summary).substring(0, 300) + '...'
             : '';
         const sourceUrl = inat.wikipedia_url || '';
+        const matchMeta = resolveSpeciesMatchMeta(speciesName, inat);
 
         // Step 2: If we got a latin name from iNaturalist, enrich with GBIF taxonomy
         let taxonomicGroup: TaxonomicGroup | undefined;
@@ -365,7 +470,9 @@ export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo
             imageUrl,
             sourceUrl,
             latinName,
-            taxonomicGroup
+            taxonomicGroup,
+            matchedBy: matchMeta.matchedBy,
+            confidence: matchMeta.confidence
         };
     } catch (error) {
         console.error('Erreur lors de la récupération des infos espèce:', error);
