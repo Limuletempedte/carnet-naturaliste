@@ -415,17 +415,28 @@ const mapGBIFToTaxonomicGroup = (
                     return TaxonomicGroup.NEUROPTERA;
                 case 'Phasmatodea':
                     return TaxonomicGroup.PHASMID;
+                case 'Dermaptera':
+                    return TaxonomicGroup.DERMAPTERA;
                 default:
                     return TaxonomicGroup.OTHER;
             }
 
         case 'Arachnida':
+            if (order === 'Scorpiones') return TaxonomicGroup.SCORPION;
             return TaxonomicGroup.ARACHNID;
 
         case 'Malacostraca':
-        case 'Branchiopoda':
         case 'Maxillopoda':
             return TaxonomicGroup.CRUSTACEAN;
+
+        case 'Branchiopoda':
+            return TaxonomicGroup.BRANCHIOPOD;
+
+        case 'Gastropoda':
+            return TaxonomicGroup.GASTROPOD;
+
+        case 'Bivalvia':
+            return TaxonomicGroup.BIVALVE;
 
         case 'Magnoliopsida':
         case 'Liliopsida':

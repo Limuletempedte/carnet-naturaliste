@@ -57,7 +57,7 @@ const BADGES_DEFINITIONS: Badge[] = [
                 TaxonomicGroup.ODONATE, TaxonomicGroup.BUTTERFLY, TaxonomicGroup.MOTH,
                 TaxonomicGroup.ORTHOPTERA, TaxonomicGroup.HYMENOPTERA, TaxonomicGroup.ANT, TaxonomicGroup.MANTIS,
                 TaxonomicGroup.CICADA, TaxonomicGroup.HETEROPTERA, TaxonomicGroup.COLEOPTERA,
-                TaxonomicGroup.NEUROPTERA, TaxonomicGroup.DIPTERA, TaxonomicGroup.PHASMID
+                TaxonomicGroup.NEUROPTERA, TaxonomicGroup.DIPTERA, TaxonomicGroup.PHASMID, TaxonomicGroup.DERMAPTERA
             ];
             return new Set(obs.filter(o => insectGroups.includes(o.taxonomicGroup)).map(o => o.speciesName)).size >= 5;
         },

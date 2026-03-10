@@ -43,4 +43,26 @@ describe('excelImportService taxonomic mapping', () => {
         expect(result.report.blockingErrors).toHaveLength(0);
         expect(result.observations[0].taxonomicGroup).toBe(TaxonomicGroup.LICHEN);
     });
+
+    it('maps new taxon keywords (bivalves, branchiopodes, dermatères, gastéropodes, scorpions)', async () => {
+        const file = createExcelFile([
+            { "Nom de l'espèce": 'Moule commune', 'Groupe taxonomique': 'bivalve', Date: '2026-03-01', Heure: '12:00', Nombre: 1 },
+            { "Nom de l'espèce": 'Daphnie', 'Groupe taxonomique': 'branchiopode', Date: '2026-03-01', Heure: '12:00', Nombre: 1 },
+            { "Nom de l'espèce": 'Perce-oreille', 'Groupe taxonomique': 'dermatere', Date: '2026-03-01', Heure: '12:00', Nombre: 1 },
+            { "Nom de l'espèce": 'Escargot', 'Groupe taxonomique': 'gasteropode', Date: '2026-03-01', Heure: '12:00', Nombre: 1 },
+            { "Nom de l'espèce": 'Scorpion jaune', 'Groupe taxonomique': 'scorpion', Date: '2026-03-01', Heure: '12:00', Nombre: 1 }
+        ]);
+
+        const result = await parseExcel(file);
+        const groups = result.observations.map(obs => obs.taxonomicGroup);
+
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(groups).toEqual([
+            TaxonomicGroup.BIVALVE,
+            TaxonomicGroup.BRANCHIOPOD,
+            TaxonomicGroup.DERMAPTERA,
+            TaxonomicGroup.GASTROPOD,
+            TaxonomicGroup.SCORPION
+        ]);
+    });
 });

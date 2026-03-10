@@ -304,4 +304,169 @@ describe('fetchSpeciesInfo', () => {
             taxonomicGroup: 'Lichens'
         });
     });
+
+    it('maps Gastropoda class to Gastéropodes group', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            name: 'Helix pomatia',
+                            rank: 'species',
+                            preferred_common_name: 'Escargot de Bourgogne'
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Gastropoda',
+                    order: 'Stylommatophora',
+                    family: 'Helicidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Helix pomatia');
+        expect(info?.taxonomicGroup).toBe('Gastéropodes');
+    });
+
+    it('maps Bivalvia class to Bivalves group', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            name: 'Mytilus edulis',
+                            rank: 'species',
+                            preferred_common_name: 'Moule commune'
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Bivalvia',
+                    order: 'Mytilida',
+                    family: 'Mytilidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Mytilus edulis');
+        expect(info?.taxonomicGroup).toBe('Bivalves');
+    });
+
+    it('maps Branchiopoda class to Branchiopodes group', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            name: 'Daphnia magna',
+                            rank: 'species',
+                            preferred_common_name: 'Daphnie'
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Branchiopoda',
+                    order: 'Diplostraca',
+                    family: 'Daphniidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Daphnia magna');
+        expect(info?.taxonomicGroup).toBe('Branchiopodes');
+    });
+
+    it('maps Dermaptera order to Dermatères group', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            name: 'Forficula auricularia',
+                            rank: 'species',
+                            preferred_common_name: 'Perce-oreille commun'
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Insecta',
+                    order: 'Dermaptera',
+                    family: 'Forficulidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Forficula auricularia');
+        expect(info?.taxonomicGroup).toBe('Dermatères');
+    });
+
+    it('maps Scorpiones order to Scorpions group', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            name: 'Buthus occitanus',
+                            rank: 'species',
+                            preferred_common_name: 'Scorpion languedocien'
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Arachnida',
+                    order: 'Scorpiones',
+                    family: 'Buthidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Buthus occitanus');
+        expect(info?.taxonomicGroup).toBe('Scorpions');
+    });
 });
