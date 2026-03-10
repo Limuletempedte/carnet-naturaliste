@@ -39,6 +39,31 @@ const ensureStorageNamespace = (): string => {
     return storageNamespace;
 };
 
+const COUNT_BREAKDOWN_COLUMNS = ['male_count', 'female_count', 'unidentified_count'] as const;
+
+const stripCountBreakdownColumns = (row: Record<string, any>): Record<string, any> => {
+    const next = { ...row };
+    for (const key of COUNT_BREAKDOWN_COLUMNS) {
+        delete next[key];
+    }
+    return next;
+};
+
+const isMissingCountBreakdownColumnError = (error: any): boolean => {
+    const combined = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+    const code = String(error?.code || '').toUpperCase();
+    const mentionsCountColumn = COUNT_BREAKDOWN_COLUMNS.some(column => combined.includes(column));
+    if (!mentionsCountColumn) return false;
+
+    return (
+        code === '42703' // undefined_column
+        || code === 'PGRST204' // column missing in schema cache
+        || combined.includes('does not exist')
+        || combined.includes('schema cache')
+        || combined.includes('could not find')
+    );
+};
+
 const mapToObservation = (row: any): Observation => ({
     id: row.id,
     speciesName: row.species_name,
@@ -299,11 +324,22 @@ export const saveObservation = async (
 
     const row = mapToRow(observation, userId);
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
         .from('observations')
         .insert(row)
         .select()
         .single();
+
+    if (error && isMissingCountBreakdownColumnError(error)) {
+        const legacyRow = stripCountBreakdownColumns(row);
+        const fallback = await supabase
+            .from('observations')
+            .insert(legacyRow)
+            .select()
+            .single();
+        data = fallback.data;
+        error = fallback.error;
+    }
 
     if (error) {
         console.error('Error saving observation:', error);
@@ -337,11 +373,21 @@ export const updateObservation = async (
 
     const row = mapToRow(observation, userId);
 
-    const { error } = await supabase
+    let { error } = await supabase
         .from('observations')
         .update(row)
         .eq('id', observation.id)
         .eq('user_id', userId);
+
+    if (error && isMissingCountBreakdownColumnError(error)) {
+        const legacyRow = stripCountBreakdownColumns(row);
+        const fallback = await supabase
+            .from('observations')
+            .update(legacyRow)
+            .eq('id', observation.id)
+            .eq('user_id', userId);
+        error = fallback.error;
+    }
 
     if (error) {
         console.error('Error updating observation:', error);
@@ -480,13 +526,24 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
                 const row = mapToRow(payload, user.id);
 
                 if (isTempId(payload.id)) {
-                    const rowWithoutId = { ...row };
+                    let rowWithoutId = { ...row };
                     delete rowWithoutId.id;
-                    const { data, error } = await supabase
+                    let { data, error } = await supabase
                         .from('observations')
                         .insert(rowWithoutId)
                         .select('*')
                         .single();
+
+                    if (error && isMissingCountBreakdownColumnError(error)) {
+                        rowWithoutId = stripCountBreakdownColumns(rowWithoutId);
+                        const fallback = await supabase
+                            .from('observations')
+                            .insert(rowWithoutId)
+                            .select('*')
+                            .single();
+                        data = fallback.data;
+                        error = fallback.error;
+                    }
 
                     if (error) throw error;
 
@@ -494,9 +551,16 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
                     idMap.set(payload.id, created.id);
                     replaceObservationIdInCache(payload.id, created.id);
                 } else {
-                    const { error } = await supabase
+                    let { error } = await supabase
                         .from('observations')
                         .upsert(row, { onConflict: 'id' });
+
+                    if (error && isMissingCountBreakdownColumnError(error)) {
+                        const fallback = await supabase
+                            .from('observations')
+                            .upsert(stripCountBreakdownColumns(row), { onConflict: 'id' });
+                        error = fallback.error;
+                    }
 
                     if (error) throw error;
                 }
@@ -509,11 +573,20 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
                 }
 
                 const row = mapToRow(payload, user.id);
-                const { error } = await supabase
+                let { error } = await supabase
                     .from('observations')
                     .update(row)
                     .eq('id', payload.id)
                     .eq('user_id', user.id);
+
+                if (error && isMissingCountBreakdownColumnError(error)) {
+                    const fallback = await supabase
+                        .from('observations')
+                        .update(stripCountBreakdownColumns(row))
+                        .eq('id', payload.id)
+                        .eq('user_id', user.id);
+                    error = fallback.error;
+                }
 
                 if (error) throw error;
             } else if (item.action === 'DELETE') {

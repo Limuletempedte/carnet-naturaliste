@@ -305,7 +305,8 @@ const App: React.FC = () => {
             setEditingObservation(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (e) {
-            setError("Erreur lors de la sauvegarde de l'observation.");
+            const errorMessage = e instanceof Error ? e.message : String(e);
+            setError(`Erreur lors de la sauvegarde de l'observation: ${errorMessage}`);
             console.error(e);
             throw e;
         }

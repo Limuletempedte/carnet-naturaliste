@@ -499,7 +499,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             }
         } catch (error) {
             console.error("Erreur lors de l'envoi:", error);
-            onToast('error', "Erreur lors de l'envoi de l'observation (Photo ou Données).");
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            onToast('error', `Erreur lors de l'envoi de l'observation: ${errorMessage}`);
         } finally {
             setIsUploading(false);
         }

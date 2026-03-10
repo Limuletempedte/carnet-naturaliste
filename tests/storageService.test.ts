@@ -250,6 +250,65 @@ describe('storageService security filters', () => {
     });
 });
 
+describe('storageService legacy schema fallback', () => {
+    it('retries saveObservation without count-breakdown columns when schema cache is outdated', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        insertSingleMock
+            .mockResolvedValueOnce({
+                data: null,
+                error: {
+                    code: 'PGRST204',
+                    message: "Could not find the 'male_count' column in the schema cache"
+                }
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    id: '123e4567-e89b-42d3-a456-426614174000',
+                    species_name: 'Mésange',
+                    latin_name: '',
+                    taxonomic_group: 'Oiseaux',
+                    date: '2026-03-01',
+                    time: '12:00',
+                    count: 1,
+                    location: '',
+                    gps_lat: null,
+                    gps_lon: null,
+                    municipality: '',
+                    department: '',
+                    country: 'France',
+                    altitude: null,
+                    comment: '',
+                    status: 'NE',
+                    atlas_code: '',
+                    protocol: 'Opportuniste',
+                    sexe: 'Non renseigné',
+                    age: 'Non renseigné',
+                    observation_condition: 'Non renseigné',
+                    comportement: 'Non renseigné',
+                    photo_url: null,
+                    wikipedia_image: null,
+                    sound_url: null
+                },
+                error: null
+            });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+        await storageService.saveObservation(makeObservation('123e4567-e89b-42d3-a456-426614174000'));
+
+        expect(insertMock).toHaveBeenCalledTimes(2);
+        const firstCall = insertMock.mock.calls.at(0) as any[] | undefined;
+        const fallbackCall = insertMock.mock.calls.at(1) as any[] | undefined;
+        const firstRow = firstCall?.[0];
+        const fallbackRow = fallbackCall?.[0];
+
+        expect(firstRow).toHaveProperty('male_count');
+        expect(fallbackRow).not.toHaveProperty('male_count');
+        expect(fallbackRow).not.toHaveProperty('female_count');
+        expect(fallbackRow).not.toHaveProperty('unidentified_count');
+    });
+});
+
 describe('storageService.bulkUpsertObservationsInCache', () => {
     it('writes local cache only once for a whole batch', async () => {
         vi.stubGlobal('navigator', { onLine: true });
