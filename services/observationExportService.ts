@@ -18,7 +18,7 @@ const exportExcel = async (exportData: Observation[]) => {
     const XLSX = await import('xlsx');
     const headers = [
         "ID", "Nom de l'espèce", "Nom latin", "Groupe taxonomique", "Date", "Heure",
-        "Nombre", "Lieu-dit", "Latitude", "Longitude", "Commune", "Département",
+        "Nombre", "Mâles", "Femelles", "Non identifiés", "Lieu-dit", "Latitude", "Longitude", "Commune", "Département",
         "Pays", "Altitude", "Statut", "Code Atlas", "Protocole", "Sexe", "Age",
         "Condition d'observation", "Comportement", "Commentaire"
     ];
@@ -31,6 +31,9 @@ const exportExcel = async (exportData: Observation[]) => {
         Date: obs.date,
         Heure: obs.time,
         Nombre: obs.count,
+        "Mâles": obs.maleCount ?? '',
+        "Femelles": obs.femaleCount ?? '',
+        "Non identifiés": obs.unidentifiedCount ?? '',
         "Lieu-dit": obs.location,
         Latitude: obs.gps.lat ?? '',
         Longitude: obs.gps.lon ?? '',
@@ -70,11 +73,17 @@ const exportPdf = async (exportData: Observation[]) => {
     pdf.text(`Nombre d'observations: ${exportData.length}`, left, y);
     y += 8;
 
+    const formatCountBreakdown = (obs: Observation): string => {
+        const hasBreakdown = obs.maleCount !== undefined || obs.femaleCount !== undefined || obs.unidentifiedCount !== undefined;
+        if (!hasBreakdown) return 'n/a';
+        return `M:${obs.maleCount ?? 0} F:${obs.femaleCount ?? 0} NI:${obs.unidentifiedCount ?? 0}`;
+    };
+
     exportData.forEach((obs, index) => {
         const lines = pdf.splitTextToSize(
             [
                 `${index + 1}. ${obs.speciesName} (${obs.latinName || 'Nom latin non renseigné'})`,
-                `Date: ${obs.date} ${obs.time || ''} | Nombre: ${obs.count} | Groupe: ${obs.taxonomicGroup}`,
+                `Date: ${obs.date} ${obs.time || ''} | Nombre: ${obs.count} | Détail: ${formatCountBreakdown(obs)} | Groupe: ${obs.taxonomicGroup}`,
                 `Lieu: ${obs.location || 'Lieu non renseigné'} ${obs.municipality ? `(${obs.municipality})` : ''}`,
                 `Commentaire: ${obs.comment || 'Aucun'}`
             ].join('\n'),

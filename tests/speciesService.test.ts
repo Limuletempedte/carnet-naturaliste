@@ -162,11 +162,17 @@ describe('fetchSpeciesInfo', () => {
                     family: 'Leporidae',
                     kingdom: 'Animalia'
                 })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    additionalStatus: []
+                })
             } as Response);
 
         const info = await fetchSpeciesInfo('Lepus');
 
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
         expect(info).toMatchObject({
             latinName: 'Lepus europaeus',
             imageUrl: 'https://example.com/species.jpg',
@@ -199,13 +205,22 @@ describe('fetchSpeciesInfo', () => {
                     family: 'Canidae',
                     kingdom: 'Animalia'
                 })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    additionalStatus: [
+                        { datasetAlias: 'IUCN', statusCode: 'LC' }
+                    ]
+                })
             } as Response);
 
         const info = await fetchSpeciesInfo('Renard roux');
 
         expect(info).toMatchObject({
             matchedBy: 'common',
-            confidence: 'high'
+            confidence: 'high',
+            redListStatus: 'LC'
         });
     });
 
@@ -233,13 +248,60 @@ describe('fetchSpeciesInfo', () => {
                     family: 'Canidae',
                     kingdom: 'Animalia'
                 })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    additionalStatus: [
+                        { datasetAlias: 'IUCN', statusCode: 'LC' }
+                    ]
+                })
             } as Response);
 
         const info = await fetchSpeciesInfo('Vulpes vulpes');
 
         expect(info).toMatchObject({
             matchedBy: 'latin',
-            confidence: 'high'
+            confidence: 'high',
+            redListStatus: 'LC'
+        });
+    });
+
+    it('maps Lecanoromycetes class to Lichens group', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            name: 'Parmelia sulcata',
+                            rank: 'species',
+                            preferred_common_name: 'Lichen des murailles'
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Lecanoromycetes',
+                    order: 'Lecanorales',
+                    family: 'Parmeliaceae',
+                    kingdom: 'Fungi'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    additionalStatus: []
+                })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Parmelia sulcata');
+
+        expect(info).toMatchObject({
+            taxonomicGroup: 'Lichens'
         });
     });
 });

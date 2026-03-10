@@ -34,33 +34,46 @@ const getObservationLookupKey = (speciesName: string, latinName: string): string
 
 const normalizeLookupKey = (value: string): string => normalizeSearchText(value || '');
 
+const createEmptyFormData = (defaultTaxonomicGroup: TaxonomicGroup): ObservationFormData => ({
+    speciesName: '',
+    latinName: '',
+    taxonomicGroup: defaultTaxonomicGroup,
+    date: dateToIsoLocal(new Date()),
+    time: new Date().toTimeString().substring(0, 5),
+    count: 1,
+    maleCount: '',
+    femaleCount: '',
+    unidentifiedCount: '',
+    location: '',
+    gps: { lat: null, lon: null },
+    municipality: '',
+    department: '',
+    country: 'France',
+    altitude: null,
+    comment: '',
+    status: Status.NE,
+    atlasCode: '',
+    protocol: Protocol.OPPORTUNIST,
+    sexe: Sexe.UNKNOWN,
+    age: Age.UNKNOWN,
+    observationCondition: ObservationCondition.UNKNOWN,
+    comportement: Comportement.UNKNOWN,
+    photo: undefined,
+    sound: undefined,
+    wikipediaImage: undefined,
+});
+
+const mapObservationToFormData = (observation: Observation): ObservationFormData => ({
+    ...observation,
+    count: observation.count,
+    maleCount: observation.maleCount ?? '',
+    femaleCount: observation.femaleCount ?? '',
+    unidentifiedCount: observation.unidentifiedCount ?? '',
+});
+
 const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, onToast }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
-    const [formData, setFormData] = useState<ObservationFormData>({
-        speciesName: '',
-        latinName: '',
-        taxonomicGroup: defaultTaxonomicGroup,
-        date: dateToIsoLocal(new Date()),
-        time: new Date().toTimeString().substring(0, 5),
-        count: 1,
-        location: '',
-        gps: { lat: null, lon: null },
-        municipality: '',
-        department: '',
-        country: 'France',
-        altitude: null,
-        comment: '',
-        status: Status.NE,
-        atlasCode: '',
-        protocol: Protocol.OPPORTUNIST,
-        sexe: Sexe.UNKNOWN,
-        age: Age.UNKNOWN,
-        observationCondition: ObservationCondition.UNKNOWN,
-        comportement: Comportement.UNKNOWN,
-        photo: undefined,
-        sound: undefined,
-        wikipediaImage: undefined,
-    });
+    const [formData, setFormData] = useState<ObservationFormData>(() => createEmptyFormData(defaultTaxonomicGroup));
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showMap, setShowMap] = useState(false);
     const [speciesInfo, setSpeciesInfo] = useState<SpeciesInfo | null>(null);
@@ -79,26 +92,29 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const speciesInputWrapperRef = useRef<HTMLDivElement>(null);
     const skipNextSuggestionsFetchRef = useRef(false);
     const [showStickyBar, setShowStickyBar] = useState(false);
-    const [fieldTouched, setFieldTouched] = useState<{ latinName: boolean; taxonomicGroup: boolean }>({
+    const [fieldTouched, setFieldTouched] = useState<{ latinName: boolean; taxonomicGroup: boolean; status: boolean }>({
         latinName: false,
-        taxonomicGroup: false
+        taxonomicGroup: false,
+        status: false
     });
     const lookupKey = getObservationLookupKey(formData.speciesName, formData.latinName);
     const normalizedLookupKey = normalizeLookupKey(lookupKey);
 
     useEffect(() => {
         if (initialData) {
-            setFormData({ ...initialData });
+            setFormData(mapObservationToFormData(initialData));
             setPhotoFile(null);
             setSpeciesSuggestions([]);
             setShowSuggestions(false);
             setActiveSuggestionIndex(-1);
             setFieldTouched({
                 latinName: !!initialData.latinName,
-                taxonomicGroup: initialData.taxonomicGroup !== defaultTaxonomicGroup
+                taxonomicGroup: initialData.taxonomicGroup !== defaultTaxonomicGroup,
+                status: initialData.status !== Status.NE
             });
         } else {
-            setFieldTouched({ latinName: false, taxonomicGroup: false });
+            setFormData(createEmptyFormData(defaultTaxonomicGroup));
+            setFieldTouched({ latinName: false, taxonomicGroup: false, status: false });
         }
         lastAutoImageLookupKeyRef.current = '';
         lastAutoImageUrlRef.current = '';
@@ -238,6 +254,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             hasChanges = true;
                         }
 
+                        if (!fieldTouched.status && info.redListStatus && prev.status !== info.redListStatus) {
+                            next.status = info.redListStatus;
+                            hasChanges = true;
+                        }
+
                         return hasChanges ? next : prev;
                     });
                 }
@@ -252,7 +273,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             cancelled = true;
             clearTimeout(timeoutId);
         };
-    }, [fieldTouched.latinName, fieldTouched.taxonomicGroup, lookupKey, normalizedLookupKey]);
+    }, [fieldTouched.latinName, fieldTouched.status, fieldTouched.taxonomicGroup, lookupKey, normalizedLookupKey]);
 
     useEffect(() => {
         return () => {
@@ -299,29 +320,46 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                     [name]: value === '' ? null : parseFloat(value)
                 }
             }));
-        } else if (name === 'count') {
+        } else if (name === 'count' || name === 'maleCount' || name === 'femaleCount' || name === 'unidentifiedCount') {
             if (value === '') {
-                setFormData(prev => ({ ...prev, count: '' }));
+                setFormData(prev => ({ ...prev, [name]: '' }));
                 return;
             }
             const parsed = parseInt(value, 10);
-            setFormData(prev => ({ ...prev, count: Number.isNaN(parsed) ? '' : parsed }));
+            setFormData(prev => ({ ...prev, [name]: Number.isNaN(parsed) ? '' : parsed }));
         } else if (name === 'altitude') {
             setFormData(prev => ({ ...prev, altitude: value === '' ? null : parseFloat(value) }));
         } else {
             if (name === 'latinName') {
                 setFieldTouched(prev => ({ ...prev, latinName: true }));
             }
+            if (name === 'status') {
+                setFieldTouched(prev => ({ ...prev, status: true }));
+            }
             setFormData(prev => ({ ...prev, [name]: value }));
         }
     };
 
-    const handleCountBlur = () => {
+    const handleCountBlur = (fieldName: 'count' | 'maleCount' | 'femaleCount' | 'unidentifiedCount') => {
         setFormData(prev => {
-            const numericCount = Number(prev.count);
-            if (prev.count === '' || !Number.isInteger(numericCount) || numericCount < 1) {
-                return { ...prev, count: 1 };
+            const currentValue = prev[fieldName];
+            const numericValue = Number(currentValue);
+
+            if (fieldName === 'count') {
+                if (currentValue === '' || !Number.isInteger(numericValue) || numericValue < 1) {
+                    return { ...prev, count: 1 };
+                }
+                return prev;
             }
+
+            if (currentValue === '') {
+                return prev;
+            }
+
+            if (!Number.isInteger(numericValue) || numericValue < 0) {
+                return { ...prev, [fieldName]: '' };
+            }
+
             return prev;
         });
     };
@@ -482,7 +520,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-8">
                         <FormSection title="Identification">
-                            <div className="lg:col-span-1">
+                            <div className="lg:col-span-2">
                                 <label htmlFor="speciesName" className={labelClass}>Nom de l'espèce *</label>
                                 <div className="relative" ref={speciesInputWrapperRef}>
                                     <input
@@ -505,7 +543,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                         className={inputClass}
                                         required
                                         autoComplete="off"
-                                        placeholder="Ex: Mésange charbonnière"
+                                        placeholder="Nom commun"
                                     />
                                     {showSuggestions && speciesSuggestions.length > 0 && (
                                         <ul className="absolute z-30 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg max-h-64 overflow-y-auto dark:border-white/10 dark:bg-nature-dark-surface" role="listbox" aria-label="Suggestions espèces">
@@ -531,6 +569,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                         </ul>
                                     )}
                                 </div>
+                                <p className="text-xs text-gray-500 mt-1 ml-1">Exemple: Mésange charbonnière</p>
                                 {errors.speciesName && <p className={errorClass}>{errors.speciesName}</p>}
                                 {isFetchingSuggestions && <p className="text-xs text-gray-500 mt-1 ml-1">Suggestions...</p>}
                                 {isFetchingInfo && <p className="text-xs text-gray-500 mt-1 ml-1">Recherche d'infos...</p>}
@@ -539,8 +578,9 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 <label htmlFor="latinName" className={labelClass}>Nom latin</label>
                                 <input type="text" id="latinName" name="latinName" value={formData.latinName} onChange={handleChange} className={inputClass} />
                             </div>
-                            <div className="lg:col-span-1 row-span-2">
+                            <div className="lg:col-span-3">
                                 <label className={labelClass}>Groupe taxonomique</label>
+                                <p className="text-xs text-gray-500 ml-1 mb-2">Choisissez le groupe le plus proche si la détection auto ne convient pas.</p>
                                 <div className="flex flex-wrap gap-3 pt-2">
                                     {Object.entries(TAXON_LOGOS).map(([group, logoPath]) => (
                                         logoPath && (
@@ -571,8 +611,57 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </div>
                             <div className="lg:col-span-1">
                                 <label htmlFor="count" className={labelClass}>Nombre d'individus</label>
-                                <input type="number" id="count" name="count" value={formData.count} onChange={handleChange} onBlur={handleCountBlur} min="1" className={inputClass} />
+                                <input type="number" id="count" name="count" value={formData.count} onChange={handleChange} onBlur={() => handleCountBlur('count')} min="1" className={inputClass} />
                                 {errors.count && <p className={errorClass}>{errors.count}</p>}
+                            </div>
+                            <div className="lg:col-span-2">
+                                <label className={labelClass}>Répartition (optionnel)</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div>
+                                        <label htmlFor="maleCount" className="block text-[11px] font-semibold text-gray-500 mb-1 ml-1">Mâle</label>
+                                        <input
+                                            type="number"
+                                            id="maleCount"
+                                            name="maleCount"
+                                            min="0"
+                                            value={formData.maleCount}
+                                            onChange={handleChange}
+                                            onBlur={() => handleCountBlur('maleCount')}
+                                            className={inputClass}
+                                        />
+                                        {errors.maleCount && <p className={errorClass}>{errors.maleCount}</p>}
+                                    </div>
+                                    <div>
+                                        <label htmlFor="femaleCount" className="block text-[11px] font-semibold text-gray-500 mb-1 ml-1">Femelle</label>
+                                        <input
+                                            type="number"
+                                            id="femaleCount"
+                                            name="femaleCount"
+                                            min="0"
+                                            value={formData.femaleCount}
+                                            onChange={handleChange}
+                                            onBlur={() => handleCountBlur('femaleCount')}
+                                            className={inputClass}
+                                        />
+                                        {errors.femaleCount && <p className={errorClass}>{errors.femaleCount}</p>}
+                                    </div>
+                                    <div>
+                                        <label htmlFor="unidentifiedCount" className="block text-[11px] font-semibold text-gray-500 mb-1 ml-1">Non identifié</label>
+                                        <input
+                                            type="number"
+                                            id="unidentifiedCount"
+                                            name="unidentifiedCount"
+                                            min="0"
+                                            value={formData.unidentifiedCount}
+                                            onChange={handleChange}
+                                            onBlur={() => handleCountBlur('unidentifiedCount')}
+                                            className={inputClass}
+                                        />
+                                        {errors.unidentifiedCount && <p className={errorClass}>{errors.unidentifiedCount}</p>}
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2 ml-1">Si tu renseignes la répartition, la somme doit être égale au total.</p>
+                                {errors.countBreakdown && <p className={errorClass}>{errors.countBreakdown}</p>}
                             </div>
                         </FormSection>
 
@@ -627,6 +716,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 <select id="status" name="status" value={formData.status} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
                                     {Object.values(Status).map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
+                                {speciesInfo?.redListStatus && (
+                                    <p className="text-xs text-gray-500 mt-1 ml-1">
+                                        Statut auto depuis GBIF/IUCN: <span className="font-semibold">{speciesInfo.redListStatus}</span>
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label htmlFor="protocol" className={labelClass}>Protocole</label>

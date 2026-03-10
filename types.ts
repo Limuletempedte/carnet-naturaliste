@@ -24,6 +24,7 @@ export enum TaxonomicGroup {
     CHIROPTERA = 'Chiroptères',
     ORCHID = 'Orchidées',
     BOTANY = 'Botaniques générales',
+    LICHEN = 'Lichens',
     MUSHROOM = 'Champignons',
     OTHER = 'Autre'
 }
@@ -101,6 +102,9 @@ export interface Observation {
     date: string; // YYYY-MM-DD
     time: string; // HH:MM
     count: number;
+    maleCount?: number;
+    femaleCount?: number;
+    unidentifiedCount?: number;
     location: string;
     gps: { lat: number | null; lon: number | null };
     municipality: string;

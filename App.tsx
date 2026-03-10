@@ -47,6 +47,7 @@ const App: React.FC = () => {
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
+    const [isCreatingBackup, setIsCreatingBackup] = useState(false);
 
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
 
@@ -461,6 +462,31 @@ const App: React.FC = () => {
         }
     };
 
+    const handleCreateBackup = async () => {
+        if (isCreatingBackup) return;
+        setIsCreatingBackup(true);
+        const backupToastId = pushToast('info', 'Préparation de la sauvegarde ZIP...', 0);
+        try {
+            const { createBackup } = await import('./services/backupService');
+            const result = await createBackup(observations);
+            removeToast(backupToastId);
+            pushToast(
+                result.failedImages > 0 ? 'warning' : 'success',
+                result.failedImages > 0
+                    ? `ZIP créé (${result.fileName}) avec ${result.failedImages} image(s) manquante(s).`
+                    : `ZIP créé (${result.fileName}).`,
+                7000
+            );
+        } catch (backupError) {
+            removeToast(backupToastId);
+            const message = backupError instanceof Error ? backupError.message : String(backupError);
+            pushToast('error', `Échec de la sauvegarde ZIP: ${message}`, 9000);
+            console.error('Backup ZIP error:', backupError);
+        } finally {
+            setIsCreatingBackup(false);
+        }
+    };
+
     const { sortConfig, requestSort, sortedAndFilteredObservations, availableYears } = useObservationFilters(
         observations,
         {
@@ -635,11 +661,12 @@ const App: React.FC = () => {
             {/* Backup Button (Desktop Only) */}
             {!isMobileView && (
                 <button
-                    onClick={() => import('./services/backupService').then(m => m.createBackup(observations))}
-                    className="fixed bottom-6 left-6 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-nature-dark dark:text-white"
+                    onClick={handleCreateBackup}
+                    disabled={isCreatingBackup}
+                    className="fixed bottom-6 left-6 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-nature-dark dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
                     title="Sauvegarde Complète (ZIP)"
                 >
-                    💾
+                    {isCreatingBackup ? '⏳' : '💾'}
                 </button>
             )}
 

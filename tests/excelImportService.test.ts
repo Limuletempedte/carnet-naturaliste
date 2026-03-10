@@ -33,4 +33,14 @@ describe('excelImportService taxonomic mapping', () => {
             TaxonomicGroup.MUSHROOM
         ]);
     });
+
+    it('maps lichen keyword to TaxonomicGroup.LICHEN', async () => {
+        const file = createExcelFile([
+            { "Nom de l'espèce": 'Lichen X', 'Groupe taxonomique': 'lichen', Date: '2026-03-01', Heure: '12:00', Nombre: 1 }
+        ]);
+
+        const result = await parseExcel(file);
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(result.observations[0].taxonomicGroup).toBe(TaxonomicGroup.LICHEN);
+    });
 });

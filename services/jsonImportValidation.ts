@@ -108,6 +108,42 @@ const buildObservationFromRow = (
         return null;
     }
 
+    const hasMaleCount = Object.prototype.hasOwnProperty.call(rawRow, 'maleCount');
+    const hasFemaleCount = Object.prototype.hasOwnProperty.call(rawRow, 'femaleCount');
+    const hasUnidentifiedCount = Object.prototype.hasOwnProperty.call(rawRow, 'unidentifiedCount');
+    const hasAnyBreakdown = hasMaleCount || hasFemaleCount || hasUnidentifiedCount;
+
+    const maleCount = hasMaleCount ? asNumberOrNull(rawRow.maleCount) : null;
+    const femaleCount = hasFemaleCount ? asNumberOrNull(rawRow.femaleCount) : null;
+    const unidentifiedCount = hasUnidentifiedCount ? asNumberOrNull(rawRow.unidentifiedCount) : null;
+
+    const isValidBreakdownValue = (value: number | null | undefined): value is number | null => {
+        if (value === null) return true;
+        if (value === undefined) return false;
+        return Number.isInteger(value) && value >= 0;
+    };
+
+    if (!isValidBreakdownValue(maleCount)) {
+        pushError(errors, rowNum, 'maleCount', 'maleCount doit être un entier >= 0, null ou absent', rawRow.maleCount);
+        return null;
+    }
+    if (!isValidBreakdownValue(femaleCount)) {
+        pushError(errors, rowNum, 'femaleCount', 'femaleCount doit être un entier >= 0, null ou absent', rawRow.femaleCount);
+        return null;
+    }
+    if (!isValidBreakdownValue(unidentifiedCount)) {
+        pushError(errors, rowNum, 'unidentifiedCount', 'unidentifiedCount doit être un entier >= 0, null ou absent', rawRow.unidentifiedCount);
+        return null;
+    }
+
+    if (hasAnyBreakdown) {
+        const breakdownSum = (maleCount ?? 0) + (femaleCount ?? 0) + (unidentifiedCount ?? 0);
+        if (breakdownSum !== count) {
+            pushError(errors, rowNum, 'countBreakdown', 'Somme mâles/femelles/non identifiés différente du total', `${maleCount ?? ''}/${femaleCount ?? ''}/${unidentifiedCount ?? ''}`);
+            return null;
+        }
+    }
+
     if (!isRecord(rawRow.gps)) {
         pushError(errors, rowNum, 'gps', 'Objet gps manquant ou invalide', rawRow.gps);
         return null;
@@ -196,6 +232,9 @@ const buildObservationFromRow = (
         date,
         time,
         count,
+        maleCount: maleCount ?? undefined,
+        femaleCount: femaleCount ?? undefined,
+        unidentifiedCount: unidentifiedCount ?? undefined,
         location,
         gps: { lat, lon },
         municipality,

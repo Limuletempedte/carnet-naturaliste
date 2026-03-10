@@ -78,6 +78,9 @@ const HEADER_ALIASES: Record<string, string[]> = {
     date: ['Date', "Date d'observation", 'Observation date'],
     time: ['Heure', 'Horaire', 'Time'],
     count: ['Nombre', 'Nb', 'Effectif', 'Count'],
+    maleCount: ['Mâles', 'Males', 'Male', 'Nb mâles', 'Nb males'],
+    femaleCount: ['Femelles', 'Female', 'Nb femelles'],
+    unidentifiedCount: ['Non identifiés', 'Non identifies', 'Non identifié', 'Non identifie', 'Nb non identifiés', 'Nb non identifies'],
     location: ['Lieu-dit', 'Lieu dit', 'Lieu', 'Site', 'Localite', 'Localité'],
     lat: ['Latitude', 'Lat'],
     lon: ['Longitude', 'Lon', 'Lng'],
@@ -204,6 +207,12 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     // ── Numeric parsing (zero-safe) ──
                     const parsedCount = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.count));
                     const count = parsedCount === null ? 1 : Math.round(parsedCount);
+                    const parsedMaleCount = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.maleCount));
+                    const parsedFemaleCount = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.femaleCount));
+                    const parsedUnidentifiedCount = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.unidentifiedCount));
+                    const maleCount = parsedMaleCount === null ? null : Math.round(parsedMaleCount);
+                    const femaleCount = parsedFemaleCount === null ? null : Math.round(parsedFemaleCount);
+                    const unidentifiedCount = parsedUnidentifiedCount === null ? null : Math.round(parsedUnidentifiedCount);
 
                     const lat = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.lat));
                     const lon = parseFlexibleNumber(getRowValue(row, HEADER_ALIASES.lon));
@@ -227,6 +236,9 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     const safeLat = lat !== null && (lat < -90 || lat > 90) ? null : lat;
                     const safeLon = lon !== null && (lon < -180 || lon > 180) ? null : lon;
                     const safeCount = count < 1 ? 1 : count;
+                    const safeMaleCount = maleCount !== null && maleCount < 0 ? null : maleCount;
+                    const safeFemaleCount = femaleCount !== null && femaleCount < 0 ? null : femaleCount;
+                    const safeUnidentifiedCount = unidentifiedCount !== null && unidentifiedCount < 0 ? null : unidentifiedCount;
                     if (lat !== safeLat) {
                         warnings.push({ row: rowNum, field: 'Latitude', message: 'Latitude hors limites [-90, 90], valeur annulée', original: String(lat), applied: 'null' });
                     }
@@ -235,6 +247,29 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     }
                     if (count !== safeCount) {
                         warnings.push({ row: rowNum, field: 'Nombre', message: 'Nombre invalide (<1), fallback à 1', original: String(count), applied: '1' });
+                    }
+                    if (maleCount !== safeMaleCount) {
+                        warnings.push({ row: rowNum, field: 'Mâles', message: 'Nombre invalide (<0), valeur annulée', original: String(maleCount), applied: 'null' });
+                    }
+                    if (femaleCount !== safeFemaleCount) {
+                        warnings.push({ row: rowNum, field: 'Femelles', message: 'Nombre invalide (<0), valeur annulée', original: String(femaleCount), applied: 'null' });
+                    }
+                    if (unidentifiedCount !== safeUnidentifiedCount) {
+                        warnings.push({ row: rowNum, field: 'Non identifiés', message: 'Nombre invalide (<0), valeur annulée', original: String(unidentifiedCount), applied: 'null' });
+                    }
+
+                    const hasCountBreakdown = safeMaleCount !== null || safeFemaleCount !== null || safeUnidentifiedCount !== null;
+                    const breakdownSum = (safeMaleCount ?? 0) + (safeFemaleCount ?? 0) + (safeUnidentifiedCount ?? 0);
+                    const hasValidBreakdown = !hasCountBreakdown || breakdownSum === safeCount;
+
+                    if (!hasValidBreakdown) {
+                        warnings.push({
+                            row: rowNum,
+                            field: 'Répartition',
+                            message: 'Somme mâles/femelles/non identifiés différente du total, répartition ignorée',
+                            original: `${safeMaleCount ?? ''}/${safeFemaleCount ?? ''}/${safeUnidentifiedCount ?? ''}`,
+                            applied: '(répartition vidée)'
+                        });
                     }
 
                     return {
@@ -245,6 +280,9 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                         date: parseDate(getRowValue(row, HEADER_ALIASES.date), rowNum, warnings),
                         time: parseTime(getRowValue(row, HEADER_ALIASES.time)),
                         count: safeCount,
+                        maleCount: hasValidBreakdown ? (safeMaleCount ?? undefined) : undefined,
+                        femaleCount: hasValidBreakdown ? (safeFemaleCount ?? undefined) : undefined,
+                        unidentifiedCount: hasValidBreakdown ? (safeUnidentifiedCount ?? undefined) : undefined,
                         location: toText(getRowValue(row, HEADER_ALIASES.location)),
                         gps: { lat: safeLat, lon: safeLon },
                         municipality: toText(getRowValue(row, HEADER_ALIASES.municipality)),
@@ -357,7 +395,7 @@ const PROTOCOL_SYNONYMS: Record<string, Protocol> = {
     'autre': Protocol.OTHER,
 };
 
-// ─── Taxonomic Group Mapper (complete for all 25 groups) ────────────────────
+// ─── Taxonomic Group Mapper (complete for app groups) ────────────────────────
 
 const TAXON_KEYWORDS: Array<{ keywords: string[]; group: TaxonomicGroup }> = [
     { keywords: ['chiroptere', 'chauve-souris', 'chauve souris'], group: TaxonomicGroup.CHIROPTERA },
@@ -383,6 +421,7 @@ const TAXON_KEYWORDS: Array<{ keywords: string[]; group: TaxonomicGroup }> = [
     { keywords: ['poisson', 'ichtyofaune'], group: TaxonomicGroup.FISH },
     { keywords: ['crustace', 'ecrevisse', 'crevette', 'crabe'], group: TaxonomicGroup.CRUSTACEAN },
     { keywords: ['orchidee', 'orchis', 'ophrys'], group: TaxonomicGroup.ORCHID },
+    { keywords: ['lichen', 'lichens', 'lichenise', 'lichenisee'], group: TaxonomicGroup.LICHEN },
     { keywords: ['champignon', 'champignons', 'mycologie', 'mycelium', 'fungi', 'basidiomycete', 'ascomycete'], group: TaxonomicGroup.MUSHROOM },
     { keywords: ['botanique', 'plante', 'flore', 'arbre', 'arbuste', 'fleur', 'fougere'], group: TaxonomicGroup.BOTANY },
 ];

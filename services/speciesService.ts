@@ -1,4 +1,4 @@
-import { TaxonomicGroup } from '../types';
+import { Status, TaxonomicGroup } from '../types';
 
 export interface SpeciesInfo {
     description: string;
@@ -6,6 +6,7 @@ export interface SpeciesInfo {
     sourceUrl: string;
     latinName?: string;
     taxonomicGroup?: TaxonomicGroup;
+    redListStatus?: Status;
     matchedBy: 'latin' | 'common';
     confidence: 'high' | 'medium' | 'low';
 }
@@ -190,6 +191,7 @@ interface GBIFSuggestResult {
 }
 
 const GBIF_BASE = 'https://api.gbif.org/v1/species';
+const GBIF_V2_SPECIES_MATCH = 'https://api.gbif.org/v2/species/match';
 
 /**
  * Match a latin/scientific name to the GBIF backbone taxonomy.
@@ -223,6 +225,52 @@ export const suggestSpecies = async (query: string, limit = 5): Promise<GBIFSugg
     } catch (e) {
         console.error('GBIF suggest error:', e);
         return [];
+    }
+};
+
+interface GBIFAdditionalStatusEntry {
+    datasetAlias?: string;
+    statusCode?: string;
+}
+
+interface GBIFV2MatchResult {
+    additionalStatus?: GBIFAdditionalStatusEntry[];
+}
+
+const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
+    const normalizedCode = (code || '').trim().toUpperCase();
+    if (!normalizedCode) return undefined;
+
+    switch (normalizedCode) {
+        case 'NE': return Status.NE;
+        case 'DD': return Status.DD;
+        case 'LC': return Status.LC;
+        case 'NT': return Status.NT;
+        case 'VU': return Status.VU;
+        case 'EN': return Status.EN;
+        case 'CR': return Status.CR;
+        case 'EW': return Status.EW;
+        case 'EX': return Status.EX;
+        default: return undefined;
+    }
+};
+
+export const fetchGbifIucnStatus = async (latinName: string): Promise<Status | undefined> => {
+    if (!latinName || latinName.trim().length < 2) return undefined;
+
+    try {
+        const url = `${GBIF_V2_SPECIES_MATCH}?scientificName=${encodeURIComponent(latinName.trim())}`;
+        const response = await fetch(url);
+        if (!response.ok) return undefined;
+
+        const data: GBIFV2MatchResult = await response.json();
+        const additionalStatuses = Array.isArray(data.additionalStatus) ? data.additionalStatus : [];
+        const iucnEntry = additionalStatuses.find(entry => (entry.datasetAlias || '').trim().toUpperCase() === 'IUCN');
+
+        return mapIucnStatusCodeToStatus(iucnEntry?.statusCode);
+    } catch (error) {
+        console.error('GBIF v2 IUCN status error:', error);
+        return undefined;
     }
 };
 
@@ -312,8 +360,6 @@ const mapGBIFToTaxonomicGroup = (
 ): TaxonomicGroup | undefined => {
     if (!gbifClass && !kingdom) return undefined;
 
-    if (kingdom === 'Fungi') return TaxonomicGroup.MUSHROOM;
-
     switch (gbifClass) {
         case 'Aves':
             return TaxonomicGroup.BIRD;
@@ -398,12 +444,16 @@ const mapGBIFToTaxonomicGroup = (
         case 'Agaricomycetes':
         case 'Sordariomycetes':
         case 'Eurotiomycetes':
-        case 'Lecanoromycetes':
         case 'Pezizomycetes':
             return TaxonomicGroup.MUSHROOM;
 
+        case 'Lecanoromycetes':
+        case 'Lichinomycetes':
+            return TaxonomicGroup.LICHEN;
+
         default:
             if (kingdom === 'Plantae') return TaxonomicGroup.BOTANY;
+            if (kingdom === 'Fungi') return TaxonomicGroup.MUSHROOM;
             if (kingdom === 'Animalia') return TaxonomicGroup.OTHER;
             return undefined;
     }
@@ -460,6 +510,11 @@ export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo
             }
         }
 
+        let redListStatus: Status | undefined;
+        if (latinName) {
+            redListStatus = await fetchGbifIucnStatus(latinName);
+        }
+
         // Fallback: use iNaturalist iconic_taxon_name if GBIF didn't yield a group
         if (!taxonomicGroup && inat.iconic_taxon_name) {
             taxonomicGroup = mapINatIconicToTaxonomicGroup(inat.iconic_taxon_name);
@@ -471,6 +526,7 @@ export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo
             sourceUrl,
             latinName,
             taxonomicGroup,
+            redListStatus,
             matchedBy: matchMeta.matchedBy,
             confidence: matchMeta.confidence
         };

@@ -11,6 +11,9 @@ create table observations (
   date date not null,
   time time,
   count int default 1,
+  male_count int,
+  female_count int,
+  unidentified_count int,
   location text,
   gps_lat float,
   gps_lon float,
@@ -37,6 +40,31 @@ create table observations (
 alter table observations
   add constraint observations_count_positive_check
   check (count is not null and count >= 1);
+
+alter table observations
+  add constraint observations_male_count_non_negative_check
+  check (male_count is null or male_count >= 0);
+
+alter table observations
+  add constraint observations_female_count_non_negative_check
+  check (female_count is null or female_count >= 0);
+
+alter table observations
+  add constraint observations_unidentified_count_non_negative_check
+  check (unidentified_count is null or unidentified_count >= 0);
+
+alter table observations
+  add constraint observations_count_breakdown_sum_check
+  check (
+    (
+      male_count is null
+      and female_count is null
+      and unidentified_count is null
+    )
+    or (
+      coalesce(male_count, 0) + coalesce(female_count, 0) + coalesce(unidentified_count, 0) = count
+    )
+  );
 
 alter table observations
   add constraint observations_species_name_not_blank_check
