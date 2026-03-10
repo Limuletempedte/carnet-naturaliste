@@ -15,7 +15,7 @@ export enum TaxonomicGroup {
     CICADA = 'Cigale',
     HETEROPTERA = 'Punaises',
     COLEOPTERA = 'Coléoptères',
-    NEUROPTERA = 'Nervoptère',
+    NEUROPTERA = 'Névroptères',
     DIPTERA = 'Diptères',
     PHASMID = 'Phasme',
     ARACHNID = 'Araignées',
