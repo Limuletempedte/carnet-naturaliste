@@ -7,11 +7,7 @@ export interface PlannedImportObservation {
     regeneratedId: boolean;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export const isUuid = (value: unknown): value is string => {
-    return typeof value === 'string' && UUID_RE.test(value.trim());
-};
+import { isUuid } from '../utils/uuidUtils';
 
 export const applyImportedObservationPolicy = (
     imported: Observation,
@@ -19,7 +15,7 @@ export const applyImportedObservationPolicy = (
 ): PlannedImportObservation => {
     const originalId = String(imported.id || '').trim();
     const hasValidId = isUuid(originalId);
-    const nextId = hasValidId ? originalId : crypto.randomUUID();
+    const nextId = (hasValidId && knownIds.has(originalId)) ? originalId : crypto.randomUUID();
     const mode: 'insert' | 'update' = knownIds.has(nextId) ? 'update' : 'insert';
 
     knownIds.add(nextId);

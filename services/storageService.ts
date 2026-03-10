@@ -1,9 +1,9 @@
 import { supabase } from '../supabaseClient';
 import { Observation } from '../types';
-import { sanitizeCachedMediaValue } from './storageCacheUtils';
+import { sanitizeCachedMediaValue, sanitizeCachedMediaValueWithTracking } from './storageCacheUtils';
 import { OfflineAction, OfflineQueueItem, isTempId, mapQueueItemIds, reduceQueue } from './storageQueueUtils';
+import { isUuid } from '../utils/uuidUtils';
 
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEGACY_QUEUE_KEY = 'offline_sync_queue';
 const LEGACY_LOCAL_CACHE_KEY = 'local_observations_cache';
 const QUEUE_KEY_PREFIX = 'offline_sync_queue';
@@ -22,9 +22,9 @@ export interface OfflineSyncResult {
     failureReasons: string[];
 }
 
-const isUuid = (value: unknown): value is string => {
-    return typeof value === 'string' && UUID_V4_RE.test(value.trim());
-};
+interface PersistenceOptions {
+    skipCache?: boolean;
+}
 
 let storageNamespace: string | null = null;
 
@@ -182,13 +182,25 @@ const getLocalCache = (): Observation[] => {
 const setLocalCache = (observations: Observation[]) => {
     try {
         const { cacheKey } = getScopedKeys();
+        let strippedMediaCount = 0;
         const lightweight = observations.map(observation => ({
             ...observation,
-            photo: sanitizeCachedMediaValue(observation.photo),
-            sound: sanitizeCachedMediaValue(observation.sound),
+            photo: (() => {
+                const sanitized = sanitizeCachedMediaValueWithTracking(observation.photo);
+                if (sanitized.stripped) strippedMediaCount += 1;
+                return sanitized.value;
+            })(),
+            sound: (() => {
+                const sanitized = sanitizeCachedMediaValueWithTracking(observation.sound);
+                if (sanitized.stripped) strippedMediaCount += 1;
+                return sanitized.value;
+            })(),
             wikipediaImage: sanitizeCachedMediaValue(observation.wikipediaImage)
         }));
         localStorage.setItem(cacheKey, JSON.stringify(lightweight));
+        if (strippedMediaCount > 0) {
+            window.dispatchEvent(new CustomEvent('media-stripped-offline', { detail: { count: strippedMediaCount } }));
+        }
     } catch (e) {
         console.warn('localStorage quota exceeded, cache not saved:', e);
         window.dispatchEvent(new CustomEvent('storage-quota-exceeded'));
@@ -214,6 +226,15 @@ const upsertObservationInCache = (observation: Observation) => {
     setLocalCache(next);
 };
 
+export const bulkUpsertObservationsInCache = (newObservations: Observation[]): void => {
+    const cache = getLocalCache();
+    const mergedById = new Map(cache.map(obs => [obs.id, obs] as [string, Observation]));
+    for (const obs of newObservations) {
+        mergedById.set(obs.id, obs);
+    }
+    setLocalCache(Array.from(mergedById.values()));
+};
+
 export const getObservations = async (): Promise<ObservationLoadResult> => {
     ensureStorageNamespace();
     const cached = getLocalCache();
@@ -223,9 +244,13 @@ export const getObservations = async (): Promise<ObservationLoadResult> => {
     }
 
     try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Utilisateur non authentifié');
+
         const { data, error } = await supabase
             .from('observations')
             .select('*')
+            .eq('user_id', user.id)
             .order('date', { ascending: false });
 
         if (error) throw error;
@@ -246,7 +271,10 @@ export const getObservations = async (): Promise<ObservationLoadResult> => {
     }
 };
 
-export const saveObservation = async (observation: Observation): Promise<Observation> => {
+export const saveObservation = async (
+    observation: Observation,
+    options: PersistenceOptions = {}
+): Promise<Observation> => {
     ensureStorageNamespace();
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -257,7 +285,9 @@ export const saveObservation = async (observation: Observation): Promise<Observa
     if (!navigator.onLine) {
         const offlineObs = { ...observation, id: observation.id || `temp-${Date.now()}` };
         addToQueue('INSERT', offlineObs);
-        upsertObservationInCache(offlineObs);
+        if (!options.skipCache) {
+            upsertObservationInCache(offlineObs);
+        }
         return offlineObs;
     }
 
@@ -275,12 +305,17 @@ export const saveObservation = async (observation: Observation): Promise<Observa
     }
 
     const savedObs = mapToObservation(data);
-    upsertObservationInCache(savedObs);
+    if (!options.skipCache) {
+        upsertObservationInCache(savedObs);
+    }
 
     return savedObs;
 };
 
-export const updateObservation = async (observation: Observation): Promise<void> => {
+export const updateObservation = async (
+    observation: Observation,
+    options: PersistenceOptions = {}
+): Promise<void> => {
     ensureStorageNamespace();
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -288,7 +323,9 @@ export const updateObservation = async (observation: Observation): Promise<void>
 
     if (!navigator.onLine) {
         addToQueue('UPDATE', observation);
-        upsertObservationInCache(observation);
+        if (!options.skipCache) {
+            upsertObservationInCache(observation);
+        }
         return;
     }
 
@@ -297,18 +334,24 @@ export const updateObservation = async (observation: Observation): Promise<void>
     const { error } = await supabase
         .from('observations')
         .update(row)
-        .eq('id', observation.id);
+        .eq('id', observation.id)
+        .eq('user_id', userId);
 
     if (error) {
         console.error('Error updating observation:', error);
         throw new Error(error.message);
     }
 
-    upsertObservationInCache(observation);
+    if (!options.skipCache) {
+        upsertObservationInCache(observation);
+    }
 };
 
 export const deleteObservation = async (id: string): Promise<void> => {
     ensureStorageNamespace();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id || 'offline-user';
 
     if (!navigator.onLine) {
         addToQueue('DELETE', { id });
@@ -322,7 +365,8 @@ export const deleteObservation = async (id: string): Promise<void> => {
     const { error } = await supabase
         .from('observations')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', userId);
 
     if (error) {
         console.error('Error deleting observation:', error);
@@ -334,31 +378,7 @@ export const deleteObservation = async (id: string): Promise<void> => {
     setLocalCache(updatedCache);
 };
 
-export const syncObservations = async (observations: Observation[]): Promise<void> => {
-    if (observations.length === 0) return;
-    ensureStorageNamespace();
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const rows = observations.map(obs => mapToRow(obs, user.id));
-
-    const { error } = await supabase
-        .from('observations')
-        .upsert(rows, { onConflict: 'id' });
-
-    if (error) {
-        console.error('Error syncing observations:', error);
-        throw new Error(error.message);
-    }
-
-    const currentCache = getLocalCache();
-    const mergedById = new Map(currentCache.map(obs => [obs.id, obs]));
-    for (const obs of observations) {
-        mergedById.set(obs.id, obs);
-    }
-    setLocalCache(Array.from(mergedById.values()));
-};
 
 export const uploadPhoto = async (file: Blob): Promise<string> => {
     if (!navigator.onLine) {
@@ -486,7 +506,8 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
                 const { error } = await supabase
                     .from('observations')
                     .update(row)
-                    .eq('id', payload.id);
+                    .eq('id', payload.id)
+                    .eq('user_id', user.id);
 
                 if (error) throw error;
             } else if (item.action === 'DELETE') {
@@ -499,7 +520,8 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
                 const { error } = await supabase
                     .from('observations')
                     .delete()
-                    .eq('id', payload.id);
+                    .eq('id', payload.id)
+                    .eq('user_id', user.id);
 
                 if (error) throw error;
             }
@@ -517,6 +539,7 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
         const { data, error } = await supabase
             .from('observations')
             .select('*')
+            .eq('user_id', user.id)
             .order('date', { ascending: false });
 
         if (!error && data) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeCachedMediaValue } from '../services/storageCacheUtils';
+import { sanitizeCachedMediaValue, sanitizeCachedMediaValueWithTracking } from '../services/storageCacheUtils';
 
 describe('sanitizeCachedMediaValue', () => {
     it('keeps remote URLs', () => {
@@ -13,5 +13,14 @@ describe('sanitizeCachedMediaValue', () => {
     it('drops very large data URLs', () => {
         const hugeDataUrl = `data:image/png;base64,${'a'.repeat(260_000)}`;
         expect(sanitizeCachedMediaValue(hugeDataUrl)).toBeUndefined();
+    });
+});
+
+describe('sanitizeCachedMediaValueWithTracking', () => {
+    it('marks stripped media when value is dropped', () => {
+        expect(sanitizeCachedMediaValueWithTracking('blob:http://localhost/test')).toEqual({
+            value: undefined,
+            stripped: true
+        });
     });
 });

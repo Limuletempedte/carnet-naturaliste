@@ -10,8 +10,8 @@ import {
 } from '../types';
 import { ImportError, ImportResult, ImportWarning } from './excelImportService';
 import { isIsoDateString } from '../utils/dateUtils';
+import { isUuid } from '../utils/uuidUtils';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -144,7 +144,7 @@ const buildObservationFromRow = (
     if (!id) {
         id = crypto.randomUUID();
         pushWarning(warnings, rowNum, 'id', 'ID manquant, UUID généré', rawRow.id, id);
-    } else if (!UUID_RE.test(id)) {
+    } else if (!isUuid(id)) {
         const generated = crypto.randomUUID();
         pushWarning(warnings, rowNum, 'id', 'ID non UUID, UUID régénéré', id, generated);
         id = generated;

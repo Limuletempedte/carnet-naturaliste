@@ -36,6 +36,7 @@ interface ObservationListProps {
     requestSort: (key: keyof Observation) => void;
     isMobileView: boolean;
     isBulkDeleting?: boolean;
+    isImporting: boolean;
 }
 
 const ObservationList: React.FC<ObservationListProps> = ({
@@ -63,7 +64,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
     sortConfig,
     requestSort,
     isMobileView,
-    isBulkDeleting = false
+    isBulkDeleting = false,
+    isImporting
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const tableRef = useRef<HTMLDivElement>(null);
@@ -363,6 +365,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     isOpen={!!previewImportResult}
                     fileName={previewImportFileName}
                     result={previewImportResult}
+                    isImporting={isImporting}
                     onCancel={handleCancelPreview}
                     onConfirm={handleConfirmPreview}
                 />
@@ -588,6 +591,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 isOpen={!!previewImportResult}
                 fileName={previewImportFileName}
                 result={previewImportResult}
+                isImporting={isImporting}
                 onCancel={handleCancelPreview}
                 onConfirm={handleConfirmPreview}
             />

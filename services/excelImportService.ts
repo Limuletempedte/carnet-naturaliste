@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { isUuid } from '../utils/uuidUtils';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement } from '../types';
 import { dateToIsoLocal, isIsoDateString } from '../utils/dateUtils';
 
@@ -38,12 +39,6 @@ export interface ImportResult {
 /** Strips accents, trims, lowercases, and compacts whitespace */
 const normalize = (s: string | undefined | null): string =>
     (s ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const isUuid = (value: unknown): value is string => {
-    return typeof value === 'string' && UUID_RE.test(value.trim());
-};
 
 const todayIso = (): string => dateToIsoLocal(new Date());
 
@@ -388,6 +383,7 @@ const TAXON_KEYWORDS: Array<{ keywords: string[]; group: TaxonomicGroup }> = [
     { keywords: ['poisson', 'ichtyofaune'], group: TaxonomicGroup.FISH },
     { keywords: ['crustace', 'ecrevisse', 'crevette', 'crabe'], group: TaxonomicGroup.CRUSTACEAN },
     { keywords: ['orchidee', 'orchis', 'ophrys'], group: TaxonomicGroup.ORCHID },
+    { keywords: ['champignon', 'champignons', 'mycologie', 'mycelium', 'fungi', 'basidiomycete', 'ascomycete'], group: TaxonomicGroup.MUSHROOM },
     { keywords: ['botanique', 'plante', 'flore', 'arbre', 'arbuste', 'fleur', 'fougere'], group: TaxonomicGroup.BOTANY },
 ];
 

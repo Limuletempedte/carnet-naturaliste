@@ -115,8 +115,8 @@ export interface Observation {
     age: Age;
     observationCondition: ObservationCondition;
     comportement: Comportement;
-    photo?: string; // base64 data URL
-    sound?: string; // base64 data URL
+    photo?: string; // URL Supabase Storage (ou base64 temporaire avant upload)
+    sound?: string; // URL Supabase Storage (ou base64 temporaire avant upload)
     wikipediaImage?: string; // URL from Wikipedia
 }
 

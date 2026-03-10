@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { Observation, View, TaxonomicGroup, Status } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
@@ -9,7 +9,8 @@ import { ImportResult } from './services/excelImportService';
 import FilterBar from './components/FilterBar';
 import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
 import { compareIsoDate } from './utils/dateUtils';
-import { buildImportPersistencePlan, isUuid } from './services/importPolicy';
+import { buildImportPersistencePlan } from './services/importPolicy';
+import { isUuid } from './utils/uuidUtils';
 import { useObservationFilters } from './hooks/useObservationFilters';
 import { selectStartupEnrichmentCandidates } from './services/startupEnrichmentUtils';
 
@@ -45,6 +46,7 @@ const App: React.FC = () => {
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
 
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
 
@@ -59,9 +61,12 @@ const App: React.FC = () => {
     const pushToast = (type: ToastType, message: string, durationMs = 4500) => {
         const id = crypto.randomUUID();
         setToasts(prev => [...prev, { id, type, message }]);
-        window.setTimeout(() => {
-            setToasts(prev => prev.filter(t => t.id !== id));
-        }, durationMs);
+        if (durationMs > 0) {
+            window.setTimeout(() => {
+                setToasts(prev => prev.filter(t => t.id !== id));
+            }, durationMs);
+        }
+        return id;
     };
 
     useEffect(() => {
@@ -75,8 +80,19 @@ const App: React.FC = () => {
     // Listen for localStorage quota exceeded and warn user
     useEffect(() => {
         const handleQuota = () => pushToast('warning', 'Stockage local plein — les données hors-ligne risquent de ne pas être sauvegardées. Libérez de l\'espace ou synchronisez vos données.', 8000);
+        const handleMediaStripped = (event: Event) => {
+            const strippedCount = (event as CustomEvent<{ count?: number }>).detail?.count;
+            if (!strippedCount || strippedCount < 1) return;
+            pushToast('warning', `⚠️ ${strippedCount} photo(s)/son(s) non disponibles hors-ligne (trop volumineuses pour le cache local).`, 8000);
+        };
+
         window.addEventListener('storage-quota-exceeded', handleQuota);
-        return () => window.removeEventListener('storage-quota-exceeded', handleQuota);
+        window.addEventListener('media-stripped-offline', handleMediaStripped);
+
+        return () => {
+            window.removeEventListener('storage-quota-exceeded', handleQuota);
+            window.removeEventListener('media-stripped-offline', handleMediaStripped);
+        };
     }, []);
 
     useEffect(() => {
@@ -295,12 +311,16 @@ const App: React.FC = () => {
     };
 
     const handleImportRequest = async (importResult: ImportResult): Promise<void> => {
+        let importToastId: string | null = null;
         try {
             if (importResult.report.blockingErrors.length > 0) {
                 throw new Error(`Le fichier contient ${importResult.report.blockingErrors.length} erreur(s) bloquante(s).`);
             }
 
-            const mergedById = new Map(observations.map(obs => [obs.id, obs]));
+            setIsImporting(true);
+            importToastId = pushToast('info', "⏳ Import en cours...", 0);
+
+            const mergedById = new Map(observations.map(obs => [obs.id, obs] as [string, Observation]));
             const failureReasons = new Map<string, number>();
             let addedCount = 0;
             let updatedCount = 0;
@@ -317,74 +337,103 @@ const App: React.FC = () => {
             };
 
             const importPlan = buildImportPersistencePlan(importResult.observations, observations);
+            const successfulOps: Observation[] = [];
 
-            for (const planned of importPlan) {
-                const observationToPersist = planned.observation;
-                if (planned.regeneratedId && !isUuid(planned.originalId)) {
-                    regeneratedIds++;
-                }
+            const IMPORT_CONCURRENCY = 5;
+            let nextIndex = 0;
 
-                try {
-                    if (planned.mode === 'update') {
-                        await updateObservation(observationToPersist);
-                        mergedById.set(observationToPersist.id, observationToPersist);
-                        updatedCount++;
-                    } else {
-                        const savedObs = await saveObservation(observationToPersist);
-                        const persisted = { ...observationToPersist, id: savedObs.id };
-                        mergedById.set(persisted.id, persisted);
-                        addedCount++;
+            const worker = async () => {
+                while (nextIndex < importPlan.length) {
+                    const i = nextIndex++;
+                    const planned = importPlan[i];
+                    const observationToPersist = planned.observation;
+
+                    if (planned.regeneratedId && !isUuid(planned.originalId)) {
+                        regeneratedIds++;
                     }
-                } catch (importError) {
-                    failedCount++;
-                    captureFailure(toErrorMessage(importError));
+
+                    try {
+                        if (planned.mode === 'update') {
+                            await updateObservation(observationToPersist, { skipCache: true });
+                            successfulOps.push(observationToPersist);
+                            updatedCount++;
+                        } else {
+                            const savedObs = await saveObservation(observationToPersist, { skipCache: true });
+                            const persisted = { ...observationToPersist, id: savedObs.id };
+                            successfulOps.push(persisted);
+                            addedCount++;
+                        }
+                    } catch (importError) {
+                        failedCount++;
+                        captureFailure(toErrorMessage(importError));
+                    }
                 }
-            }
+            };
+
+            // Exécution en batch concurrent
+            await Promise.all(Array.from({ length: IMPORT_CONCURRENCY }, worker));
 
             const successCount = addedCount + updatedCount;
             const failureSummary = Array.from(failureReasons.entries())
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 3)
-                .map(([reason, count]) => `${count}x ${reason}`)
+                .map(([reason, count]) => `${count}× ${reason}`)
                 .join(' ; ');
 
             if (successCount === 0) {
                 throw new Error(failureSummary
-                    ? `Aucune ligne n'a pu être importée. ${failureSummary}`
+                    ? `Aucune ligne n'a pu être importée. Échecs: ${failureSummary}`
                     : "Aucune ligne n'a pu être importée.");
             }
 
+            // Cohérence Cache <-> React State
+            // 1. Mise à jour massive du cache local (1 écriture)
+            bulkUpsertObservationsInCache(successfulOps);
+
+            // 2. Mise à jour de l'état React
+            for (const obs of successfulOps) {
+                mergedById.set(obs.id, obs);
+            }
             const mergedObservations = Array.from(mergedById.values()).sort((a, b) => compareIsoDate(b.date, a.date));
             setObservations(mergedObservations);
+
+            // UI Reset
             setView(View.LIST);
             setError(null);
 
             pushToast(
                 failedCount > 0 ? 'warning' : 'success',
                 `Import terminé: ${addedCount} ajoutée(s), ${updatedCount} mise(s) à jour, ${failedCount} échec(s).`,
-                failedCount > 0 ? 7000 : 4500
+                failedCount > 0 ? 8000 : 5000
             );
+
+            if (failedCount > 0 && failureSummary) {
+                pushToast('error', `⚠️ Échecs : ${failureSummary}`, 10000);
+            }
+
             if (importResult.report.warnings.length > 0) {
                 pushToast('warning', `Import avec ${importResult.report.warnings.length} warning(s).`, 7000);
             }
             if (importResult.report.errors.length > 0) {
-                pushToast('warning', `${importResult.report.errors.length} erreur(s) de validation ont été détectées dans le fichier.`, 7000);
+                pushToast('warning', `${importResult.report.errors.length} erreur(s) de validation détectées.`, 7000);
             }
             if (regeneratedIds > 0) {
-                pushToast('info', `${regeneratedIds} ligne(s) ont reçu un nouvel ID car l'ID source était vide ou invalide.`, 7000);
+                pushToast('info', `${regeneratedIds} ligne(s) ont reçu un nouvel ID (ID source vide ou invalide).`, 7000);
             }
-            if (failedCount > 0 && failureSummary) {
-                pushToast('error', `Échecs partiels: ${failureSummary}`, 9000);
-            }
+
         } catch (e: any) {
             const errorMessage = e instanceof Error ? e.message : String(e);
             setError(`Erreur lors de l'importation : ${errorMessage}`);
             pushToast('error', `Échec de l'import: ${errorMessage}`);
             console.error(e);
             throw e;
+        } finally {
+            if (importToastId) {
+                removeToast(importToastId);
+            }
+            setIsImporting(false);
         }
     };
-
     const handleCancel = () => {
         setView(View.LIST);
         setEditingObservation(null);
@@ -660,10 +709,10 @@ const App: React.FC = () => {
                             requestSort={requestSort}
                             isMobileView={isMobileView}
                             isBulkDeleting={isBulkDeleting}
+                            isImporting={isImporting}
                         />
                     ) : view === View.MAP ? (
                         <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
-                            {/* Filters for Map view */}
                             <FilterBar
                                 searchTerm={searchTerm}
                                 onSearchChange={setSearchTerm}

@@ -13,11 +13,20 @@ const isPersistableDataUrl = (value: string): boolean => {
     return value.startsWith('data:') && value.length <= MAX_PERSISTED_DATA_URL_LENGTH;
 };
 
-export const sanitizeCachedMediaValue = (value?: string): string | undefined => {
-    if (!value) return undefined;
-    if (value.startsWith('blob:')) return undefined;
+export interface SanitizationResult {
+    value: string | undefined;
+    stripped: boolean;
+}
+
+export const sanitizeCachedMediaValueWithTracking = (value?: string): SanitizationResult => {
+    if (!value) return { value: undefined, stripped: false };
+    if (value.startsWith('blob:')) return { value: undefined, stripped: true };
     if (isStableRemoteUrl(value) || isPersistableDataUrl(value)) {
-        return value;
+        return { value, stripped: false };
     }
-    return undefined;
+    return { value: undefined, stripped: true };
+};
+
+export const sanitizeCachedMediaValue = (value?: string): string | undefined => {
+    return sanitizeCachedMediaValueWithTracking(value).value;
 };

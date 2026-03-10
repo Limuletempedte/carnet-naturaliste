@@ -27,13 +27,13 @@ const makeObservation = (id: string, speciesName = 'Test'): Observation => ({
 });
 
 describe('import policy', () => {
-    it('keeps valid UUIDs for new observations', () => {
+    it('regenerates valid UUIDs if they are new (cross-account import protection)', () => {
         const uuid = '123e4567-e89b-42d3-a456-426614174000';
         const planned = applyImportedObservationPolicy(makeObservation(uuid), new Set());
 
-        expect(planned.observation.id).toBe(uuid);
+        expect(planned.observation.id).not.toBe(uuid);
         expect(planned.mode).toBe('insert');
-        expect(planned.regeneratedId).toBe(false);
+        expect(planned.regeneratedId).toBe(true);
     });
 
     it('turns existing valid UUIDs into updates', () => {
@@ -52,7 +52,7 @@ describe('import policy', () => {
         expect(planned.regeneratedId).toBe(true);
     });
 
-    it('keeps IDs stable across the whole import plan', () => {
+    it('regenerates unknown IDs when they are not in the knownIds set', () => {
         const existing = [makeObservation('123e4567-e89b-42d3-a456-426614174000', 'A')];
         const imported = [
             makeObservation('123e4567-e89b-42d3-a456-426614174000', 'A'),
@@ -63,6 +63,7 @@ describe('import policy', () => {
 
         expect(plan[0].mode).toBe('update');
         expect(plan[1].mode).toBe('insert');
-        expect(plan[1].observation.id).toBe('223e4567-e89b-42d3-a456-426614174000');
+        // Because 223e- is a UUID but NOT known, it MUST be regenerated!
+        expect(plan[1].observation.id).not.toBe('223e4567-e89b-42d3-a456-426614174000');
     });
 });

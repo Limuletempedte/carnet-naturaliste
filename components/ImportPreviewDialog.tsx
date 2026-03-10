@@ -5,6 +5,7 @@ interface ImportPreviewDialogProps {
     isOpen: boolean;
     fileName: string;
     result: ImportResult | null;
+    isImporting: boolean;
     onCancel: () => void;
     onConfirm: () => void;
 }
@@ -13,6 +14,7 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
     isOpen,
     fileName,
     result,
+    isImporting,
     onCancel,
     onConfirm
 }) => {
@@ -145,24 +147,33 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                     Note: des erreurs serveur (droits, connexion, contraintes base) peuvent encore survenir au moment de l'import.
                 </p>
 
-                <div className="flex justify-end gap-3">
+                <div className="mt-8 flex justify-end gap-4 border-t border-gray-100 dark:border-white/10 pt-4">
                     <button
                         type="button"
                         onClick={onCancel}
-                        className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold"
+                        disabled={isImporting}
+                        className={`px-4 py-2 rounded-lg font-semibold ${isImporting
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                            }`}
                     >
                         Annuler
                     </button>
                     <button
                         type="button"
                         onClick={onConfirm}
-                        disabled={hasBlockingErrors}
-                        className={`px-4 py-2 rounded-lg text-white font-semibold ${hasBlockingErrors
-                            ? 'bg-gray-400 cursor-not-allowed'
-                            : 'bg-nature-green hover:bg-green-700'
+                        disabled={hasBlockingErrors || isImporting}
+                        className={`px-4 py-2 rounded-lg text-white font-semibold ${hasBlockingErrors || isImporting
+                                ? 'bg-gray-400 cursor-not-allowed'
+                                : 'bg-nature-green hover:bg-green-700'
                             }`}
                     >
-                        {hasBlockingErrors ? 'Import bloqué (corriger blocages)' : "Confirmer l'import"}
+                        {isImporting
+                            ? 'Import en cours...'
+                            : hasBlockingErrors
+                                ? 'Import bloqué (corriger blocages)'
+                                : "Confirmer l'import"
+                        }
                     </button>
                 </div>
             </div>
