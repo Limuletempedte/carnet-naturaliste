@@ -719,7 +719,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 </select>
                                 {speciesInfo?.redListStatus && (
                                     <p className="text-xs text-gray-500 mt-1 ml-1">
-                                        Statut auto depuis GBIF/IUCN: <span className="font-semibold">{speciesInfo.redListStatus}</span>
+                                        {speciesInfo.redListSource === 'france' ? 'Liste Rouge France' : 'IUCN mondial'}: <span className="font-semibold">{speciesInfo.redListStatus}</span>
                                     </p>
                                 )}
                             </div>

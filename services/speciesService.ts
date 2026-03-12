@@ -7,6 +7,7 @@ export interface SpeciesInfo {
     latinName?: string;
     taxonomicGroup?: TaxonomicGroup;
     redListStatus?: Status;
+    redListSource?: 'france' | 'global';
     matchedBy: 'latin' | 'common';
     confidence: 'high' | 'medium' | 'low';
 }
@@ -26,6 +27,7 @@ export interface SpeciesSuggestion {
 // ---------------------------------------------------------------------------
 
 interface INatTaxonResult {
+    id?: number;                    // iNaturalist taxon ID
     name?: string;                  // Scientific name (e.g. "Cyanistes caeruleus")
     rank?: string;                  // "species", "genus", "family", etc.
     rank_level?: number;            // 10 = species, 20 = genus, etc.
@@ -237,6 +239,21 @@ interface GBIFV2MatchResult {
     additionalStatus?: GBIFAdditionalStatusEntry[];
 }
 
+// ---------------------------------------------------------------------------
+// iNaturalist place-specific conservation status (France = place_id 6753)
+// ---------------------------------------------------------------------------
+
+const INAT_FRANCE_PLACE_ID = 6753;
+
+interface INatConservationStatusEntry {
+    status?: string;
+    place?: { id?: number; display_name?: string; } | null;
+}
+
+interface INatTaxonDetail {
+    conservation_statuses?: INatConservationStatusEntry[];
+}
+
 const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
     const normalizedCode = (code || '').trim().toUpperCase();
     if (!normalizedCode) return undefined;
@@ -252,6 +269,31 @@ const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
         case 'EW': return Status.EW;
         case 'EX': return Status.EX;
         default: return undefined;
+    }
+};
+
+/**
+ * Fetch France-specific conservation status from iNaturalist using the taxon ID.
+ * Uses place_id=6753 (France) and reads conservation_statuses (plural) array.
+ * Returns undefined if no France-specific status is found.
+ */
+const fetchINatFranceStatus = async (taxonId: number): Promise<Status | undefined> => {
+    try {
+        const url = `https://api.inaturalist.org/v1/taxa/${taxonId}?place_id=${INAT_FRANCE_PLACE_ID}`;
+        const res = await fetch(url);
+        if (!res.ok) return undefined;
+        const data = await res.json();
+        const results: INatTaxonDetail[] = data?.results ?? [];
+        if (results.length === 0) return undefined;
+
+        const statuses = results[0].conservation_statuses ?? [];
+        const frenchEntry = statuses.find(s => s.place?.id === INAT_FRANCE_PLACE_ID);
+        if (frenchEntry?.status) return mapIucnStatusCodeToStatus(frenchEntry.status);
+
+        return undefined;
+    } catch (e) {
+        console.error('iNaturalist France conservation status error:', e);
+        return undefined;
     }
 };
 
@@ -522,8 +564,14 @@ export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo
         }
 
         let redListStatus: Status | undefined;
-        if (latinName) {
+        let redListSource: 'france' | 'global' | undefined;
+        if (inat.id) {
+            redListStatus = await fetchINatFranceStatus(inat.id);
+            if (redListStatus) redListSource = 'france';
+        }
+        if (!redListStatus && latinName) {
             redListStatus = await fetchGbifIucnStatus(latinName);
+            if (redListStatus) redListSource = 'global';
         }
 
         // Fallback: use iNaturalist iconic_taxon_name if GBIF didn't yield a group
@@ -538,6 +586,7 @@ export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo
             latinName,
             taxonomicGroup,
             redListStatus,
+            redListSource,
             matchedBy: matchMeta.matchedBy,
             confidence: matchMeta.confidence
         };

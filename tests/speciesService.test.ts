@@ -188,6 +188,7 @@ describe('fetchSpeciesInfo', () => {
                 json: async () => ({
                     results: [
                         {
+                            id: 12345,
                             name: 'Vulpes vulpes',
                             rank: 'species',
                             preferred_common_name: 'Renard roux',
@@ -209,8 +210,12 @@ describe('fetchSpeciesInfo', () => {
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({
-                    additionalStatus: [
-                        { datasetAlias: 'IUCN', statusCode: 'LC' }
+                    results: [
+                        {
+                            conservation_statuses: [
+                                { status: 'LC', place: { id: 6753, display_name: 'France' } }
+                            ]
+                        }
                     ]
                 })
             } as Response);
@@ -220,7 +225,8 @@ describe('fetchSpeciesInfo', () => {
         expect(info).toMatchObject({
             matchedBy: 'common',
             confidence: 'high',
-            redListStatus: 'LC'
+            redListStatus: 'LC',
+            redListSource: 'france'
         });
     });
 
@@ -231,6 +237,7 @@ describe('fetchSpeciesInfo', () => {
                 json: async () => ({
                     results: [
                         {
+                            id: 12345,
                             name: 'Vulpes vulpes',
                             rank: 'species',
                             preferred_common_name: 'Renard roux',
@@ -252,8 +259,12 @@ describe('fetchSpeciesInfo', () => {
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ({
-                    additionalStatus: [
-                        { datasetAlias: 'IUCN', statusCode: 'LC' }
+                    results: [
+                        {
+                            conservation_statuses: [
+                                { status: 'LC', place: { id: 6753, display_name: 'France' } }
+                            ]
+                        }
                     ]
                 })
             } as Response);
@@ -263,7 +274,56 @@ describe('fetchSpeciesInfo', () => {
         expect(info).toMatchObject({
             matchedBy: 'latin',
             confidence: 'high',
-            redListStatus: 'LC'
+            redListStatus: 'LC',
+            redListSource: 'france'
+        });
+    });
+
+    it('returns France red list status from conservation_statuses when conservation_status is null', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            id: 99999,
+                            name: 'Vulpes vulpes',
+                            rank: 'species',
+                            preferred_common_name: 'Renard roux',
+                            default_photo: { medium_url: 'https://example.com/fox.jpg' }
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Mammalia',
+                    order: 'Carnivora',
+                    family: 'Canidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            conservation_status: null,
+                            conservation_statuses: [
+                                { status: 'LC', place: { id: 6753, display_name: 'France' } }
+                            ]
+                        }
+                    ]
+                })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Vulpes vulpes');
+
+        expect(info).toMatchObject({
+            redListStatus: 'LC',
+            redListSource: 'france'
         });
     });
 
