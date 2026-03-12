@@ -22,3 +22,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local AI / MCP tooling (do not commit secrets)
+.mcp.json
+.claude/
+tmp_claude_*
+test_output.txt
+implementation_plan.md.resolved
+
+# Local exports and ad-hoc test artifacts
+*.xlsx
+
+# Local Supabase CLI workspace (not production source of truth)
+supabase/

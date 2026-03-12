@@ -15,6 +15,12 @@ Configurer `.env.local`:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+## Configuration MCP locale (optionnel)
+
+- Copier `.mcp.example.json` vers `.mcp.json`.
+- Renseigner le token MCP Supabase dans `.mcp.json`.
+- Ne jamais versionner `.mcp.json` (fichier ignoré par Git).
+
 ## Commandes
 
 - `npm run dev` : démarrage local

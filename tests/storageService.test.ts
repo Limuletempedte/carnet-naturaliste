@@ -307,6 +307,128 @@ describe('storageService legacy schema fallback', () => {
         expect(fallbackRow).not.toHaveProperty('female_count');
         expect(fallbackRow).not.toHaveProperty('unidentified_count');
     });
+
+    it('retries updateObservation without count-breakdown columns when schema cache is outdated', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        updateEqUserMock
+            .mockResolvedValueOnce({
+                error: {
+                    code: 'PGRST204',
+                    message: "Could not find the 'male_count' column in the schema cache"
+                }
+            })
+            .mockResolvedValueOnce({ error: null });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+        await storageService.updateObservation(makeObservation('123e4567-e89b-42d3-a456-426614174000'));
+
+        expect(updateMock).toHaveBeenCalledTimes(2);
+        const firstCall = updateMock.mock.calls.at(0) as any[] | undefined;
+        const fallbackCall = updateMock.mock.calls.at(1) as any[] | undefined;
+        const firstRow = firstCall?.[0];
+        const fallbackRow = fallbackCall?.[0];
+
+        expect(firstRow).toHaveProperty('male_count');
+        expect(fallbackRow).not.toHaveProperty('male_count');
+        expect(fallbackRow).not.toHaveProperty('female_count');
+        expect(fallbackRow).not.toHaveProperty('unidentified_count');
+    });
+
+    it('retries processOfflineQueue INSERT/UPDATE operations without count-breakdown columns when schema cache is outdated', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        insertSingleMock
+            .mockResolvedValueOnce({
+                data: null,
+                error: {
+                    code: 'PGRST204',
+                    message: "Could not find the 'male_count' column in the schema cache"
+                }
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    id: '123e4567-e89b-42d3-a456-426614174000',
+                    species_name: 'Mésange',
+                    latin_name: '',
+                    taxonomic_group: 'Oiseaux',
+                    date: '2026-03-01',
+                    time: '12:00',
+                    count: 1,
+                    location: '',
+                    gps_lat: null,
+                    gps_lon: null,
+                    municipality: '',
+                    department: '',
+                    country: 'France',
+                    altitude: null,
+                    comment: '',
+                    status: 'NE',
+                    atlas_code: '',
+                    protocol: 'Opportuniste',
+                    sexe: 'Non renseigné',
+                    age: 'Non renseigné',
+                    observation_condition: 'Non renseigné',
+                    comportement: 'Non renseigné',
+                    photo_url: null,
+                    wikipedia_image: null,
+                    sound_url: null
+                },
+                error: null
+            });
+        updateEqUserMock
+            .mockResolvedValueOnce({
+                error: {
+                    code: 'PGRST204',
+                    message: "Could not find the 'male_count' column in the schema cache"
+                }
+            })
+            .mockResolvedValueOnce({ error: null });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        const tempObservation = {
+            ...makeObservation('temp-1'),
+            maleCount: 1,
+            femaleCount: 0,
+            unidentifiedCount: 0
+        };
+        const persistedObservation = {
+            ...makeObservation('123e4567-e89b-42d3-a456-426614174000'),
+            maleCount: 1,
+            femaleCount: 0,
+            unidentifiedCount: 0
+        };
+        localStorage.setItem('offline_sync_queue:user-1', JSON.stringify([
+            { id: 'q1', action: 'INSERT', payload: tempObservation, timestamp: 1 },
+            { id: 'q2', action: 'UPDATE', payload: persistedObservation, timestamp: 2 }
+        ]));
+
+        const result = await storageService.processOfflineQueue();
+
+        expect(result.processed).toBe(2);
+        expect(result.failed).toBe(0);
+
+        expect(insertMock).toHaveBeenCalledTimes(2);
+        const firstInsertCall = insertMock.mock.calls.at(0) as any[] | undefined;
+        const fallbackInsertCall = insertMock.mock.calls.at(1) as any[] | undefined;
+        const firstInsertRow = firstInsertCall?.[0];
+        const fallbackInsertRow = fallbackInsertCall?.[0];
+        expect(firstInsertRow).toHaveProperty('male_count');
+        expect(fallbackInsertRow).not.toHaveProperty('male_count');
+        expect(fallbackInsertRow).not.toHaveProperty('female_count');
+        expect(fallbackInsertRow).not.toHaveProperty('unidentified_count');
+
+        expect(updateMock).toHaveBeenCalledTimes(2);
+        const firstUpdateCall = updateMock.mock.calls.at(0) as any[] | undefined;
+        const fallbackUpdateCall = updateMock.mock.calls.at(1) as any[] | undefined;
+        const firstUpdateRow = firstUpdateCall?.[0];
+        const fallbackUpdateRow = fallbackUpdateCall?.[0];
+        expect(firstUpdateRow).toHaveProperty('male_count');
+        expect(fallbackUpdateRow).not.toHaveProperty('male_count');
+        expect(fallbackUpdateRow).not.toHaveProperty('female_count');
+        expect(fallbackUpdateRow).not.toHaveProperty('unidentified_count');
+    });
 });
 
 describe('storageService.bulkUpsertObservationsInCache', () => {
