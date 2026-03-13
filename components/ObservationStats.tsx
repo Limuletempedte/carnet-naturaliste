@@ -96,6 +96,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
     statsRootRef
 }) => {
     const internalRef = useRef<HTMLDivElement>(null);
+    const [groupTooltip, setGroupTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
     const rootRef = (statsRootRef as React.RefObject<HTMLDivElement | null> | undefined) ?? internalRef;
 
     const stats = useMemo(() => buildStatsReportData(observations), [observations]);
@@ -215,14 +216,26 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                             </p>
                         </div>
 
+                        {groupTooltip && (
+                            <div
+                                className="fixed z-50 pointer-events-none bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-xl shadow-xl"
+                                style={{ left: groupTooltip.x + 14, top: groupTooltip.y - 38 }}
+                            >
+                                {groupTooltip.text}
+                            </div>
+                        )}
                         <div className="space-y-4">
                             {stats.rankedGroupData.map((group) => {
                                 const barWidth = `${Math.max(group.percentage, group.value > 0 ? 6 : 0)}%`;
+                                const tooltipText = `${group.name} : ${group.value} observation${group.value > 1 ? 's' : ''} (${group.percentage.toFixed(1)}%)`;
                                 return (
                                     <article
                                         key={group.name}
                                         data-testid="ranked-group-row"
-                                        className="rounded-[24px] border border-[#E5D8C4] dark:border-[#463D34] bg-[#FBF8F1]/90 dark:bg-[#221D18] p-4 shadow-[0_10px_26px_rgba(67,53,36,0.07)]"
+                                        className="rounded-[24px] border border-[#E5D8C4] dark:border-[#463D34] bg-[#FBF8F1]/90 dark:bg-[#221D18] p-4 shadow-[0_10px_26px_rgba(67,53,36,0.07)] cursor-pointer transition-all duration-150 hover:-translate-y-px hover:shadow-[0_8px_18px_rgba(67,53,36,0.12)]"
+                                        onMouseEnter={(e) => setGroupTooltip({ text: tooltipText, x: e.clientX, y: e.clientY })}
+                                        onMouseMove={(e) => setGroupTooltip(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null)}
+                                        onMouseLeave={() => setGroupTooltip(null)}
                                     >
                                         <div className="flex items-start justify-between gap-4">
                                             <div className="min-w-0">
