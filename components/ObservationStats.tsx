@@ -227,7 +227,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                         <div className="space-y-4">
                             {stats.rankedGroupData.map((group) => {
                                 const barWidth = `${Math.max(group.percentage, group.value > 0 ? 6 : 0)}%`;
-                                const tooltipText = `${group.name} : ${group.value} observation${group.value > 1 ? 's' : ''} (${group.percentage.toFixed(1)}%)`;
+                                const tooltipText = `${group.name}: ${group.value} observation(s) (${group.percentage.toFixed(1)}%)`;
                                 return (
                                     <article
                                         key={group.name}
