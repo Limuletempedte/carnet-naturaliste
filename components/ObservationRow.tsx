@@ -3,6 +3,17 @@ import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
 
+const getStatusBadgeClass = (status: string): string => {
+    switch (status) {
+        case 'LC': return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        case 'NT': return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+        case 'VU': return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
+        case 'EN':
+        case 'CR': return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+        default: return 'bg-gray-100 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400';
+    }
+};
+
 interface ObservationRowProps {
     observation: Observation;
     onEdit: (id: string) => void;
@@ -61,6 +72,11 @@ const ObservationRow: React.FC<ObservationRowProps> = ({ observation, onEdit, on
             <td className="p-6 align-middle text-center">
                 <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-sm font-bold bg-nature-green/10 text-nature-green dark:bg-nature-green/20 dark:text-nature-green backdrop-blur-md">
                     {count}
+                </span>
+            </td>
+            <td className="p-6 align-middle text-center">
+                <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md ${getStatusBadgeClass(observation.status)}`}>
+                    {observation.status}
                 </span>
             </td>
             <td className="p-6 align-middle text-center">

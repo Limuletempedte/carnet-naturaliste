@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import {
     PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
     BarChart, Bar, XAxis, YAxis, CartesianGrid
@@ -6,6 +6,35 @@ import {
 import { Observation } from '../types';
 import Badges from './Badges';
 import { buildStatsReportData } from '../utils/statsReportData';
+
+const useCountUp = (target: number, duration = 800): number => {
+    const [value, setValue] = useState(0);
+    const frameRef = useRef<number | null>(null);
+    const startRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+        startRef.current = null;
+        setValue(0);
+
+        const step = (timestamp: number) => {
+            if (startRef.current === null) startRef.current = timestamp;
+            const elapsed = timestamp - startRef.current;
+            const progress = Math.min(elapsed / duration, 1);
+            // Ease-out cubic
+            const eased = 1 - Math.pow(1 - progress, 3);
+            setValue(Math.round(eased * target));
+            if (progress < 1) {
+                frameRef.current = requestAnimationFrame(step);
+            }
+        };
+
+        frameRef.current = requestAnimationFrame(step);
+        return () => { if (frameRef.current !== null) cancelAnimationFrame(frameRef.current); };
+    }, [target, duration]);
+
+    return value;
+};
 
 interface ObservationStatsProps {
     observations: Observation[];
@@ -25,6 +54,38 @@ const tooltipStyle = {
     border: '1px solid rgba(28,28,30,0.08)',
     boxShadow: '0 18px 38px rgba(28,28,30,0.12)',
     backgroundColor: 'rgba(255,255,255,0.96)'
+};
+
+interface MetricCardProps {
+    label: string;
+    value: number;
+    accent: string;
+    note: string;
+    isMobileView: boolean;
+}
+
+const MetricCard: React.FC<MetricCardProps> = ({ label, value, accent, note, isMobileView }) => {
+    const animated = useCountUp(value);
+    return (
+        <div
+            className={`${cardShellClass} relative overflow-hidden cursor-pointer transition-all duration-300 hover:shadow-ios-hover hover:scale-[1.025] active:scale-[0.99] ${isMobileView ? 'p-5' : 'p-7'}`}
+        >
+            <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${accent}`}></div>
+            <div className="space-y-6">
+                <div className="space-y-2">
+                    <p className="text-[0.72rem] uppercase tracking-[0.22em] font-bold text-[#7C7468] dark:text-gray-400">
+                        {label}
+                    </p>
+                    <p className={`font-bold tracking-tight text-nature-dark dark:text-white tabular-nums ${isMobileView ? 'text-4xl' : 'text-[3.35rem]'}`}>
+                        {animated}
+                    </p>
+                </div>
+                <p className="text-sm text-[#756D62] dark:text-gray-300">
+                    {note}
+                </p>
+            </div>
+        </div>
+    );
 };
 
 const ObservationStats: React.FC<ObservationStatsProps> = ({
@@ -58,46 +119,27 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
             )}
 
             <div className={`grid grid-cols-1 md:grid-cols-3 ${isMobileView ? 'gap-4' : 'gap-6'}`}>
-                {[
-                    {
-                        label: 'Total observations',
-                        value: stats.totalObservations,
-                        accent: 'from-[#4C9A6A] via-[#56B77A] to-[#A8D7B6]',
-                        note: 'Toutes les saisies enregistrées'
-                    },
-                    {
-                        label: 'Espèces distinctes',
-                        value: stats.uniqueSpecies,
-                        accent: 'from-[#2F7CC1] via-[#3F9AD6] to-[#8DD7E8]',
-                        note: 'Dédupliquées par nom observé'
-                    },
-                    {
-                        label: 'Groupes taxonomiques',
-                        value: stats.uniqueGroups,
-                        accent: 'from-[#8F6CB3] via-[#B07DB6] to-[#E7B7D3]',
-                        note: 'Présents dans le carnet'
-                    }
-                ].map((metric) => (
-                    <div
-                        key={metric.label}
-                        className={`${cardShellClass} relative overflow-hidden ${isMobileView ? 'p-5' : 'p-7'}`}
-                    >
-                        <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${metric.accent}`}></div>
-                        <div className="space-y-6">
-                            <div className="space-y-2">
-                                <p className="text-[0.72rem] uppercase tracking-[0.22em] font-bold text-[#7C7468] dark:text-gray-400">
-                                    {metric.label}
-                                </p>
-                                <p className={`font-bold tracking-tight text-nature-dark dark:text-white ${isMobileView ? 'text-4xl' : 'text-[3.35rem]'}`}>
-                                    {metric.value}
-                                </p>
-                            </div>
-                            <p className="text-sm text-[#756D62] dark:text-gray-300">
-                                {metric.note}
-                            </p>
-                        </div>
-                    </div>
-                ))}
+                <MetricCard
+                    label="Total observations"
+                    value={stats.totalObservations}
+                    accent="from-[#4C9A6A] via-[#56B77A] to-[#A8D7B6]"
+                    note="Toutes les saisies enregistrées"
+                    isMobileView={isMobileView}
+                />
+                <MetricCard
+                    label="Espèces distinctes"
+                    value={stats.uniqueSpecies}
+                    accent="from-[#2F7CC1] via-[#3F9AD6] to-[#8DD7E8]"
+                    note="Dédupliquées par nom observé"
+                    isMobileView={isMobileView}
+                />
+                <MetricCard
+                    label="Groupes taxonomiques"
+                    value={stats.uniqueGroups}
+                    accent="from-[#8F6CB3] via-[#B07DB6] to-[#E7B7D3]"
+                    note="Présents dans le carnet"
+                    isMobileView={isMobileView}
+                />
             </div>
 
             {stats.taxonSpeciesCards.length > 0 && (
@@ -112,39 +154,51 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                         </div>
 
                         <div className={`grid ${isMobileView ? 'grid-cols-1 sm:grid-cols-2 gap-3' : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4'}`}>
-                            {stats.taxonSpeciesCards.map((card) => (
-                                <article
-                                    key={card.taxonomicGroup}
-                                    data-testid="taxon-species-card"
-                                    className="group relative overflow-hidden rounded-[28px] border border-[#E2D4BF]/90 dark:border-[#4A4137] bg-gradient-to-br from-[#FBF7EF] via-[#FFFDFC] to-[#F4EADD] dark:from-[#2D261F] dark:via-[#241F19] dark:to-[#1E1A16] shadow-[0_18px_40px_rgba(67,53,36,0.10)]"
-                                >
-                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(76,154,106,0.12),_transparent_35%),radial-gradient(circle_at_bottom_right,_rgba(200,123,66,0.15),_transparent_30%)] opacity-80 pointer-events-none"></div>
-                                    <div className="relative flex items-center justify-between gap-4 p-5">
-                                        <div className="flex items-center gap-4 min-w-0">
-                                            <div className="w-14 h-14 rounded-[20px] bg-[#F0E5D3]/90 dark:bg-white/8 border border-[#D7C5AC] dark:border-white/10 flex items-center justify-center shadow-inner shrink-0">
-                                                <img src={card.logo} alt={card.taxonomicGroup} className="w-8 h-8 object-contain opacity-95" />
+                            {(() => {
+                                const maxSpecies = Math.max(...stats.taxonSpeciesCards.map(c => c.speciesCount), 1);
+                                return stats.taxonSpeciesCards.map((card) => (
+                                    <article
+                                        key={card.taxonomicGroup}
+                                        data-testid="taxon-species-card"
+                                        className="group relative overflow-hidden rounded-[28px] border border-[#E2D4BF]/90 dark:border-[#4A4137] bg-gradient-to-br from-[#FBF7EF] via-[#FFFDFC] to-[#F4EADD] dark:from-[#2D261F] dark:via-[#241F19] dark:to-[#1E1A16] shadow-[0_18px_40px_rgba(67,53,36,0.10)] cursor-pointer transition-all duration-300 hover:shadow-[0_24px_50px_rgba(67,53,36,0.18)] hover:scale-[1.02] hover:border-[#4C9A6A]/40 active:scale-[0.99]"
+                                    >
+                                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(76,154,106,0.12),_transparent_35%),radial-gradient(circle_at_bottom_right,_rgba(200,123,66,0.15),_transparent_30%)] opacity-80 pointer-events-none"></div>
+                                        <div className="relative flex items-center justify-between gap-4 p-5 pb-3">
+                                            <div className="flex items-center gap-4 min-w-0">
+                                                <div className="w-14 h-14 rounded-[20px] bg-[#F0E5D3]/90 dark:bg-white/8 border border-[#D7C5AC] dark:border-white/10 flex items-center justify-center shadow-inner shrink-0 transition-transform duration-300 group-hover:scale-110">
+                                                    <img src={card.logo} alt={card.taxonomicGroup} className="w-8 h-8 object-contain opacity-95" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-lg leading-tight text-nature-dark dark:text-white truncate">
+                                                        {card.taxonomicGroup}
+                                                    </p>
+                                                    <p className="text-xs uppercase tracking-[0.18em] font-bold text-[#907A5D] dark:text-[#D9C7AF] mt-2">
+                                                        Espèces distinctes
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div className="min-w-0">
-                                                <p className="font-semibold text-lg leading-tight text-nature-dark dark:text-white truncate">
-                                                    {card.taxonomicGroup}
-                                                </p>
-                                                <p className="text-xs uppercase tracking-[0.18em] font-bold text-[#907A5D] dark:text-[#D9C7AF] mt-2">
-                                                    Espèces distinctes
-                                                </p>
-                                            </div>
-                                        </div>
 
-                                        <div className="shrink-0 text-right">
-                                            <p className="text-[2rem] font-bold leading-none tracking-tight text-nature-dark dark:text-white">
-                                                {card.speciesCount}
-                                            </p>
-                                            <p className="text-sm font-semibold text-[#6F6659] dark:text-gray-300">
-                                                {card.speciesCount === 1 ? 'espèce' : 'espèces'}
-                                            </p>
+                                            <div className="shrink-0 text-right">
+                                                <p className="text-[2rem] font-bold leading-none tracking-tight text-nature-dark dark:text-white tabular-nums">
+                                                    {card.speciesCount}
+                                                </p>
+                                                <p className="text-sm font-semibold text-[#6F6659] dark:text-gray-300">
+                                                    {card.speciesCount === 1 ? 'espèce' : 'espèces'}
+                                                </p>
+                                            </div>
                                         </div>
-                                    </div>
-                                </article>
-                            ))}
+                                        {/* Mini progress bar */}
+                                        <div className="relative px-5 pb-4">
+                                            <div className="h-1.5 rounded-full bg-[#E9DECF] dark:bg-white/10 overflow-hidden">
+                                                <div
+                                                    className="h-full rounded-full bg-[#4C9A6A] transition-all duration-700"
+                                                    style={{ width: `${Math.round((card.speciesCount / maxSpecies) * 100)}%` }}
+                                                />
+                                            </div>
+                                        </div>
+                                    </article>
+                                ));
+                            })()}
                         </div>
                     </div>
                 </section>

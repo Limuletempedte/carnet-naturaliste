@@ -545,6 +545,9 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                     <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('count')}>
                                         Nb. {getSortIndicator('count')}
                                     </th>
+                                    <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('status')}>
+                                        Statut {getSortIndicator('status')}
+                                    </th>
                                     <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 text-center no-print">Actions</th>
                                 </tr>
                             </thead>
@@ -562,7 +565,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={7} className="text-center p-16 text-gray-400 font-medium">
+                                        <td colSpan={8} className="text-center p-16 text-gray-400 font-medium">
                                             <div className="flex flex-col items-center gap-4">
                                                 <span className="text-4xl opacity-50">🔍</span>
                                                 <p>Aucune observation trouvée pour les filtres sélectionnés.</p>
