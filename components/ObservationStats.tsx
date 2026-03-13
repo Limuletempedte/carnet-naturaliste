@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
     PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
     BarChart, Bar, XAxis, YAxis, CartesianGrid
@@ -216,16 +217,17 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                             </p>
                         </div>
 
-                        {groupTooltip && (
+                        {groupTooltip && createPortal(
                             <div
-                                className="fixed z-50 pointer-events-none bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap"
+                                className="fixed z-[9999] pointer-events-none bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap"
                                 style={{
                                     left: Math.min(groupTooltip.x + 14, window.innerWidth - 230),
                                     top: groupTooltip.y - 38 < 8 ? groupTooltip.y + 14 : groupTooltip.y - 38,
                                 }}
                             >
                                 {groupTooltip.text}
-                            </div>
+                            </div>,
+                            document.body
                         )}
                         <div className="space-y-4">
                             {stats.rankedGroupData.map((group) => {
