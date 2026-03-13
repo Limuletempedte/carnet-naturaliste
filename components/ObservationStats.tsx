@@ -218,8 +218,11 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
 
                         {groupTooltip && (
                             <div
-                                className="fixed z-50 pointer-events-none bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-xl shadow-xl"
-                                style={{ left: groupTooltip.x + 14, top: groupTooltip.y - 38 }}
+                                className="fixed z-50 pointer-events-none bg-gray-900/90 text-white text-xs px-3 py-1.5 rounded-xl shadow-xl whitespace-nowrap"
+                                style={{
+                                    left: Math.min(groupTooltip.x + 14, window.innerWidth - 230),
+                                    top: groupTooltip.y - 38 < 8 ? groupTooltip.y + 14 : groupTooltip.y - 38,
+                                }}
                             >
                                 {groupTooltip.text}
                             </div>
