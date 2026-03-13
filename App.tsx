@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { Observation, View, TaxonomicGroup, Status } from './types';
 import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache } from './services/storageService';
 import ObservationList from './components/ObservationList';
@@ -48,6 +48,8 @@ const App: React.FC = () => {
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [isCreatingBackup, setIsCreatingBackup] = useState(false);
+    const [isExportingStats, setIsExportingStats] = useState(false);
+    const statsRootRef = useRef<HTMLDivElement | null>(null);
 
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
 
@@ -463,6 +465,29 @@ const App: React.FC = () => {
         }
     };
 
+    const handleExportStats = async () => {
+        if (isExportingStats) return;
+        setIsExportingStats(true);
+        const toastId = pushToast('info', '⏳ Export Stats en cours (PDF statique + HTML interactif)...', 0);
+        try {
+            const { exportStatsBundle } = await import('./services/statsExportService');
+            const result = await exportStatsBundle({
+                observations,
+                statsRootElement: statsRootRef.current ?? document.body,
+                isDarkMode,
+                exportedAt: new Date()
+            });
+            removeToast(toastId);
+            pushToast('success', `Stats exportées: PDF statique + HTML interactif (${result.fileName}).`, 7000);
+        } catch (e) {
+            removeToast(toastId);
+            const message = e instanceof Error ? e.message : String(e);
+            pushToast('error', `Échec de l'export Stats: ${message}`, 9000);
+        } finally {
+            setIsExportingStats(false);
+        }
+    };
+
     const handleCreateBackup = async () => {
         if (isCreatingBackup) return;
         setIsCreatingBackup(true);
@@ -771,7 +796,13 @@ const App: React.FC = () => {
                             </div>
                         </div>
                     ) : view === View.STATS ? (
-                        <ObservationStats observations={observations} isMobileView={isMobileView} />
+                        <ObservationStats
+                            observations={observations}
+                            isMobileView={isMobileView}
+                            onExportStats={handleExportStats}
+                            isExportingStats={isExportingStats}
+                            statsRootRef={statsRootRef}
+                        />
                     ) : view === View.CALENDAR ? (
                         <ObservationCalendar
                             observations={observations}

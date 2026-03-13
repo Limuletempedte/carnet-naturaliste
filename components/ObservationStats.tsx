@@ -1,201 +1,350 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import {
-    PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
+    PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
     BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
 import { Observation } from '../types';
 import Badges from './Badges';
-import { getMonthIndexFromIsoDate } from '../utils/dateUtils';
+import { buildStatsReportData } from '../utils/statsReportData';
 
 interface ObservationStatsProps {
     observations: Observation[];
     isMobileView?: boolean;
+    onExportStats?: () => Promise<void>;
+    isExportingStats?: boolean;
+    statsRootRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57'];
+const STATUS_MEDAL_COLORS = ['bg-amber-500', 'bg-stone-400', 'bg-orange-500'];
 
-const ObservationStats: React.FC<ObservationStatsProps> = ({ observations, isMobileView = false }) => {
+const cardShellClass = 'bg-white/88 dark:bg-nature-dark-surface/88 backdrop-blur-xl rounded-[30px] shadow-ios border border-white/30 dark:border-white/10';
+const sectionTitleClass = 'text-[1.65rem] font-serif font-bold tracking-tight text-nature-dark dark:text-white';
 
-    const stats = useMemo(() => {
-        const totalObservations = observations.length;
-        const uniqueSpecies = new Set(observations.map(obs => obs.speciesName)).size;
-        const uniqueLocations = new Set(observations.map(obs => obs.municipality)).size;
+const tooltipStyle = {
+    borderRadius: '14px',
+    border: '1px solid rgba(28,28,30,0.08)',
+    boxShadow: '0 18px 38px rgba(28,28,30,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.96)'
+};
 
-        const uniqueGroups = new Set(observations.map(obs => obs.taxonomicGroup)).size;
+const ObservationStats: React.FC<ObservationStatsProps> = ({
+    observations,
+    isMobileView = false,
+    onExportStats,
+    isExportingStats = false,
+    statsRootRef
+}) => {
+    const internalRef = useRef<HTMLDivElement>(null);
+    const rootRef = (statsRootRef as React.RefObject<HTMLDivElement | null> | undefined) ?? internalRef;
 
-        // Group Distribution
-        const groupCounts: Record<string, number> = {};
-        observations.forEach(obs => {
-            const group = obs.taxonomicGroup;
-            groupCounts[group] = (groupCounts[group] || 0) + 1;
-        });
-        const groupData = Object.entries(groupCounts).map(([name, value]) => ({ name, value }));
-
-        // Status Distribution
-        const statusCounts: Record<string, number> = {};
-        observations.forEach(obs => {
-            const status = obs.status;
-            statusCounts[status] = (statusCounts[status] || 0) + 1;
-        });
-        const statusData = Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
-
-        // Monthly Activity
-        const monthCounts = Array.from({ length: 12 }, () => 0);
-        observations.forEach(obs => {
-            const monthIndex = getMonthIndexFromIsoDate(obs.date);
-            if (monthIndex !== null) {
-                monthCounts[monthIndex] += 1;
-            }
-        });
-        const monthsOrder = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
-        const activityData = monthsOrder.map((month, index) => ({
-            name: month,
-            observations: monthCounts[index] || 0
-        }));
-
-        // Top 5 Species
-        const speciesCounts: Record<string, number> = {};
-        observations.forEach(obs => {
-            speciesCounts[obs.speciesName] = (speciesCounts[obs.speciesName] || 0) + obs.count;
-        });
-        const topSpecies = Object.entries(speciesCounts)
-            .sort(([, a], [, b]) => b - a)
-            .slice(0, 5)
-            .map(([name, count]) => ({ name, count }));
-
-        return {
-            totalObservations,
-            uniqueSpecies,
-            uniqueLocations,
-            uniqueGroups,
-            groupData,
-            statusData,
-            activityData,
-            topSpecies
-        };
-    }, [observations]);
+    const stats = useMemo(() => buildStatsReportData(observations), [observations]);
 
     return (
-        <div className={`space-y-8 animate-fadeIn ${isMobileView ? 'pb-24' : ''}`}>
-            {/* Key Metrics */}
-            <div className={`grid grid-cols-1 md:grid-cols-3 gap-8 ${isMobileView ? 'gap-4' : ''}`}>
-                <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 text-center relative overflow-hidden group ${isMobileView ? 'p-6' : 'p-8'}`}>
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-nature-green to-emerald-400"></div>
-                    <h3 className="text-gray-500 dark:text-gray-400 font-bold uppercase text-xs tracking-widest mb-2">Total Observations</h3>
-                    <p className={`font-bold text-nature-dark dark:text-white tracking-tight group-hover:scale-110 transition-transform duration-300 ${isMobileView ? 'text-4xl' : 'text-5xl'}`}>{stats.totalObservations}</p>
+        <div
+            ref={rootRef as React.RefObject<HTMLDivElement>}
+            className={`space-y-10 animate-fadeIn ${isMobileView ? 'pb-24' : ''}`}
+        >
+            {onExportStats && (
+                <div className={`flex ${isMobileView ? 'justify-center' : 'justify-end'}`}>
+                    <button
+                        onClick={onExportStats}
+                        disabled={isExportingStats}
+                        className="flex items-center gap-2 px-5 py-3 rounded-full bg-white/85 dark:bg-nature-dark-surface/88 backdrop-blur-md shadow-ios border border-white/30 dark:border-white/10 text-nature-dark dark:text-white font-semibold text-sm transition-all duration-300 hover:shadow-ios-hover hover:scale-[1.02] disabled:opacity-60 disabled:cursor-not-allowed disabled:scale-100"
+                    >
+                        <span>{isExportingStats ? '⏳' : '📦'}</span>
+                        {isExportingStats ? 'Export en cours...' : 'Exporter Stats (ZIP: PDF statique + HTML interactif)'}
+                    </button>
                 </div>
-                <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 text-center relative overflow-hidden group ${isMobileView ? 'p-6' : 'p-8'}`}>
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-cyan-400"></div>
-                    <h3 className="text-gray-500 dark:text-gray-400 font-bold uppercase text-xs tracking-widest mb-2">Espèces (Uniques)</h3>
-                    <p className={`font-bold text-nature-dark dark:text-white tracking-tight group-hover:scale-110 transition-transform duration-300 ${isMobileView ? 'text-4xl' : 'text-5xl'}`}>{stats.uniqueSpecies}</p>
-                </div>
-                <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 text-center relative overflow-hidden group ${isMobileView ? 'p-6' : 'p-8'}`}>
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-pink-400"></div>
-                    <h3 className="text-gray-500 dark:text-gray-400 font-bold uppercase text-xs tracking-widest mb-2">Groupes Taxonomiques</h3>
-                    <p className={`font-bold text-nature-dark dark:text-white tracking-tight group-hover:scale-110 transition-transform duration-300 ${isMobileView ? 'text-4xl' : 'text-5xl'}`}>{stats.uniqueGroups}</p>
-                </div>
+            )}
+
+            <div className={`grid grid-cols-1 md:grid-cols-3 ${isMobileView ? 'gap-4' : 'gap-6'}`}>
+                {[
+                    {
+                        label: 'Total observations',
+                        value: stats.totalObservations,
+                        accent: 'from-[#4C9A6A] via-[#56B77A] to-[#A8D7B6]',
+                        note: 'Toutes les saisies enregistrées'
+                    },
+                    {
+                        label: 'Espèces distinctes',
+                        value: stats.uniqueSpecies,
+                        accent: 'from-[#2F7CC1] via-[#3F9AD6] to-[#8DD7E8]',
+                        note: 'Dédupliquées par nom observé'
+                    },
+                    {
+                        label: 'Groupes taxonomiques',
+                        value: stats.uniqueGroups,
+                        accent: 'from-[#8F6CB3] via-[#B07DB6] to-[#E7B7D3]',
+                        note: 'Présents dans le carnet'
+                    }
+                ].map((metric) => (
+                    <div
+                        key={metric.label}
+                        className={`${cardShellClass} relative overflow-hidden ${isMobileView ? 'p-5' : 'p-7'}`}
+                    >
+                        <div className={`absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r ${metric.accent}`}></div>
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <p className="text-[0.72rem] uppercase tracking-[0.22em] font-bold text-[#7C7468] dark:text-gray-400">
+                                    {metric.label}
+                                </p>
+                                <p className={`font-bold tracking-tight text-nature-dark dark:text-white ${isMobileView ? 'text-4xl' : 'text-[3.35rem]'}`}>
+                                    {metric.value}
+                                </p>
+                            </div>
+                            <p className="text-sm text-[#756D62] dark:text-gray-300">
+                                {metric.note}
+                            </p>
+                        </div>
+                    </div>
+                ))}
             </div>
+
+            {stats.taxonSpeciesCards.length > 0 && (
+                <section className={`${cardShellClass} relative overflow-hidden ${isMobileView ? 'p-4' : 'p-8'}`}>
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(76,154,106,0.12),_transparent_35%),radial-gradient(circle_at_bottom_right,_rgba(200,123,66,0.10),_transparent_32%)] pointer-events-none"></div>
+                    <div className="relative space-y-6">
+                        <div className="space-y-2">
+                            <h3 className={sectionTitleClass}>Espèces observées par taxon</h3>
+                            <p className="text-sm text-[#756D62] dark:text-gray-300">
+                                Nombre d&apos;espèces distinctes observées par grand groupe, avec une lecture plus nette que le compteur d&apos;individus.
+                            </p>
+                        </div>
+
+                        <div className={`grid ${isMobileView ? 'grid-cols-1 sm:grid-cols-2 gap-3' : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4'}`}>
+                            {stats.taxonSpeciesCards.map((card) => (
+                                <article
+                                    key={card.taxonomicGroup}
+                                    data-testid="taxon-species-card"
+                                    className="group relative overflow-hidden rounded-[28px] border border-[#E2D4BF]/90 dark:border-[#4A4137] bg-gradient-to-br from-[#FBF7EF] via-[#FFFDFC] to-[#F4EADD] dark:from-[#2D261F] dark:via-[#241F19] dark:to-[#1E1A16] shadow-[0_18px_40px_rgba(67,53,36,0.10)]"
+                                >
+                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(76,154,106,0.12),_transparent_35%),radial-gradient(circle_at_bottom_right,_rgba(200,123,66,0.15),_transparent_30%)] opacity-80 pointer-events-none"></div>
+                                    <div className="relative flex items-center justify-between gap-4 p-5">
+                                        <div className="flex items-center gap-4 min-w-0">
+                                            <div className="w-14 h-14 rounded-[20px] bg-[#F0E5D3]/90 dark:bg-white/8 border border-[#D7C5AC] dark:border-white/10 flex items-center justify-center shadow-inner shrink-0">
+                                                <img src={card.logo} alt={card.taxonomicGroup} className="w-8 h-8 object-contain opacity-95" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="font-semibold text-lg leading-tight text-nature-dark dark:text-white truncate">
+                                                    {card.taxonomicGroup}
+                                                </p>
+                                                <p className="text-xs uppercase tracking-[0.18em] font-bold text-[#907A5D] dark:text-[#D9C7AF] mt-2">
+                                                    Espèces distinctes
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="shrink-0 text-right">
+                                            <p className="text-[2rem] font-bold leading-none tracking-tight text-nature-dark dark:text-white">
+                                                {card.speciesCount}
+                                            </p>
+                                            <p className="text-sm font-semibold text-[#6F6659] dark:text-gray-300">
+                                                {card.speciesCount === 1 ? 'espèce' : 'espèces'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Group Distribution */}
-                <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 ${isMobileView ? 'p-4' : 'p-8'}`}>
-                    <h3 className="text-xl font-bold text-nature-dark dark:text-white mb-6">Répartition par Groupe</h3>
-                    <div className="h-72">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={stats.groupData}
-                                    cx="50%"
-                                    cy="50%"
-                                    labelLine={false}
-                                    outerRadius={isMobileView ? 80 : 100}
-                                    innerRadius={isMobileView ? 50 : 60}
-                                    fill="#8884d8"
-                                    dataKey="value"
-                                    paddingAngle={5}
-                                    label={({ percent }: { percent?: number }) => percent ? `${(percent * 100).toFixed(0)}%` : ''}
+                <section className={`${cardShellClass} relative overflow-hidden ${isMobileView ? 'p-4' : 'p-8'}`}>
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(76,154,106,0.07),_transparent_45%)] pointer-events-none"></div>
+                    <div className="relative space-y-6">
+                        <div className="space-y-2">
+                            <h3 className={sectionTitleClass}>Répartition par groupe</h3>
+                            <p className="text-sm text-[#756D62] dark:text-gray-300">
+                                Classement des groupes les plus représentés, avec pourcentage intégré directement dans chaque ligne.
+                            </p>
+                        </div>
+
+                        <div className="space-y-4">
+                            {stats.rankedGroupData.map((group) => {
+                                const barWidth = `${Math.max(group.percentage, group.value > 0 ? 6 : 0)}%`;
+                                return (
+                                    <article
+                                        key={group.name}
+                                        data-testid="ranked-group-row"
+                                        className="rounded-[24px] border border-[#E5D8C4] dark:border-[#463D34] bg-[#FBF8F1]/90 dark:bg-[#221D18] p-4 shadow-[0_10px_26px_rgba(67,53,36,0.07)]"
+                                    >
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-3">
+                                                    <span
+                                                        className="w-3 h-3 rounded-full shrink-0"
+                                                        style={{ backgroundColor: group.color }}
+                                                        aria-hidden="true"
+                                                    ></span>
+                                                    <p className="font-semibold text-base text-nature-dark dark:text-white truncate">
+                                                        {group.name}
+                                                    </p>
+                                                </div>
+                                                <p className="mt-2 text-xs uppercase tracking-[0.18em] font-bold text-[#887764] dark:text-[#CBB79A]">
+                                                    {group.value} observation{group.value > 1 ? 's' : ''} • {group.percentage.toFixed(1)}%
+                                                </p>
+                                            </div>
+                                            <span className="px-3 py-1 rounded-full bg-white dark:bg-white/8 border border-[#E7DDCE] dark:border-white/10 text-sm font-bold text-[#5E5548] dark:text-gray-200 whitespace-nowrap">
+                                                {group.value}
+                                            </span>
+                                        </div>
+
+                                        <div className="mt-4 h-3 rounded-full bg-[#E9DECF] dark:bg-white/10 overflow-hidden">
+                                            <div
+                                                className="h-full rounded-full transition-all duration-500"
+                                                style={{ width: barWidth, backgroundColor: group.color }}
+                                            ></div>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </section>
+
+                <section className={`${cardShellClass} relative overflow-hidden ${isMobileView ? 'p-4' : 'p-8'}`}>
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(76,154,106,0.07),_transparent_45%)] pointer-events-none"></div>
+                    <div className="relative space-y-6">
+                        <div className="space-y-2">
+                            <h3 className={sectionTitleClass}>Activité mensuelle</h3>
+                            <p className="text-sm text-[#756D62] dark:text-gray-300">
+                                Volume d&apos;observations sur l&apos;année, pour repérer les pics d&apos;activité rapidement.
+                            </p>
+                        </div>
+
+                        <div className="h-80">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={stats.activityData} margin={{ top: 8, right: 4, left: -18, bottom: 10 }}>
+                                    <CartesianGrid strokeDasharray="4 6" vertical={false} stroke="#DDD2C2" />
+                                    <XAxis
+                                        dataKey="name"
+                                        tick={{ fontSize: 11, fill: '#7B7469' }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                        interval={0}
+                                        angle={-30}
+                                        textAnchor="end"
+                                        height={54}
+                                    />
+                                    <YAxis
+                                        allowDecimals={false}
+                                        tick={{ fontSize: 11, fill: '#7B7469' }}
+                                        axisLine={false}
+                                        tickLine={false}
+                                    />
+                                    <Tooltip
+                                        cursor={{ fill: 'rgba(76, 154, 106, 0.08)' }}
+                                        contentStyle={tooltipStyle}
+                                    />
+                                    <Bar dataKey="observations" fill="#4C9A6A" radius={[10, 10, 0, 0]} barSize={24} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </section>
+
+                <section className={`${cardShellClass} relative overflow-hidden ${isMobileView ? 'p-4' : 'p-8'}`}>
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(200,123,66,0.08),_transparent_45%)] pointer-events-none"></div>
+                    <div className="relative space-y-6">
+                        <div className="space-y-2">
+                            <h3 className={sectionTitleClass}>Top 5 espèces</h3>
+                            <p className="text-sm text-[#756D62] dark:text-gray-300">
+                                Les espèces les plus observées en nombre d&apos;individus, avec une présentation plus compacte.
+                            </p>
+                        </div>
+
+                        <ul className="space-y-3">
+                            {stats.topSpecies.map((species, index) => (
+                                <li
+                                    key={species.name}
+                                    className="flex items-center justify-between gap-4 p-4 rounded-[24px] bg-[#FAF6EE] dark:bg-[#211C17] border border-[#E4D7C5] dark:border-[#443B32] shadow-[0_10px_24px_rgba(67,53,36,0.06)]"
                                 >
-                                    {stats.groupData.map((_entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                                    ))}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                                />
-                                <Legend />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Monthly Activity */}
-                <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 ${isMobileView ? 'p-4' : 'p-8'}`}>
-                    <h3 className="text-xl font-bold text-nature-dark dark:text-white mb-6">Activité Mensuelle</h3>
-                    <div className="h-72">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={stats.activityData}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E5EA" />
-                                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#8E8E93' }} axisLine={false} tickLine={false} interval={0} angle={-45} textAnchor="end" height={60} />
-                                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#8E8E93' }} axisLine={false} tickLine={false} />
-                                <Tooltip
-                                    cursor={{ fill: 'rgba(0,0,0,0.05)' }}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                                />
-                                <Bar dataKey="observations" fill="#34C759" radius={[6, 6, 0, 0]} barSize={20} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                {/* Top Species */}
-                <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 ${isMobileView ? 'p-4' : 'p-8'}`}>
-                    <h3 className="text-xl font-bold text-nature-dark dark:text-white mb-6">Top 5 Espèces</h3>
-                    <ul className="space-y-4">
-                        {stats.topSpecies.map((species, index) => (
-                            <li key={index} className="flex items-center justify-between p-4 bg-white/50 dark:bg-white/5 rounded-2xl transition-colors hover:bg-white/80 dark:hover:bg-white/10">
-                                <div className="flex items-center gap-4">
-                                    <span className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-white text-sm shadow-sm ${index === 0 ? 'bg-yellow-400' : index === 1 ? 'bg-gray-400' : index === 2 ? 'bg-orange-400' : 'bg-nature-green'}`}>
-                                        {index + 1}
+                                    <div className="flex items-center gap-4 min-w-0">
+                                        <span
+                                            className={`flex items-center justify-center w-10 h-10 rounded-full font-bold text-white text-sm shadow-sm ${STATUS_MEDAL_COLORS[index] ?? 'bg-nature-green'}`}
+                                        >
+                                            {index + 1}
+                                        </span>
+                                        <div className="min-w-0">
+                                            <span className="block font-semibold text-base text-nature-dark dark:text-white truncate">
+                                                {species.name}
+                                            </span>
+                                            <span className="text-xs uppercase tracking-[0.16em] font-bold text-[#897863] dark:text-[#CDB89D]">
+                                                Espèce la plus observée
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span className="font-bold text-[#5F5548] dark:text-gray-200 bg-white dark:bg-white/8 px-4 py-2 rounded-full text-sm whitespace-nowrap border border-[#E6DCCD] dark:border-white/10">
+                                        {species.count} ind.
                                     </span>
-                                    <span className="font-semibold text-nature-dark dark:text-white truncate max-w-[150px]">{species.name}</span>
-                                </div>
-                                <span className="font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-3 py-1 rounded-full text-sm whitespace-nowrap">{species.count} ind.</span>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-
-                {/* Status Distribution */}
-                <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 ${isMobileView ? 'p-4' : 'p-8'}`}>
-                    <h3 className="text-xl font-bold text-nature-dark dark:text-white mb-6">Statut de Protection</h3>
-                    <div className="h-72">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={stats.statusData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={isMobileView ? 50 : 60}
-                                    outerRadius={isMobileView ? 80 : 100}
-                                    fill="#8884d8"
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {stats.statusData.map((_entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                                    ))}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                                />
-                                <Legend />
-                            </PieChart>
-                        </ResponsiveContainer>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
-                </div>
+                </section>
+
+                <section className={`${cardShellClass} relative overflow-hidden ${isMobileView ? 'p-4' : 'p-8'}`}>
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(47,124,193,0.07),_transparent_45%)] pointer-events-none"></div>
+                    <div className="relative space-y-6">
+                        <div className="space-y-2">
+                            <h3 className={sectionTitleClass}>Statut de protection</h3>
+                            <p className="text-sm text-[#756D62] dark:text-gray-300">
+                                Vue synthétique des statuts présents dans le carnet, avec détail numérique sous le graphique.
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px] gap-6 items-center">
+                            <div className="h-80">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={stats.statusData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={isMobileView ? 62 : 72}
+                                            outerRadius={isMobileView ? 96 : 110}
+                                            paddingAngle={4}
+                                            dataKey="value"
+                                        >
+                                            {stats.statusData.map((entry) => (
+                                                <Cell key={entry.name} fill={entry.color} strokeWidth={0} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip
+                                            contentStyle={tooltipStyle}
+                                            formatter={(value: number, name: string) => [`${value} observation(s)`, name]}
+                                        />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+
+                            <div className="space-y-3">
+                                {stats.statusData.map((status) => (
+                                    <div
+                                        key={status.name}
+                                        className="rounded-[20px] border border-[#E4D7C5] dark:border-[#463C34] bg-[#FAF6EE] dark:bg-[#221D18] px-4 py-3"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span
+                                                className="w-3 h-3 rounded-full shrink-0"
+                                                style={{ backgroundColor: status.color }}
+                                                aria-hidden="true"
+                                            ></span>
+                                            <span className="font-semibold text-nature-dark dark:text-white">{status.name}</span>
+                                        </div>
+                                        <p className="mt-2 text-sm text-[#6F6659] dark:text-gray-300">
+                                            {status.value} observation{status.value > 1 ? 's' : ''} • {status.percentage.toFixed(1)}%
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
 
-            {/* Badges Section */}
             <Badges observations={observations} />
         </div>
     );
