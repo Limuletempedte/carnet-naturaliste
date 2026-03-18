@@ -189,6 +189,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
     const buttonClass = "px-4 py-2 rounded-full shadow-ios font-semibold text-white transition-all duration-300 transform hover:scale-105 active:scale-95";
     const primaryButtonClass = `${buttonClass} bg-nature-green hover:bg-green-600`;
     const secondaryButtonClass = `${buttonClass} bg-nature-gray hover:bg-gray-600`;
+    const taxonFilterEntries = Object.entries(TAXON_LOGOS) as Array<[TaxonomicGroup, string]>;
 
     const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
@@ -500,21 +501,43 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <span className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 mr-2">Filtrer par groupe</span>
                             <button
                                 onClick={() => onTaxonomicGroupChange('all')}
+                                aria-label="Filtrer tous les groupes"
+                                aria-pressed={taxonomicGroupFilter === 'all'}
                                 className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-300 shadow-sm ${taxonomicGroupFilter === 'all' ? 'bg-nature-dark text-white shadow-lg scale-105 ring-2 ring-white/20' : 'glass-input text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}`}>
                                 Tous
                             </button>
-                            {Object.entries(TAXON_LOGOS).map(([group, logoPath]) => (
-                                logoPath && (
+                            {taxonFilterEntries.map(([group, logoPath]) => {
+                                const isActive = taxonomicGroupFilter === group;
+                                const ariaLabel = `Filtrer par groupe ${group}`;
+
+                                if (logoPath) {
+                                    return (
+                                        <button
+                                            key={group}
+                                            onClick={() => onTaxonomicGroupChange(group)}
+                                            aria-label={ariaLabel}
+                                            aria-pressed={isActive}
+                                            className={`p-2 rounded-full transition-all duration-300 transform hover:scale-110 ${isActive ? 'bg-nature-green ring-4 ring-nature-green/20 shadow-lg scale-110' : 'glass-input hover:bg-white/40 dark:hover:bg-white/10 grayscale hover:grayscale-0 opacity-70 hover:opacity-100'}`}
+                                            title={group}
+                                        >
+                                            <img src={logoPath} alt={group} className="w-8 h-8 object-contain drop-shadow-sm" />
+                                        </button>
+                                    );
+                                }
+
+                                return (
                                     <button
                                         key={group}
-                                        onClick={() => onTaxonomicGroupChange(group as TaxonomicGroup)}
-                                        className={`p-2 rounded-full transition-all duration-300 transform hover:scale-110 ${taxonomicGroupFilter === group ? 'bg-nature-green ring-4 ring-nature-green/20 shadow-lg scale-110' : 'glass-input hover:bg-white/40 dark:hover:bg-white/10 grayscale hover:grayscale-0 opacity-70 hover:opacity-100'}`}
+                                        onClick={() => onTaxonomicGroupChange(group)}
+                                        aria-label={ariaLabel}
+                                        aria-pressed={isActive}
+                                        className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${isActive ? 'bg-nature-green text-white shadow-md ring-2 ring-nature-green/25' : 'glass-input text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}`}
                                         title={group}
                                     >
-                                        <img src={logoPath} alt={group} className="w-8 h-8 object-contain drop-shadow-sm" />
+                                        {group}
                                     </button>
-                                )
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 
