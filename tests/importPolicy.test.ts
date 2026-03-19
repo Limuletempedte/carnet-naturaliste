@@ -66,4 +66,15 @@ describe('import policy', () => {
         // Because 223e- is a UUID but NOT known, it MUST be regenerated!
         expect(plan[1].observation.id).not.toBe('223e4567-e89b-42d3-a456-426614174000');
     });
+
+    it('supports no-overwrite mode by inserting on known ID collisions', () => {
+        const existing = [makeObservation('123e4567-e89b-42d3-a456-426614174000', 'A')];
+        const imported = [makeObservation('123e4567-e89b-42d3-a456-426614174000', 'A2')];
+
+        const plan = buildImportPersistencePlan(imported, existing, { conflictMode: 'no-overwrite' });
+
+        expect(plan[0].mode).toBe('insert');
+        expect(plan[0].observation.id).not.toBe('123e4567-e89b-42d3-a456-426614174000');
+        expect(plan[0].regeneratedId).toBe(true);
+    });
 });

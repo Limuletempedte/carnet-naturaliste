@@ -65,4 +65,16 @@ describe('excelImportService taxonomic mapping', () => {
             TaxonomicGroup.SCORPION
         ]);
     });
+
+    it('rejects files missing mandatory species/date columns', async () => {
+        const file = createExcelFile([
+            { ID: '1', Nombre: 3, Commune: 'Lille' }
+        ]);
+
+        const result = await parseExcel(file);
+
+        expect(result.observations).toHaveLength(0);
+        expect(result.report.blockingErrors).toHaveLength(1);
+        expect(result.report.blockingErrors[0].message).toContain('Colonnes obligatoires manquantes');
+    });
 });

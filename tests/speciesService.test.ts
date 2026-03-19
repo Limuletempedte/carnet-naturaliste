@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchSpeciesInfo, suggestSpeciesAutocomplete } from '../services/speciesService';
+import { clearSpeciesInfoCache, fetchSpeciesInfo, suggestSpeciesAutocomplete } from '../services/speciesService';
 
 const fetchMock = vi.fn();
 
@@ -8,6 +8,7 @@ describe('suggestSpeciesAutocomplete', () => {
         vi.clearAllMocks();
         vi.stubGlobal('fetch', fetchMock);
         vi.spyOn(console, 'error').mockImplementation(() => { });
+        clearSpeciesInfoCache();
     });
 
     afterEach(() => {
@@ -125,6 +126,7 @@ describe('fetchSpeciesInfo', () => {
         vi.clearAllMocks();
         vi.stubGlobal('fetch', fetchMock);
         vi.spyOn(console, 'error').mockImplementation(() => { });
+        clearSpeciesInfoCache();
     });
 
     afterEach(() => {
@@ -391,6 +393,10 @@ describe('fetchSpeciesInfo', () => {
             } as Response)
             .mockResolvedValueOnce({
                 ok: true,
+                json: async () => ({ results: [{ conservation_statuses: [] }] })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
                 json: async () => ({ additionalStatus: [] })
             } as Response);
 
@@ -528,5 +534,99 @@ describe('fetchSpeciesInfo', () => {
 
         const info = await fetchSpeciesInfo('Buthus occitanus');
         expect(info?.taxonomicGroup).toBe('Scorpions');
+    });
+
+    it('uses cache for repeated normalized queries', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            id: 321,
+                            name: 'Vulpes vulpes',
+                            rank: 'species',
+                            preferred_common_name: 'Renard roux',
+                            default_photo: { medium_url: 'https://example.com/fox.jpg' }
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Mammalia',
+                    order: 'Carnivora',
+                    family: 'Canidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const first = await fetchSpeciesInfo('Vulpes vulpes');
+        const second = await fetchSpeciesInfo('  VULPES   VULPES ');
+
+        expect(fetchMock).toHaveBeenCalledTimes(4);
+        expect(second).toEqual(first);
+    });
+
+    it('deduplicates concurrent fetchSpeciesInfo requests for same key', async () => {
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            id: 987,
+                            name: 'Lynx lynx',
+                            rank: 'species',
+                            preferred_common_name: 'Lynx boreal',
+                            default_photo: { medium_url: 'https://example.com/lynx.jpg' }
+                        }
+                    ]
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Mammalia',
+                    order: 'Carnivora',
+                    family: 'Felidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ results: [{ conservation_statuses: [] }] })
+            } as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const [left, right] = await Promise.all([
+            fetchSpeciesInfo('Lynx lynx'),
+            fetchSpeciesInfo('Lynx lynx')
+        ]);
+
+        expect(fetchMock).toHaveBeenCalledTimes(4);
+        expect(left).toEqual(right);
+    });
+
+    it('returns null without error log when request is aborted', async () => {
+        fetchMock.mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'));
+
+        const abortController = new AbortController();
+        abortController.abort();
+
+        const info = await fetchSpeciesInfo('Canis lupus', { signal: abortController.signal });
+
+        expect(info).toBeNull();
+        expect(console.error).not.toHaveBeenCalled();
     });
 });

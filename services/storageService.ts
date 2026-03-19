@@ -22,6 +22,10 @@ export interface OfflineSyncResult {
     failureReasons: string[];
 }
 
+export interface ProcessOfflineQueueOptions {
+    itemIds?: string[];
+}
+
 interface PersistenceOptions {
     skipCache?: boolean;
 }
@@ -37,6 +41,24 @@ const ensureStorageNamespace = (): string => {
         throw new Error(STORAGE_NAMESPACE_ERROR);
     }
     return storageNamespace;
+};
+
+const ONLINE_AUTH_ERROR = 'User not authenticated';
+
+const assertOnlineUserId = (userId?: string): string => {
+    if (!navigator.onLine) {
+        return userId || 'offline-user';
+    }
+    if (!userId) {
+        throw new Error(ONLINE_AUTH_ERROR);
+    }
+    return userId;
+};
+
+const assertMutationAffectedRows = (count: number | null, action: 'update' | 'delete'): void => {
+    if ((count ?? 0) < 1) {
+        throw new Error(`Impossible de ${action === 'update' ? 'mettre à jour' : 'supprimer'}: observation introuvable ou accès refusé.`);
+    }
 };
 
 const COUNT_BREAKDOWN_COLUMNS = ['male_count', 'female_count', 'unidentified_count'] as const;
@@ -189,6 +211,11 @@ const getQueue = (): OfflineQueueItem[] => {
     return Array.isArray(queue) ? queue : [];
 };
 
+export const getOfflineQueueSnapshot = (): OfflineQueueItem[] => {
+    ensureStorageNamespace();
+    return getQueue().sort((a, b) => a.timestamp - b.timestamp);
+};
+
 const setQueue = (queue: OfflineQueueItem[]) => {
     const { queueKey } = getScopedKeys();
     localStorage.setItem(queueKey, JSON.stringify(queue));
@@ -309,9 +336,7 @@ export const saveObservation = async (
     ensureStorageNamespace();
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user && navigator.onLine) throw new Error('User not authenticated');
-
-    const userId = user?.id || 'offline-user';
+    const userId = assertOnlineUserId(user?.id);
 
     if (!navigator.onLine) {
         const offlineObs = { ...observation, id: observation.id || `temp-${Date.now()}` };
@@ -361,7 +386,7 @@ export const updateObservation = async (
     ensureStorageNamespace();
 
     const { data: { user } } = await supabase.auth.getUser();
-    const userId = user?.id || 'offline-user';
+    const userId = assertOnlineUserId(user?.id);
 
     if (!navigator.onLine) {
         addToQueue('UPDATE', observation);
@@ -373,11 +398,12 @@ export const updateObservation = async (
 
     const row = mapToRow(observation, userId);
 
-    let { error } = await supabase
+    let { error, data } = await supabase
         .from('observations')
         .update(row)
         .eq('id', observation.id)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .select('id');
 
     if (error && isMissingCountBreakdownColumnError(error)) {
         const legacyRow = stripCountBreakdownColumns(row);
@@ -385,14 +411,17 @@ export const updateObservation = async (
             .from('observations')
             .update(legacyRow)
             .eq('id', observation.id)
-            .eq('user_id', userId);
+            .eq('user_id', userId)
+            .select('id');
         error = fallback.error;
+        data = fallback.data;
     }
 
     if (error) {
         console.error('Error updating observation:', error);
         throw new Error(error.message);
     }
+    assertMutationAffectedRows(Array.isArray(data) ? data.length : 0, 'update');
 
     if (!options.skipCache) {
         upsertObservationInCache(observation);
@@ -403,7 +432,7 @@ export const deleteObservation = async (id: string): Promise<void> => {
     ensureStorageNamespace();
 
     const { data: { user } } = await supabase.auth.getUser();
-    const userId = user?.id || 'offline-user';
+    const userId = assertOnlineUserId(user?.id);
 
     if (!navigator.onLine) {
         addToQueue('DELETE', { id });
@@ -414,16 +443,18 @@ export const deleteObservation = async (id: string): Promise<void> => {
         return;
     }
 
-    const { error } = await supabase
+    const { error, data } = await supabase
         .from('observations')
         .delete()
         .eq('id', id)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .select('id');
 
     if (error) {
         console.error('Error deleting observation:', error);
         throw new Error(error.message);
     }
+    assertMutationAffectedRows(Array.isArray(data) ? data.length : 0, 'delete');
 
     const currentCache = getLocalCache();
     const updatedCache = currentCache.filter(obs => obs.id !== id);
@@ -491,7 +522,7 @@ export const uploadSound = async (file: Blob): Promise<string> => {
     return publicUrl;
 };
 
-export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
+export const processOfflineQueue = async (options: ProcessOfflineQueueOptions = {}): Promise<OfflineSyncResult> => {
     ensureStorageNamespace();
 
     if (!navigator.onLine) {
@@ -503,16 +534,31 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
         return { processed: 0, failed: 0, failureReasons: [] };
     }
 
+    const itemIds = Array.isArray(options.itemIds) ? options.itemIds : [];
+    const hasScopedProcessing = itemIds.length > 0;
+    const itemIdSet = hasScopedProcessing ? new Set(itemIds) : null;
+
+    const queueToProcess = hasScopedProcessing && itemIdSet
+        ? queue.filter(item => itemIdSet.has(item.id))
+        : queue;
+    const preservedQueueItems = hasScopedProcessing && itemIdSet
+        ? queue.filter(item => !itemIdSet.has(item.id))
+        : [];
+
+    if (queueToProcess.length === 0) {
+        return { processed: 0, failed: 0, failureReasons: [] };
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
         return {
-            processed: queue.length,
-            failed: queue.length,
+            processed: queueToProcess.length,
+            failed: queueToProcess.length,
             failureReasons: ['User not authenticated']
         };
     }
 
-    const reducedQueue = reduceQueue(queue);
+    const reducedQueue = reduceQueue(queueToProcess);
     const failedItems: OfflineQueueItem[] = [];
     const idMap = new Map<string, string>();
     const failureReasons = new Map<string, number>();
@@ -577,14 +623,16 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
                     .from('observations')
                     .update(row)
                     .eq('id', payload.id)
-                    .eq('user_id', user.id);
+                    .eq('user_id', user.id)
+                    .select('id');
 
                 if (error && isMissingCountBreakdownColumnError(error)) {
                     const fallback = await supabase
                         .from('observations')
                         .update(stripCountBreakdownColumns(row))
                         .eq('id', payload.id)
-                        .eq('user_id', user.id);
+                        .eq('user_id', user.id)
+                        .select('id');
                     error = fallback.error;
                 }
 
@@ -600,7 +648,8 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
                     .from('observations')
                     .delete()
                     .eq('id', payload.id)
-                    .eq('user_id', user.id);
+                    .eq('user_id', user.id)
+                    .select('id');
 
                 if (error) throw error;
             }
@@ -612,7 +661,7 @@ export const processOfflineQueue = async (): Promise<OfflineSyncResult> => {
         }
     }
 
-    setQueue(failedItems);
+    setQueue([...preservedQueueItems, ...failedItems].sort((a, b) => a.timestamp - b.timestamp));
 
     if (failedItems.length === 0) {
         const { data, error } = await supabase

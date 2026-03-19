@@ -66,4 +66,24 @@ describe('backupService.createBackup', () => {
         expect(fileNames).toContain('backup_manifest.json');
         expect(fileNames.some(name => name.startsWith('images/'))).toBe(true);
     });
+
+    it('neutralizes CSV formula injection payloads in exported CSV', async () => {
+        const { createBackup } = await import('../services/backupService');
+        const maliciousObservation = {
+            ...makeObservation(),
+            speciesName: '=cmd|/C calc!A0',
+            location: '+SUM(1,2)',
+            municipality: '@evil'
+        };
+
+        await createBackup([maliciousObservation]);
+
+        const savedBlob = saveAsMock.mock.calls[0][0] as Blob;
+        const zip = await JSZip.loadAsync(savedBlob);
+        const csv = await zip.file('data.csv')?.async('string');
+
+        expect(csv).toContain(`"'=cmd|/C calc!A0"`);
+        expect(csv).toContain(`"'+SUM(1,2)"`);
+        expect(csv).toContain(`"'@evil"`);
+    });
 });

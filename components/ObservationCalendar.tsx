@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { Observation } from '../types';
@@ -17,21 +17,33 @@ type Value = ValuePiece | [ValuePiece, ValuePiece];
 
 const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations, onEdit, onDelete, isMobileView = false }) => {
     const [date, setDate] = useState<Value>(new Date());
+    const observationsByDate = useMemo(() => {
+        const grouped = new Map<string, Observation[]>();
+        observations.forEach((observation) => {
+            const existing = grouped.get(observation.date);
+            if (existing) {
+                existing.push(observation);
+            } else {
+                grouped.set(observation.date, [observation]);
+            }
+        });
+        return grouped;
+    }, [observations]);
 
     const getObservationsForDate = (date: Date) => {
         const dateString = dateToIsoLocal(date);
-        return observations.filter(obs => obs.date === dateString);
+        return observationsByDate.get(dateString) || [];
     };
 
     const tileContent = ({ date, view }: { date: Date; view: string }) => {
         if (view === 'month') {
             const dateString = dateToIsoLocal(date);
-            const dayObservations = observations.filter(obs => obs.date === dateString);
-            if (dayObservations.length > 0) {
+            const dayObservationsCount = observationsByDate.get(dateString)?.length || 0;
+            if (dayObservationsCount > 0) {
                 return (
                     <div className="flex justify-center items-center mt-1">
                         <div className="w-2 h-2 bg-nature-green rounded-full"></div>
-                        <span className="text-[10px] text-nature-dark dark:text-nature-green ml-1 font-bold">{dayObservations.length}</span>
+                        <span className="text-[10px] text-nature-dark dark:text-nature-green ml-1 font-bold">{dayObservationsCount}</span>
                     </div>
                 );
             }

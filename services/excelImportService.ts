@@ -43,6 +43,10 @@ const normalize = (s: string | undefined | null): string =>
 const todayIso = (): string => dateToIsoLocal(new Date());
 
 const MAX_IMPORT_ROWS = 10_000;
+const MAX_IMPORT_FILE_BYTES = 15 * 1024 * 1024;
+const MAX_IMPORT_COLUMNS = 120;
+const IMPORT_PARSE_TIMEOUT_MS = 20_000;
+const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 const isNonEmptyCell = (value: unknown): boolean => {
     if (value === null || value === undefined) return false;
@@ -52,6 +56,8 @@ const isNonEmptyCell = (value: unknown): boolean => {
 const normalizeHeader = (value: string): string => {
     return normalize(value.replace(/[_-]+/g, ' '));
 };
+
+const isDangerousObjectKey = (key: string): boolean => DANGEROUS_OBJECT_KEYS.has(key);
 
 const toText = (value: unknown): string => {
     if (value === null || value === undefined) return '';
@@ -99,8 +105,11 @@ const HEADER_ALIASES: Record<string, string[]> = {
 };
 
 const buildNormalizedRow = (rawRow: Record<string, unknown>): Record<string, unknown> => {
-    const row: Record<string, unknown> = {};
+    const row = Object.create(null) as Record<string, unknown>;
     Object.keys(rawRow).forEach(key => {
+        if (isDangerousObjectKey(key)) {
+            return;
+        }
         row[normalizeHeader(key)] = rawRow[key];
     });
     return row;
@@ -135,10 +144,42 @@ const createBlockingResult = (
     }
 });
 
+const hasAnyAlias = (normalizedHeaders: Set<string>, aliases: string[]): boolean => {
+    return aliases.some(alias => normalizedHeaders.has(normalizeHeader(alias)));
+};
+
 // ─── Main Parse Function ────────────────────────────────────────────────────
 
 export const parseExcel = async (file: File): Promise<ImportResult> => {
     return new Promise((resolve) => {
+        let settled = false;
+        let timeoutId: number | null = null;
+        const safeResolve = (result: ImportResult) => {
+            if (settled) return;
+            settled = true;
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+            resolve(result);
+        };
+
+        if (file.size > MAX_IMPORT_FILE_BYTES) {
+            console.warn(`[security][excel-import] Import bloqué: fichier trop volumineux (${file.size} bytes).`);
+            safeResolve(createBlockingResult(
+                `Le fichier dépasse la taille maximale autorisée (${Math.round(MAX_IMPORT_FILE_BYTES / (1024 * 1024))} Mo).`,
+                `${file.name} (${file.size} bytes)`
+            ));
+            return;
+        }
+
+        timeoutId = window.setTimeout(() => {
+            console.warn(`[security][excel-import] Import interrompu après ${IMPORT_PARSE_TIMEOUT_MS}ms.`);
+            safeResolve(createBlockingResult(
+                'Le parsing du fichier a expiré (timeout). Réduisez la taille du fichier ou découpez-le.',
+                file.name
+            ));
+        }, IMPORT_PARSE_TIMEOUT_MS);
+
         const reader = new FileReader();
 
         reader.onload = (e) => {
@@ -147,28 +188,60 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                 const workbook = XLSX.read(data, { type: 'array', cellDates: true });
                 const sheetName = workbook.SheetNames[0];
                 if (!sheetName) {
-                    resolve(createBlockingResult('Aucune feuille trouvée dans le fichier Excel.', file.name));
+                    safeResolve(createBlockingResult('Aucune feuille trouvée dans le fichier Excel.', file.name));
                     return;
                 }
 
                 const worksheet = workbook.Sheets[sheetName];
                 if (!worksheet) {
-                    resolve(createBlockingResult('Feuille Excel introuvable ou illisible.', sheetName));
+                    safeResolve(createBlockingResult('Feuille Excel introuvable ou illisible.', sheetName));
                     return;
                 }
 
                 const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+                const rawHeaders = Array.from(new Set(rawRows.flatMap(row => Object.keys(row))));
+
+                if (rawHeaders.some(isDangerousObjectKey)) {
+                    console.warn('[security][excel-import] En-têtes potentiellement dangereux détectés, import rejeté.');
+                    safeResolve(createBlockingResult(
+                        'Le fichier contient des en-têtes non autorisés.',
+                        rawHeaders.join(', ')
+                    ));
+                    return;
+                }
+
+                if (rawHeaders.length > MAX_IMPORT_COLUMNS) {
+                    console.warn(`[security][excel-import] Import bloqué: ${rawHeaders.length} colonnes détectées.`);
+                    safeResolve(createBlockingResult(
+                        `Le fichier contient trop de colonnes (${rawHeaders.length}, max: ${MAX_IMPORT_COLUMNS}).`,
+                        file.name
+                    ));
+                    return;
+                }
+
+                const normalizedHeaders = new Set(rawHeaders.map(normalizeHeader));
+                const hasSpeciesColumn = hasAnyAlias(normalizedHeaders, HEADER_ALIASES.speciesName);
+                const hasDateColumn = hasAnyAlias(normalizedHeaders, HEADER_ALIASES.date);
+                if (!hasSpeciesColumn || !hasDateColumn) {
+                    console.warn('[security][excel-import] Import bloqué: colonnes obligatoires manquantes.');
+                    safeResolve(createBlockingResult(
+                        "Colonnes obligatoires manquantes (au minimum: nom d'espèce et date).",
+                        file.name
+                    ));
+                    return;
+                }
+
                 const indexedRows = rawRows
                     .map((row, index) => ({ row, rowNum: index + 2 }))
                     .filter(({ row }) => Object.values(row).some(isNonEmptyCell));
 
                 if (indexedRows.length === 0) {
-                    resolve(createBlockingResult('Le fichier ne contient aucune ligne exploitable.', file.name));
+                    safeResolve(createBlockingResult('Le fichier ne contient aucune ligne exploitable.', file.name));
                     return;
                 }
 
                 if (indexedRows.length > MAX_IMPORT_ROWS) {
-                    resolve(createBlockingResult(
+                    safeResolve(createBlockingResult(
                         `Le fichier contient ${indexedRows.length} lignes (max: ${MAX_IMPORT_ROWS}).`,
                         file.name,
                         indexedRows.length
@@ -303,7 +376,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     };
                 });
 
-                resolve({
+                safeResolve({
                     observations,
                     report: {
                         totalRows: indexedRows.length,
@@ -316,7 +389,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                 });
             } catch (error) {
                 console.error("Excel parse error:", error);
-                resolve(createBlockingResult(
+                safeResolve(createBlockingResult(
                     "Impossible de lire le fichier Excel (format invalide ou fichier corrompu).",
                     error instanceof Error ? error.message : String(error)
                 ));
@@ -324,7 +397,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
         };
 
         reader.onerror = () => {
-            resolve(createBlockingResult("Impossible de lire le fichier Excel.", file.name));
+            safeResolve(createBlockingResult("Impossible de lire le fichier Excel.", file.name));
         };
         reader.readAsArrayBuffer(file);
     });

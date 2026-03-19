@@ -5,6 +5,10 @@ import { normalizeSearchText } from '../utils/textUtils';
 
 export type SortDirection = 'ascending' | 'descending';
 export type SortKey = keyof Observation | '';
+export interface SortCriterion {
+    key: SortKey;
+    direction: SortDirection;
+}
 
 export interface ObservationFilterState {
     searchTerm: string;
@@ -13,11 +17,68 @@ export interface ObservationFilterState {
     statusFilter: Status | 'all';
     startDateFilter: string;
     endDateFilter: string;
+    geoMode?: 'none' | 'radius' | 'bbox';
+    radiusCenterLat?: string;
+    radiusCenterLon?: string;
+    radiusKm?: string;
+    bboxMinLat?: string;
+    bboxMaxLat?: string;
+    bboxMinLon?: string;
+    bboxMaxLon?: string;
 }
+
+const parseOptionalNumber = (value?: string): number | null => {
+    if (value === undefined || value === null || value.trim() === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const EARTH_RADIUS_KM = 6371;
+const toRadians = (value: number): number => value * (Math.PI / 180);
+
+const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const radLat1 = toRadians(lat1);
+    const radLat2 = toRadians(lat2);
+
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(radLat1) * Math.cos(radLat2) * Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return EARTH_RADIUS_KM * c;
+};
+
+const compareObservationValues = (
+    left: Observation,
+    right: Observation,
+    criterion: SortCriterion
+): number => {
+    const { key, direction } = criterion;
+    const directionFactor = direction === 'ascending' ? 1 : -1;
+    const leftValue = left[key as keyof Observation];
+    const rightValue = right[key as keyof Observation];
+
+    if (leftValue === null || leftValue === undefined) return 1;
+    if (rightValue === null || rightValue === undefined) return -1;
+
+    if (key === 'date' && typeof leftValue === 'string' && typeof rightValue === 'string') {
+        const cmp = compareIsoDate(leftValue, rightValue);
+        return cmp * directionFactor;
+    }
+
+    if (typeof leftValue === 'string' && typeof rightValue === 'string') {
+        return leftValue.localeCompare(rightValue, 'fr', { sensitivity: 'base' }) * directionFactor;
+    }
+
+    if (leftValue < rightValue) return -1 * directionFactor;
+    if (leftValue > rightValue) return 1 * directionFactor;
+    return 0;
+};
 
 export const useObservationFilters = (
     observations: Observation[],
-    filters: ObservationFilterState
+    filters: ObservationFilterState,
+    additionalSorts: SortCriterion[] = []
 ) => {
     const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
         key: 'date',
@@ -65,34 +126,68 @@ export const useObservationFilters = (
                     (obs.location && normalizeSearchText(obs.location).includes(normalizedSearchTerm)) ||
                     (obs.municipality && normalizeSearchText(obs.municipality).includes(normalizedSearchTerm))
                 );
+            })
+            .filter(obs => {
+                const geoMode = filters.geoMode || 'none';
+                if (geoMode === 'none') return true;
+                if (obs.gps.lat === null || obs.gps.lon === null) return false;
+
+                if (geoMode === 'radius') {
+                    const centerLat = parseOptionalNumber(filters.radiusCenterLat);
+                    const centerLon = parseOptionalNumber(filters.radiusCenterLon);
+                    const radiusKm = parseOptionalNumber(filters.radiusKm);
+                    if (centerLat === null || centerLon === null || radiusKm === null || radiusKm <= 0) {
+                        return true;
+                    }
+                    return distanceKm(centerLat, centerLon, obs.gps.lat, obs.gps.lon) <= radiusKm;
+                }
+
+                if (geoMode === 'bbox') {
+                    const rawMinLat = parseOptionalNumber(filters.bboxMinLat);
+                    const rawMaxLat = parseOptionalNumber(filters.bboxMaxLat);
+                    const rawMinLon = parseOptionalNumber(filters.bboxMinLon);
+                    const rawMaxLon = parseOptionalNumber(filters.bboxMaxLon);
+
+                    if (rawMinLat === null || rawMaxLat === null || rawMinLon === null || rawMaxLon === null) {
+                        return true;
+                    }
+
+                    const minLat = Math.min(rawMinLat, rawMaxLat);
+                    const maxLat = Math.max(rawMinLat, rawMaxLat);
+                    const minLon = Math.min(rawMinLon, rawMaxLon);
+                    const maxLon = Math.max(rawMinLon, rawMaxLon);
+
+                    return obs.gps.lat >= minLat
+                        && obs.gps.lat <= maxLat
+                        && obs.gps.lon >= minLon
+                        && obs.gps.lon <= maxLon;
+                }
+
+                return true;
             });
 
+        const sortCriteria: SortCriterion[] = [];
         if (sortConfig.key) {
+            sortCriteria.push({ key: sortConfig.key, direction: sortConfig.direction });
+        }
+        additionalSorts.forEach(sort => {
+            if (!sort.key) return;
+            if (sortCriteria.some(existing => existing.key === sort.key)) return;
+            sortCriteria.push(sort);
+        });
+
+        if (sortCriteria.length > 0) {
             sortableItems.sort((a, b) => {
-                const key = sortConfig.key as keyof Observation;
-                const aValue = a[key];
-                const bValue = b[key];
-
-                if (aValue === null || aValue === undefined) return 1;
-                if (bValue === null || bValue === undefined) return -1;
-
-                if (key === 'date' && typeof aValue === 'string' && typeof bValue === 'string') {
-                    const dateCmp = compareIsoDate(aValue, bValue);
-                    return sortConfig.direction === 'ascending' ? dateCmp : -dateCmp;
-                }
-
-                if (aValue < bValue) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (aValue > bValue) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
+                for (const criterion of sortCriteria) {
+                    const cmp = compareObservationValues(a, b, criterion);
+                    if (cmp !== 0) return cmp;
                 }
                 return 0;
             });
         }
 
         return sortableItems;
-    }, [filters, observations, sortConfig]);
+    }, [additionalSorts, filters, observations, sortConfig]);
 
     const availableYears = useMemo(() => {
         const years = new Set(

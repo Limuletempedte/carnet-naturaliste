@@ -21,6 +21,23 @@ export interface SpeciesSuggestion {
     imageUrl?: string;          // medium_url from iNaturalist
 }
 
+interface FetchSpeciesInfoOptions {
+    signal?: AbortSignal;
+}
+
+interface SpeciesAutocompleteOptions {
+    signal?: AbortSignal;
+}
+
+interface SpeciesInfoCacheEntry {
+    value: SpeciesInfo | null;
+    expiresAt: number;
+}
+
+const SPECIES_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
+const speciesInfoCache = new Map<string, SpeciesInfoCacheEntry>();
+const speciesInfoInFlightRequests = new Map<string, Promise<SpeciesInfo | null>>();
+
 // ---------------------------------------------------------------------------
 // iNaturalist API  (primary source — supports French common names)
 // Docs: https://api.inaturalist.org/v1/docs/
@@ -49,6 +66,30 @@ const normalizeTaxonText = (value?: string): string => {
         .toLowerCase()
         .trim()
         .replace(/\s+/g, ' ');
+};
+
+const isAbortError = (error: unknown): boolean => {
+    return error instanceof DOMException && error.name === 'AbortError';
+};
+
+const getSpeciesInfoCacheKey = (value: string): string => normalizeTaxonText(value);
+
+const getCachedSpeciesInfo = (key: string): SpeciesInfo | null | undefined => {
+    const now = Date.now();
+    const entry = speciesInfoCache.get(key);
+    if (!entry) return undefined;
+    if (entry.expiresAt <= now) {
+        speciesInfoCache.delete(key);
+        return undefined;
+    }
+    return entry.value;
+};
+
+const setCachedSpeciesInfo = (key: string, value: SpeciesInfo | null): void => {
+    speciesInfoCache.set(key, {
+        value,
+        expiresAt: Date.now() + SPECIES_INFO_CACHE_TTL_MS
+    });
 };
 
 const isSpeciesRank = (rank?: string): boolean => rank === 'species' || rank === 'subspecies';
@@ -138,28 +179,30 @@ const resolveSpeciesMatchMeta = (
  * Search iNaturalist for a species by common or scientific name.
  * Returns the best match with photo, description, and scientific name.
  */
-const fetchINatTaxon = async (query: string): Promise<INatTaxonResult | null> => {
+const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INatTaxonResult | null> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=8&locale=fr`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal });
         if (!res.ok) return null;
         const data = await res.json();
         const results: INatTaxonResult[] = data?.results ?? [];
         return pickBestINatTaxonResult(results, query);
     } catch (e) {
+        if (isAbortError(e)) throw e;
         console.error('iNaturalist fetch error:', e);
         return null;
     }
 };
 
-const fetchINatSuggestions = async (query: string, limit: number): Promise<INatTaxonResult[]> => {
+const fetchINatSuggestions = async (query: string, limit: number, signal?: AbortSignal): Promise<INatTaxonResult[]> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=${limit}&locale=fr`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal });
         if (!res.ok) return [];
         const data = await res.json();
         return Array.isArray(data?.results) ? data.results : [];
     } catch (e) {
+        if (isAbortError(e)) throw e;
         console.error('iNaturalist suggest error:', e);
         return [];
     }
@@ -199,16 +242,17 @@ const GBIF_V2_SPECIES_MATCH = 'https://api.gbif.org/v2/species/match';
  * Match a latin/scientific name to the GBIF backbone taxonomy.
  * NOTE: GBIF does NOT support French common names — always pass a latin name.
  */
-export const matchSpecies = async (latinName: string): Promise<GBIFMatchResult | null> => {
+export const matchSpecies = async (latinName: string, signal?: AbortSignal): Promise<GBIFMatchResult | null> => {
     if (!latinName || latinName.trim().length < 2) return null;
     try {
         const url = `${GBIF_BASE}/match?name=${encodeURIComponent(latinName.trim())}&verbose=true`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal });
         if (!res.ok) return null;
         const data: GBIFMatchResult = await res.json();
         if (data.matchType === 'NONE') return null;
         return data;
     } catch (e) {
+        if (isAbortError(e)) throw e;
         console.error('GBIF match error:', e);
         return null;
     }
@@ -217,14 +261,15 @@ export const matchSpecies = async (latinName: string): Promise<GBIFMatchResult |
 /**
  * Suggest species names for autocomplete (accepts partial latin names).
  */
-export const suggestSpecies = async (query: string, limit = 5): Promise<GBIFSuggestResult[]> => {
+export const suggestSpecies = async (query: string, limit = 5, signal?: AbortSignal): Promise<GBIFSuggestResult[]> => {
     if (!query || query.trim().length < 2) return [];
     try {
         const url = `${GBIF_BASE}/suggest?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal });
         if (!res.ok) return [];
         return await res.json();
     } catch (e) {
+        if (isAbortError(e)) throw e;
         console.error('GBIF suggest error:', e);
         return [];
     }
@@ -277,10 +322,10 @@ const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
  * Uses place_id=6753 (France) and reads conservation_statuses (plural) array.
  * Returns undefined if no France-specific status is found.
  */
-const fetchINatFranceStatus = async (taxonId: number): Promise<Status | undefined> => {
+const fetchINatFranceStatus = async (taxonId: number, signal?: AbortSignal): Promise<Status | undefined> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/${taxonId}?place_id=${INAT_FRANCE_PLACE_ID}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal });
         if (!res.ok) return undefined;
         const data = await res.json();
         const results: INatTaxonDetail[] = data?.results ?? [];
@@ -292,17 +337,18 @@ const fetchINatFranceStatus = async (taxonId: number): Promise<Status | undefine
 
         return undefined;
     } catch (e) {
+        if (isAbortError(e)) throw e;
         console.error('iNaturalist France conservation status error:', e);
         return undefined;
     }
 };
 
-export const fetchGbifIucnStatus = async (latinName: string): Promise<Status | undefined> => {
+export const fetchGbifIucnStatus = async (latinName: string, signal?: AbortSignal): Promise<Status | undefined> => {
     if (!latinName || latinName.trim().length < 2) return undefined;
 
     try {
         const url = `${GBIF_V2_SPECIES_MATCH}?scientificName=${encodeURIComponent(latinName.trim())}`;
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         if (!response.ok) return undefined;
 
         const data: GBIFV2MatchResult = await response.json();
@@ -311,6 +357,7 @@ export const fetchGbifIucnStatus = async (latinName: string): Promise<Status | u
 
         return mapIucnStatusCodeToStatus(iucnEntry?.statusCode);
     } catch (error) {
+        if (isAbortError(error)) throw error;
         console.error('GBIF v2 IUCN status error:', error);
         return undefined;
     }
@@ -337,50 +384,59 @@ const dedupeAndLimitSuggestions = (suggestions: SpeciesSuggestion[], limit: numb
  * Unified autocomplete suggestions for the species field.
  * Strategy: iNaturalist first (French common names), then GBIF fallback.
  */
-export const suggestSpeciesAutocomplete = async (query: string, limit = 5): Promise<SpeciesSuggestion[]> => {
+export const suggestSpeciesAutocomplete = async (
+    query: string,
+    limit = 5,
+    options: SpeciesAutocompleteOptions = {}
+): Promise<SpeciesSuggestion[]> => {
     if (!query || query.trim().length < 2) return [];
     const safeLimit = Math.max(1, Math.min(limit, 10));
 
-    const inatSuggestions = await fetchINatSuggestions(query, safeLimit);
-    if (inatSuggestions.length > 0) {
-        // Prioritize species/subspecies; if none found keep everything
-        const speciesOnly = inatSuggestions.filter(r => r.rank === 'species' || r.rank === 'subspecies');
-        const bestResults = speciesOnly.length > 0 ? speciesOnly : inatSuggestions;
-        const normalized = bestResults
+    try {
+        const inatSuggestions = await fetchINatSuggestions(query, safeLimit, options.signal);
+        if (inatSuggestions.length > 0) {
+            // Prioritize species/subspecies; if none found keep everything
+            const speciesOnly = inatSuggestions.filter(r => r.rank === 'species' || r.rank === 'subspecies');
+            const bestResults = speciesOnly.length > 0 ? speciesOnly : inatSuggestions;
+            const normalized = bestResults
+                .map((item): SpeciesSuggestion | null => {
+                    const latinName = (item.name || '').trim();
+                    const commonName = item.preferred_common_name?.trim();
+                    const displayName = commonName || latinName;
+                    if (!displayName || !latinName) return null;
+                    return {
+                        displayName,
+                        latinName,
+                        commonName,
+                        source: 'inat',
+                        iconicTaxonName: item.iconic_taxon_name,
+                        imageUrl: item.default_photo?.medium_url
+                    };
+                })
+                .filter((item): item is SpeciesSuggestion => item !== null);
+
+            return dedupeAndLimitSuggestions(normalized, safeLimit);
+        }
+
+        const gbifSuggestions = await suggestSpecies(query, safeLimit, options.signal);
+        const normalized = gbifSuggestions
             .map((item): SpeciesSuggestion | null => {
-                const latinName = (item.name || '').trim();
-                const commonName = item.preferred_common_name?.trim();
-                const displayName = commonName || latinName;
+                const latinName = (item.scientificName || item.canonicalName || '').trim();
+                const displayName = (item.canonicalName || item.scientificName || '').trim();
                 if (!displayName || !latinName) return null;
                 return {
                     displayName,
                     latinName,
-                    commonName,
-                    source: 'inat',
-                    iconicTaxonName: item.iconic_taxon_name,
-                    imageUrl: item.default_photo?.medium_url
+                    source: 'gbif'
                 };
             })
             .filter((item): item is SpeciesSuggestion => item !== null);
 
         return dedupeAndLimitSuggestions(normalized, safeLimit);
+    } catch (error) {
+        if (isAbortError(error)) return [];
+        throw error;
     }
-
-    const gbifSuggestions = await suggestSpecies(query, safeLimit);
-    const normalized = gbifSuggestions
-        .map((item): SpeciesSuggestion | null => {
-            const latinName = (item.scientificName || item.canonicalName || '').trim();
-            const displayName = (item.canonicalName || item.scientificName || '').trim();
-            if (!displayName || !latinName) return null;
-            return {
-                displayName,
-                latinName,
-                source: 'gbif'
-            };
-        })
-        .filter((item): item is SpeciesSuggestion => item !== null);
-
-    return dedupeAndLimitSuggestions(normalized, safeLimit);
 };
 
 // ---------------------------------------------------------------------------
@@ -537,61 +593,98 @@ export const mapINatIconicToTaxonomicGroup = (iconicName?: string): TaxonomicGro
 // Strategy: iNaturalist first (handles French names), then GBIF for taxonomy
 // ---------------------------------------------------------------------------
 
-export const fetchSpeciesInfo = async (speciesName: string): Promise<SpeciesInfo | null> => {
+export const fetchSpeciesInfo = async (
+    speciesName: string,
+    options: FetchSpeciesInfoOptions = {}
+): Promise<SpeciesInfo | null> => {
     if (!speciesName || speciesName.trim().length < 2) return null;
 
-    try {
-        // Step 1: Query iNaturalist (supports French common names)
-        const inat = await fetchINatTaxon(speciesName);
-        if (!inat) return null;
+    const cacheKey = getSpeciesInfoCacheKey(speciesName);
+    if (!cacheKey || cacheKey.length < 2) return null;
 
-        const latinName = inat.name || undefined;
-        const imageUrl = inat.default_photo?.medium_url ?? inat.default_photo?.square_url ?? null;
-        const description = inat.wikipedia_summary
-            ? stripHtml(inat.wikipedia_summary).substring(0, 300) + '...'
-            : '';
-        const sourceUrl = inat.wikipedia_url || '';
-        const matchMeta = resolveSpeciesMatchMeta(speciesName, inat);
+    const cached = getCachedSpeciesInfo(cacheKey);
+    if (cached !== undefined) return cached;
 
-        // Step 2: If we got a latin name from iNaturalist, enrich with GBIF taxonomy
-        let taxonomicGroup: TaxonomicGroup | undefined;
-
-        if (latinName) {
-            const gbif = await matchSpecies(latinName);
-            if (gbif) {
-                taxonomicGroup = mapGBIFToTaxonomicGroup(gbif.class, gbif.order, gbif.family, gbif.kingdom);
-            }
-        }
-
-        let redListStatus: Status | undefined;
-        let redListSource: 'france' | 'global' | undefined;
-        if (inat.id) {
-            redListStatus = await fetchINatFranceStatus(inat.id);
-            if (redListStatus) redListSource = 'france';
-        }
-        if (!redListStatus && latinName) {
-            redListStatus = await fetchGbifIucnStatus(latinName);
-            if (redListStatus) redListSource = 'global';
-        }
-
-        // Fallback: use iNaturalist iconic_taxon_name if GBIF didn't yield a group
-        if (!taxonomicGroup && inat.iconic_taxon_name) {
-            taxonomicGroup = mapINatIconicToTaxonomicGroup(inat.iconic_taxon_name);
-        }
-
-        return {
-            description: description || 'Aucune description disponible.',
-            imageUrl,
-            sourceUrl,
-            latinName,
-            taxonomicGroup,
-            redListStatus,
-            redListSource,
-            matchedBy: matchMeta.matchedBy,
-            confidence: matchMeta.confidence
-        };
-    } catch (error) {
-        console.error('Erreur lors de la récupération des infos espèce:', error);
-        return null;
+    const inFlightRequest = speciesInfoInFlightRequests.get(cacheKey);
+    if (inFlightRequest) {
+        return inFlightRequest;
     }
+
+    const requestPromise = (async (): Promise<SpeciesInfo | null> => {
+        try {
+            // Step 1: Query iNaturalist (supports French common names)
+            const inat = await fetchINatTaxon(speciesName, options.signal);
+            if (!inat) {
+                setCachedSpeciesInfo(cacheKey, null);
+                return null;
+            }
+
+            const latinName = inat.name || undefined;
+            const imageUrl = inat.default_photo?.medium_url ?? inat.default_photo?.square_url ?? null;
+            const description = inat.wikipedia_summary
+                ? stripHtml(inat.wikipedia_summary).substring(0, 300) + '...'
+                : '';
+            const sourceUrl = inat.wikipedia_url || '';
+            const matchMeta = resolveSpeciesMatchMeta(speciesName, inat);
+
+            // Step 2: If we got a latin name from iNaturalist, enrich with GBIF taxonomy
+            let taxonomicGroup: TaxonomicGroup | undefined;
+
+            if (latinName) {
+                const gbif = await matchSpecies(latinName, options.signal);
+                if (gbif) {
+                    taxonomicGroup = mapGBIFToTaxonomicGroup(gbif.class, gbif.order, gbif.family, gbif.kingdom);
+                }
+            }
+
+            let redListStatus: Status | undefined;
+            let redListSource: 'france' | 'global' | undefined;
+            if (inat.id) {
+                redListStatus = await fetchINatFranceStatus(inat.id, options.signal);
+                if (redListStatus) redListSource = 'france';
+            }
+            if (!redListStatus && latinName) {
+                redListStatus = await fetchGbifIucnStatus(latinName, options.signal);
+                if (redListStatus) redListSource = 'global';
+            }
+
+            // Fallback: use iNaturalist iconic_taxon_name if GBIF didn't yield a group
+            if (!taxonomicGroup && inat.iconic_taxon_name) {
+                taxonomicGroup = mapINatIconicToTaxonomicGroup(inat.iconic_taxon_name);
+            }
+
+            const resolvedInfo: SpeciesInfo = {
+                description: description || 'Aucune description disponible.',
+                imageUrl,
+                sourceUrl,
+                latinName,
+                taxonomicGroup,
+                redListStatus,
+                redListSource,
+                matchedBy: matchMeta.matchedBy,
+                confidence: matchMeta.confidence
+            };
+
+            setCachedSpeciesInfo(cacheKey, resolvedInfo);
+            return resolvedInfo;
+        } catch (error) {
+            if (isAbortError(error)) return null;
+            console.error('Erreur lors de la récupération des infos espèce:', error);
+            return null;
+        }
+    })();
+
+    speciesInfoInFlightRequests.set(cacheKey, requestPromise);
+    try {
+        return await requestPromise;
+    } finally {
+        if (speciesInfoInFlightRequests.get(cacheKey) === requestPromise) {
+            speciesInfoInFlightRequests.delete(cacheKey);
+        }
+    }
+};
+
+export const clearSpeciesInfoCache = (): void => {
+    speciesInfoCache.clear();
+    speciesInfoInFlightRequests.clear();
 };

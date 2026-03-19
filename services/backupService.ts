@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Observation } from '../types';
 import { dateToIsoLocal } from '../utils/dateUtils';
+import { escapeCsvCell } from '../utils/csvUtils';
 
 export interface BackupResult {
     fileName: string;
@@ -11,8 +12,7 @@ export interface BackupResult {
 }
 
 const IMAGE_FETCH_TIMEOUT_MS = 15000;
-
-const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+const BACKUP_IMAGE_FETCH_CONCURRENCY = 4;
 
 const sanitizeFileName = (value: string): string => {
     const normalized = value.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -62,6 +62,21 @@ const fetchWithTimeout = async (url: string, timeoutMs: number): Promise<Respons
     }
 };
 
+const runWithConcurrency = async (tasks: Array<() => Promise<void>>, concurrency: number): Promise<void> => {
+    const safeConcurrency = Math.max(1, concurrency);
+    let nextIndex = 0;
+
+    const worker = async () => {
+        while (nextIndex < tasks.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            await tasks[currentIndex]();
+        }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(safeConcurrency, tasks.length) }, () => worker()));
+};
+
 export const createBackup = async (observations: Observation[]): Promise<BackupResult> => {
     const zip = new JSZip();
 
@@ -77,31 +92,31 @@ export const createBackup = async (observations: Observation[]): Promise<BackupR
 
     const csvRows = observations.map(obs => {
         return [
-            esc(obs.id),
-            esc(obs.speciesName),
-            esc(obs.latinName),
-            esc(obs.taxonomicGroup),
-            esc(obs.date),
-            esc(obs.time),
-            esc(obs.count),
-            esc(obs.maleCount),
-            esc(obs.femaleCount),
-            esc(obs.unidentifiedCount),
-            esc(obs.location),
-            esc(obs.gps.lat),
-            esc(obs.gps.lon),
-            esc(obs.municipality),
-            esc(obs.department),
-            esc(obs.country),
-            esc(obs.altitude),
-            esc(obs.status),
-            esc(obs.atlasCode),
-            esc(obs.protocol),
-            esc(obs.sexe),
-            esc(obs.age),
-            esc(obs.observationCondition),
-            esc(obs.comportement),
-            esc(obs.comment)
+            escapeCsvCell(obs.id),
+            escapeCsvCell(obs.speciesName),
+            escapeCsvCell(obs.latinName),
+            escapeCsvCell(obs.taxonomicGroup),
+            escapeCsvCell(obs.date),
+            escapeCsvCell(obs.time),
+            escapeCsvCell(obs.count),
+            escapeCsvCell(obs.maleCount),
+            escapeCsvCell(obs.femaleCount),
+            escapeCsvCell(obs.unidentifiedCount),
+            escapeCsvCell(obs.location),
+            escapeCsvCell(obs.gps.lat),
+            escapeCsvCell(obs.gps.lon),
+            escapeCsvCell(obs.municipality),
+            escapeCsvCell(obs.department),
+            escapeCsvCell(obs.country),
+            escapeCsvCell(obs.altitude),
+            escapeCsvCell(obs.status),
+            escapeCsvCell(obs.atlasCode),
+            escapeCsvCell(obs.protocol),
+            escapeCsvCell(obs.sexe),
+            escapeCsvCell(obs.age),
+            escapeCsvCell(obs.observationCondition),
+            escapeCsvCell(obs.comportement),
+            escapeCsvCell(obs.comment)
         ].join(",");
     });
 
@@ -122,7 +137,7 @@ export const createBackup = async (observations: Observation[]): Promise<BackupR
             if (obs.wikipediaImage) uniqueImages.add(obs.wikipediaImage);
         });
 
-        const imagePromises = Array.from(uniqueImages).map(async (url, index) => {
+        const imageTasks = Array.from(uniqueImages).map((url, index) => async () => {
             try {
                 const response = await fetchWithTimeout(url, IMAGE_FETCH_TIMEOUT_MS);
                 if (response.ok) {
@@ -146,7 +161,7 @@ export const createBackup = async (observations: Observation[]): Promise<BackupR
             }
         });
 
-        await Promise.all(imagePromises);
+        await runWithConcurrency(imageTasks, BACKUP_IMAGE_FETCH_CONCURRENCY);
     }
 
     // Add a note file if some images failed

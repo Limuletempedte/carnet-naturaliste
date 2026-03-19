@@ -39,7 +39,7 @@ const useCountUp = (target: number, duration = 800): number => {
 interface ObservationStatsProps {
     observations: Observation[];
     isMobileView?: boolean;
-    onExportStats?: () => Promise<void>;
+    onExportStats?: () => void | Promise<void>;
     isExportingStats?: boolean;
     statsRootRef?: React.RefObject<HTMLDivElement | null>;
 }

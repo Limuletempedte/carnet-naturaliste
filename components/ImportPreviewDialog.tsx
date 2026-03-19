@@ -1,11 +1,17 @@
 import React from 'react';
 import { ImportResult } from '../services/excelImportService';
+import { ImportConflictMode } from '../services/importPolicy';
 
 interface ImportPreviewDialogProps {
     isOpen: boolean;
     fileName: string;
     result: ImportResult | null;
     isImporting: boolean;
+    conflictMode: ImportConflictMode;
+    onConflictModeChange: (mode: ImportConflictMode) => void;
+    collisionsWithExisting: number;
+    plannedInserts: number;
+    plannedUpdates: number;
     onCancel: () => void;
     onConfirm: () => void;
 }
@@ -15,6 +21,11 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
     fileName,
     result,
     isImporting,
+    conflictMode,
+    onConflictModeChange,
+    collisionsWithExisting,
+    plannedInserts,
+    plannedUpdates,
     onCancel,
     onConfirm
 }) => {
@@ -54,6 +65,10 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                         <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Collisions ID</p>
                         <p className="text-lg font-bold dark:text-white">{result.report.idCollisions}</p>
                     </div>
+                    <div className="rounded-xl bg-violet-100 dark:bg-violet-500/10 p-3">
+                        <p className="text-xs uppercase tracking-wide text-violet-700 dark:text-violet-300">Collisions base</p>
+                        <p className="text-lg font-bold text-violet-700 dark:text-violet-200">{collisionsWithExisting}</p>
+                    </div>
                     <div className="rounded-xl bg-orange-100 dark:bg-orange-500/10 p-3">
                         <p className="text-xs uppercase tracking-wide text-orange-700 dark:text-orange-300">Erreurs validation</p>
                         <p className="text-lg font-bold text-orange-700 dark:text-orange-200">{result.report.errors.length}</p>
@@ -62,6 +77,39 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                         <p className="text-xs uppercase tracking-wide text-red-700 dark:text-red-300">Erreurs bloquantes avant import</p>
                         <p className="text-lg font-bold text-red-700 dark:text-red-200">{result.report.blockingErrors.length}</p>
                     </div>
+                </div>
+
+                <div className="mb-6 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4">
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">Mode d&apos;import (collisions avec données existantes)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <label className={`rounded-lg border p-3 cursor-pointer ${conflictMode === 'merge' ? 'border-nature-green bg-green-50 dark:bg-green-500/10' : 'border-gray-200 dark:border-white/10'}`}>
+                            <input
+                                type="radio"
+                                name="import-conflict-mode"
+                                value="merge"
+                                checked={conflictMode === 'merge'}
+                                onChange={() => onConflictModeChange('merge')}
+                                className="mr-2"
+                            />
+                            <span className="font-semibold text-sm dark:text-white">Fusionner (update)</span>
+                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">Écrase les observations déjà présentes avec le même ID.</p>
+                        </label>
+                        <label className={`rounded-lg border p-3 cursor-pointer ${conflictMode === 'no-overwrite' ? 'border-nature-green bg-green-50 dark:bg-green-500/10' : 'border-gray-200 dark:border-white/10'}`}>
+                            <input
+                                type="radio"
+                                name="import-conflict-mode"
+                                value="no-overwrite"
+                                checked={conflictMode === 'no-overwrite'}
+                                onChange={() => onConflictModeChange('no-overwrite')}
+                                className="mr-2"
+                            />
+                            <span className="font-semibold text-sm dark:text-white">Ne pas écraser (insert)</span>
+                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">Conserve l&apos;existant et crée une nouvelle ligne en cas de collision.</p>
+                        </label>
+                    </div>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-3">
+                        Plan actuel: <span className="font-semibold">{plannedInserts}</span> insertion(s), <span className="font-semibold">{plannedUpdates}</span> mise(s) à jour.
+                    </p>
                 </div>
 
                 <div className="mb-6">

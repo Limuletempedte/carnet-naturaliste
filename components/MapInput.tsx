@@ -25,8 +25,21 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const markerRef = useRef<L.Marker | null>(null);
+    const onLocationChangeRef = useRef(onLocationChange);
+    const onToastRef = useRef(onToast);
 
     useEffect(() => {
+        onLocationChangeRef.current = onLocationChange;
+    }, [onLocationChange]);
+
+    useEffect(() => {
+        onToastRef.current = onToast;
+    }, [onToast]);
+
+    useEffect(() => {
+        let clickTimer: ReturnType<typeof setTimeout> | null = null;
+        let abortCtrl: AbortController | null = null;
+
         if (mapContainerRef.current && !mapRef.current) {
             const map = L.map(mapContainerRef.current, {
                 zoomControl: false
@@ -41,10 +54,6 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
-
-            // Debounce + AbortController for reverse geocoding
-            let clickTimer: ReturnType<typeof setTimeout> | null = null;
-            let abortCtrl: AbortController | null = null;
 
             map.on('click', (e: L.LeafletMouseEvent) => {
                 const { lat, lng } = e.latlng;
@@ -63,14 +72,14 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                     abortCtrl = new AbortController();
                     reverseGeocode(lat, lng, abortCtrl?.signal).then(result => {
                         if (result) {
-                            onLocationChange(lat, lng, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
+                            onLocationChangeRef.current(lat, lng, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
                         } else {
-                            onLocationChange(lat, lng, '', '', '', '');
+                            onLocationChangeRef.current(lat, lng, '', '', '', '');
                         }
                     }).catch(err => {
                         if (err.name !== 'AbortError') {
                             console.error(err);
-                            onToast('warning', "Impossible de récupérer l'adresse exacte pour ce point.");
+                            onToastRef.current('warning', "Impossible de récupérer l'adresse exacte pour ce point.");
                         }
                     });
                 }, 300);
@@ -95,6 +104,14 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
 
         return () => {
             clearTimeout(timer);
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+            }
+            if (abortCtrl) {
+                abortCtrl.abort();
+                abortCtrl = null;
+            }
             if (markerRef.current && mapRef.current) {
                 markerRef.current.removeFrom(mapRef.current);
                 markerRef.current = null;
@@ -123,11 +140,11 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
             const results = await searchAddress(searchQuery);
             setSearchResults(results);
             if (results.length === 0) {
-                onToast('info', 'Aucun résultat trouvé pour cette recherche.');
+                onToastRef.current('info', 'Aucun résultat trouvé pour cette recherche.');
             }
         } catch (error) {
             console.error(error);
-            onToast('warning', (error as Error).message || "Erreur lors de la recherche d'adresse.");
+            onToastRef.current('warning', (error as Error).message || "Erreur lors de la recherche d'adresse.");
         } finally {
             setIsSearching(false);
         }
@@ -141,7 +158,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
             } else {
                 markerRef.current = L.marker([result.lat, result.lon]).addTo(mapRef.current);
             }
-            onLocationChange(result.lat, result.lon, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
+            onLocationChangeRef.current(result.lat, result.lon, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
             setSearchResults([]);
             setSearchQuery('');
         }
@@ -162,21 +179,21 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                     // Reverse geocode to get address details
                     reverseGeocode(latitude, longitude).then(result => {
                         if (result) {
-                            onLocationChange(latitude, longitude, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
+                            onLocationChangeRef.current(latitude, longitude, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
                         } else {
-                            onLocationChange(latitude, longitude, '', '', '', '');
+                            onLocationChangeRef.current(latitude, longitude, '', '', '', '');
                         }
                     }).catch((error) => {
                         console.error(error);
-                        onToast('warning', (error as Error).message || "Impossible de récupérer l'adresse de votre position.");
+                        onToastRef.current('warning', (error as Error).message || "Impossible de récupérer l'adresse de votre position.");
                     });
                 }
             }, (error) => {
                 console.error("Erreur de géolocalisation:", error);
-                onToast('warning', "Impossible de vous localiser. Vérifiez vos autorisations.");
+                onToastRef.current('warning', "Impossible de vous localiser. Vérifiez vos autorisations.");
             });
         } else {
-            onToast('warning', "La géolocalisation n'est pas supportée par votre navigateur.");
+            onToastRef.current('warning', "La géolocalisation n'est pas supportée par votre navigateur.");
         }
     };
 

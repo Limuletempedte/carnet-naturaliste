@@ -251,7 +251,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
         return () => {
             map.removeLayer(markers);
         };
-    }, [observations, isDarkMode]);
+    }, [observations, isDarkMode, onEdit]);
 
     const [searchQuery, setSearchQuery] = React.useState('');
     const [searchResults, setSearchResults] = React.useState<SearchResult[]>([]);

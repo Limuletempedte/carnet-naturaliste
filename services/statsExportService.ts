@@ -11,10 +11,18 @@ export interface StatsExportOptions {
     statsRootElement: HTMLElement;
     isDarkMode: boolean;
     exportedAt?: Date;
+    dateRange?: {
+        startDate?: string;
+        endDate?: string;
+    };
+    includeVisualAssets?: boolean;
+    autoSave?: boolean;
 }
 
 export interface StatsExportResult {
     fileName: string;
+    zipBlob: Blob;
+    exportedCount: number;
 }
 
 type ExportStatsData = Omit<StatsReportData, 'badges'>;
@@ -458,12 +466,38 @@ ${taxonSection}
 </html>`;
 }
 
-export async function exportStatsBundle(options: StatsExportOptions): Promise<StatsExportResult> {
-    const { observations, exportedAt = new Date() } = options;
+const filterObservationsByDateRange = (
+    observations: Observation[],
+    dateRange?: StatsExportOptions['dateRange']
+): Observation[] => {
+    if (!dateRange) return observations;
+    const startDate = dateRange.startDate?.trim();
+    const endDate = dateRange.endDate?.trim();
 
-    const rawStatsData = buildStatsReportData(observations);
+    if (!startDate && !endDate) return observations;
+
+    return observations.filter((observation) => {
+        if (startDate && observation.date < startDate) return false;
+        if (endDate && observation.date > endDate) return false;
+        return true;
+    });
+};
+
+export async function exportStatsBundle(options: StatsExportOptions): Promise<StatsExportResult> {
+    const {
+        observations,
+        exportedAt = new Date(),
+        dateRange,
+        includeVisualAssets = true,
+        autoSave = true
+    } = options;
+    const scopedObservations = filterObservationsByDateRange(observations, dateRange);
+
+    const rawStatsData = buildStatsReportData(scopedObservations);
     const statsData = stripBadgesForExport(rawStatsData);
-    const logoDataUrls = await loadLogoDataUrls(statsData.taxonSpeciesCards);
+    const logoDataUrls = includeVisualAssets
+        ? await loadLogoDataUrls(statsData.taxonSpeciesCards)
+        : new Map<string, string>();
 
     const pdfBlob = await generatePdfBlob(statsData, logoDataUrls, exportedAt);
     const htmlContent = generateStandaloneHtml(statsData, logoDataUrls, exportedAt);
@@ -490,7 +524,20 @@ export async function exportStatsBundle(options: StatsExportOptions): Promise<St
     });
 
     const fileName = `carnet-naturaliste-stats-${dateToIsoLocal(exportedAt)}.zip`;
-    saveAs(zipContent, fileName);
+    if (autoSave) {
+        saveAs(zipContent, fileName);
+    }
 
-    return { fileName };
+    return {
+        fileName,
+        zipBlob: zipContent,
+        exportedCount: scopedObservations.length
+    };
+}
+
+export async function exportStatsBundleProgrammatic(options: StatsExportOptions): Promise<StatsExportResult> {
+    return exportStatsBundle({
+        ...options,
+        autoSave: false
+    });
 }

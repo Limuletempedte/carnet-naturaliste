@@ -98,7 +98,7 @@ describe('ObservationForm species autocomplete', () => {
         await user.type(speciesInput, 'Mes');
 
         await waitFor(() => {
-            expect(suggestSpeciesAutocompleteMock).toHaveBeenCalledWith('Mes', 5);
+            expect(suggestSpeciesAutocompleteMock).toHaveBeenCalledWith('Mes', 5, expect.any(Object));
         }, { timeout: 3000 });
 
         expect(await screen.findByText('Mesange bleue')).toBeTruthy();

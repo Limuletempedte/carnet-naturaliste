@@ -1,6 +1,6 @@
-import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Observation, View, TaxonomicGroup, Status } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, OfflineSyncResult } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
@@ -9,10 +9,14 @@ import { ImportResult } from './services/excelImportService';
 import FilterBar from './components/FilterBar';
 import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
 import { compareIsoDate } from './utils/dateUtils';
-import { buildImportPersistencePlan } from './services/importPolicy';
+import { buildImportPersistencePlan, ImportConflictMode } from './services/importPolicy';
 import { isUuid } from './utils/uuidUtils';
-import { useObservationFilters } from './hooks/useObservationFilters';
+import { SortCriterion, useObservationFilters } from './hooks/useObservationFilters';
 import { selectStartupEnrichmentCandidates } from './services/startupEnrichmentUtils';
+import SyncCenterDialog from './components/SyncCenterDialog';
+import AdvancedFilterDialog, { AdvancedFilterDialogState, FilterPreset } from './components/AdvancedFilterDialog';
+import StatsExportDialog, { StatsExportDialogState } from './components/StatsExportDialog';
+import { OfflineQueueItem } from './services/storageQueueUtils';
 
 type AppConnectionStatus = 'online' | 'offline' | 'degraded';
 
@@ -26,6 +30,39 @@ const ObservationMap = lazy(() => import('./components/ObservationMap'));
 const ObservationStats = lazy(() => import('./components/ObservationStats'));
 const ObservationGallery = lazy(() => import('./components/ObservationGallery'));
 const ObservationCalendar = lazy(() => import('./components/ObservationCalendar'));
+
+const FILTER_PRESETS_STORAGE_KEY = 'observation-filter-presets-v1';
+
+const createDefaultAdvancedFilterState = (): AdvancedFilterDialogState => ({
+    geoMode: 'none',
+    radiusCenterLat: '',
+    radiusCenterLon: '',
+    radiusKm: '',
+    bboxMinLat: '',
+    bboxMaxLat: '',
+    bboxMinLon: '',
+    bboxMaxLon: '',
+    secondarySortKey: '',
+    secondarySortDirection: 'ascending',
+    tertiarySortKey: '',
+    tertiarySortDirection: 'ascending'
+});
+
+const createDefaultStatsExportDialogState = (): StatsExportDialogState => ({
+    startDate: '',
+    endDate: '',
+    includeVisualAssets: true
+});
+
+interface StoredFilterPreset extends FilterPreset {
+    searchTerm: string;
+    yearFilter: string;
+    taxonomicGroupFilter: TaxonomicGroup | 'all';
+    statusFilter: Status | 'all';
+    startDateFilter: string;
+    endDateFilter: string;
+    advancedFilters: AdvancedFilterDialogState;
+}
 
 const App: React.FC = () => {
     const ENRICHMENT_BATCH_LIMIT = 20;
@@ -49,7 +86,25 @@ const App: React.FC = () => {
     const [isImporting, setIsImporting] = useState(false);
     const [isCreatingBackup, setIsCreatingBackup] = useState(false);
     const [isExportingStats, setIsExportingStats] = useState(false);
+    const [isStatsExportDialogOpen, setIsStatsExportDialogOpen] = useState(false);
+    const [statsExportDialogState, setStatsExportDialogState] = useState<StatsExportDialogState>(() => createDefaultStatsExportDialogState());
     const statsRootRef = useRef<HTMLDivElement | null>(null);
+    const [isSyncCenterOpen, setIsSyncCenterOpen] = useState(false);
+    const [offlineQueueItems, setOfflineQueueItems] = useState<OfflineQueueItem[]>([]);
+    const [lastSyncResult, setLastSyncResult] = useState<OfflineSyncResult | null>(null);
+    const [isSyncingQueue, setIsSyncingQueue] = useState(false);
+    const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
+    const [advancedFilterState, setAdvancedFilterState] = useState<AdvancedFilterDialogState>(() => createDefaultAdvancedFilterState());
+    const [filterPresets, setFilterPresets] = useState<StoredFilterPreset[]>(() => {
+        const raw = localStorage.getItem(FILTER_PRESETS_STORAGE_KEY);
+        if (!raw) return [];
+        try {
+            const parsed = JSON.parse(raw) as StoredFilterPreset[];
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    });
 
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
 
@@ -71,6 +126,22 @@ const App: React.FC = () => {
         }
         return id;
     };
+
+    const refreshOfflineQueueSnapshot = useCallback(() => {
+        if (!user) {
+            setOfflineQueueItems([]);
+            return;
+        }
+        try {
+            setOfflineQueueItems(getOfflineQueueSnapshot());
+        } catch {
+            setOfflineQueueItems([]);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        localStorage.setItem(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(filterPresets));
+    }, [filterPresets]);
 
     useEffect(() => {
         if (isDarkMode) {
@@ -105,6 +176,10 @@ const App: React.FC = () => {
             setConnectionStatus(prev => prev === 'offline' ? 'online' : prev);
         }
     }, [isOffline]);
+
+    useEffect(() => {
+        refreshOfflineQueueSnapshot();
+    }, [refreshOfflineQueueSnapshot]);
 
     // Auto-dismiss error banner after 10 seconds
     useEffect(() => {
@@ -153,6 +228,7 @@ const App: React.FC = () => {
                     pushToast('warning', `Affichage du cache local: ${loadResult.warning}`, 7000);
                 }
                 setIsLoading(false);
+                refreshOfflineQueueSnapshot();
 
                 // Auto-fetch missing images for existing observations
                 if (!navigator.onLine) return;
@@ -219,12 +295,13 @@ const App: React.FC = () => {
                 setError(`Erreur connexion: ${errorMsg}.`);
                 console.error(e);
                 setIsLoading(false);
+                refreshOfflineQueueSnapshot();
             }
         };
         loadData();
 
         return () => { mounted = false; };
-    }, [authLoading, user, supabaseConfigError]);
+    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, user]);
 
     const handleAddObservation = () => {
         setEditingObservation(null);
@@ -249,6 +326,7 @@ const App: React.FC = () => {
                 try {
                     await deleteObservation(id);
                     setObservations(prev => prev.filter(obs => obs.id !== id));
+                    refreshOfflineQueueSnapshot();
                 } catch (e) {
                     setError("Erreur lors de la suppression de l'observation.");
                     console.error(e);
@@ -278,6 +356,7 @@ const App: React.FC = () => {
 
                     const idsSet = new Set(successIds);
                     setObservations(prev => prev.filter(obs => !idsSet.has(obs.id)));
+                    refreshOfflineQueueSnapshot();
 
                     if (failedCount > 0) {
                         pushToast('warning', `${failedCount} suppression(s) ont échoué.`);
@@ -303,6 +382,7 @@ const App: React.FC = () => {
                 const newObservation = { ...observation, id: savedObs.id };
                 setObservations(prev => [newObservation, ...prev]);
             }
+            refreshOfflineQueueSnapshot();
             setView(View.LIST);
             setEditingObservation(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -314,7 +394,10 @@ const App: React.FC = () => {
         }
     };
 
-    const handleImportRequest = async (importResult: ImportResult): Promise<void> => {
+    const handleImportRequest = async (
+        importResult: ImportResult,
+        options: { conflictMode: ImportConflictMode } = { conflictMode: 'merge' }
+    ): Promise<void> => {
         let importToastId: string | null = null;
         try {
             if (importResult.report.blockingErrors.length > 0) {
@@ -340,7 +423,9 @@ const App: React.FC = () => {
                 return String(error);
             };
 
-            const importPlan = buildImportPersistencePlan(importResult.observations, observations);
+            const importPlan = buildImportPersistencePlan(importResult.observations, observations, {
+                conflictMode: options.conflictMode
+            });
             const successfulOps: Observation[] = [];
 
             const IMPORT_CONCURRENCY = 5;
@@ -425,6 +510,8 @@ const App: React.FC = () => {
                 pushToast('info', `${regeneratedIds} ligne(s) ont reçu un nouvel ID (ID source vide ou invalide).`, 7000);
             }
 
+            refreshOfflineQueueSnapshot();
+
         } catch (e: any) {
             const errorMessage = e instanceof Error ? e.message : String(e);
             setError(`Erreur lors de l'importation : ${errorMessage}`);
@@ -457,6 +544,7 @@ const App: React.FC = () => {
                         : 'online'
             );
             pushToast('success', 'Données actualisées.');
+            refreshOfflineQueueSnapshot();
         } catch (e) {
             pushToast('error', 'Impossible d\'actualiser les données.');
             console.error(e);
@@ -465,20 +553,71 @@ const App: React.FC = () => {
         }
     };
 
+    const handleOpenSyncCenter = () => {
+        refreshOfflineQueueSnapshot();
+        setIsSyncCenterOpen(true);
+    };
+
+    const runQueueSync = async (itemIds?: string[]) => {
+        setIsSyncingQueue(true);
+        try {
+            const syncResult = await processOfflineQueue(itemIds && itemIds.length > 0 ? { itemIds } : {});
+            setLastSyncResult(syncResult);
+            refreshOfflineQueueSnapshot();
+
+            if (navigator.onLine) {
+                const loadResult = await getObservations();
+                setObservations(loadResult.observations);
+            }
+
+            if (syncResult.failed > 0) {
+                setConnectionStatus('degraded');
+                pushToast('warning', `Synchronisation partielle: ${syncResult.failed}/${syncResult.processed} échec(s).`, 7000);
+            } else {
+                if (navigator.onLine) setConnectionStatus('online');
+                pushToast('success', `${syncResult.processed} action(s) synchronisée(s).`, 5000);
+            }
+        } catch (syncError) {
+            const message = syncError instanceof Error ? syncError.message : String(syncError);
+            pushToast('error', `Synchronisation impossible: ${message}`, 7000);
+        } finally {
+            setIsSyncingQueue(false);
+        }
+    };
+
+    const handleResyncAll = async () => {
+        await runQueueSync();
+    };
+
+    const handleRetryQueueItem = async (itemId: string) => {
+        await runQueueSync([itemId]);
+    };
+
     const handleExportStats = async () => {
+        setIsStatsExportDialogOpen(true);
+    };
+
+    const handleConfirmStatsExport = async () => {
         if (isExportingStats) return;
         setIsExportingStats(true);
-        const toastId = pushToast('info', '⏳ Export Stats en cours (PDF statique + HTML interactif)...', 0);
+        const toastId = pushToast('info', '⏳ Export Stats en cours...', 0);
         try {
             const { exportStatsBundle } = await import('./services/statsExportService');
             const result = await exportStatsBundle({
                 observations,
                 statsRootElement: statsRootRef.current ?? document.body,
                 isDarkMode,
-                exportedAt: new Date()
+                exportedAt: new Date(),
+                includeVisualAssets: statsExportDialogState.includeVisualAssets,
+                dateRange: {
+                    startDate: statsExportDialogState.startDate || undefined,
+                    endDate: statsExportDialogState.endDate || undefined
+                }
             });
             removeToast(toastId);
-            pushToast('success', `Stats exportées: PDF statique + HTML interactif (${result.fileName}).`, 7000);
+            pushToast('success', `Stats exportées (${result.fileName}) • ${result.exportedCount} observation(s).`, 7000);
+            setIsStatsExportDialogOpen(false);
+            setStatsExportDialogState(createDefaultStatsExportDialogState());
         } catch (e) {
             removeToast(toastId);
             const message = e instanceof Error ? e.message : String(e);
@@ -513,6 +652,66 @@ const App: React.FC = () => {
         }
     };
 
+    const additionalSorts = useMemo(() => {
+        const sorts: SortCriterion[] = [];
+        if (advancedFilterState.secondarySortKey) {
+            sorts.push({
+                key: advancedFilterState.secondarySortKey,
+                direction: advancedFilterState.secondarySortDirection
+            });
+        }
+        if (advancedFilterState.tertiarySortKey) {
+            sorts.push({
+                key: advancedFilterState.tertiarySortKey,
+                direction: advancedFilterState.tertiarySortDirection
+            });
+        }
+        return sorts;
+    }, [
+        advancedFilterState.secondarySortDirection,
+        advancedFilterState.secondarySortKey,
+        advancedFilterState.tertiarySortDirection,
+        advancedFilterState.tertiarySortKey
+    ]);
+
+    const handleResetAdvancedFilters = () => {
+        setAdvancedFilterState(createDefaultAdvancedFilterState());
+    };
+
+    const handleSaveFilterPreset = (name: string) => {
+        const newPreset: StoredFilterPreset = {
+            id: crypto.randomUUID(),
+            name,
+            createdAt: new Date().toISOString(),
+            searchTerm,
+            yearFilter,
+            taxonomicGroupFilter,
+            statusFilter,
+            startDateFilter,
+            endDateFilter,
+            advancedFilters: { ...advancedFilterState }
+        };
+        setFilterPresets(prev => [newPreset, ...prev]);
+        pushToast('success', `Preset sauvegardé: ${name}`, 4000);
+    };
+
+    const handleApplyFilterPreset = (presetId: string) => {
+        const preset = filterPresets.find(item => item.id === presetId);
+        if (!preset) return;
+        setSearchTerm(preset.searchTerm);
+        setYearFilter(preset.yearFilter);
+        setTaxonomicGroupFilter(preset.taxonomicGroupFilter);
+        setStatusFilter(preset.statusFilter);
+        setStartDateFilter(preset.startDateFilter);
+        setEndDateFilter(preset.endDateFilter);
+        setAdvancedFilterState({ ...preset.advancedFilters });
+        pushToast('info', `Preset appliqué: ${preset.name}`, 4000);
+    };
+
+    const handleDeleteFilterPreset = (presetId: string) => {
+        setFilterPresets(prev => prev.filter(item => item.id !== presetId));
+    };
+
     const { sortConfig, requestSort, sortedAndFilteredObservations, availableYears } = useObservationFilters(
         observations,
         {
@@ -521,8 +720,17 @@ const App: React.FC = () => {
             taxonomicGroupFilter,
             statusFilter,
             startDateFilter,
-            endDateFilter
-        }
+            endDateFilter,
+            geoMode: advancedFilterState.geoMode,
+            radiusCenterLat: advancedFilterState.radiusCenterLat,
+            radiusCenterLon: advancedFilterState.radiusCenterLon,
+            radiusKm: advancedFilterState.radiusKm,
+            bboxMinLat: advancedFilterState.bboxMinLat,
+            bboxMaxLat: advancedFilterState.bboxMaxLat,
+            bboxMinLon: advancedFilterState.bboxMinLon,
+            bboxMaxLon: advancedFilterState.bboxMaxLon
+        },
+        additionalSorts
     );
 
     const [isMobileView, setIsMobileView] = useState<boolean>(() => {
@@ -617,6 +825,27 @@ const App: React.FC = () => {
                         <div className={`w-2.5 h-2.5 rounded-full ${statusColorClass}`} title={statusTitle}></div>
 
                         <button
+                            onClick={handleOpenSyncCenter}
+                            className="relative p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            title="Centre de synchronisation"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M5.5 15a7 7 0 0012.4 1.4M18.5 9A7 7 0 006.1 7.6" /></svg>
+                            {offlineQueueItems.length > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-4 text-center">
+                                    {offlineQueueItems.length}
+                                </span>
+                            )}
+                        </button>
+
+                        <button
+                            onClick={() => setIsAdvancedFilterOpen(true)}
+                            className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            title="Filtres avancés"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" /></svg>
+                        </button>
+
+                        <button
                             onClick={handleRefresh}
                             className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
@@ -648,6 +877,27 @@ const App: React.FC = () => {
                             <div className={`w-2 h-2 rounded-full ${statusColorClass}`}></div>
                             <span className="text-xs font-bold hidden md:inline">{statusLabel}</span>
                         </div>
+
+                        <button
+                            onClick={handleOpenSyncCenter}
+                            className="relative p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            title="Centre de synchronisation"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M5.5 15a7 7 0 0012.4 1.4M18.5 9A7 7 0 006.1 7.6" /></svg>
+                            {offlineQueueItems.length > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-[18px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-bold leading-5 text-center">
+                                    {offlineQueueItems.length}
+                                </span>
+                            )}
+                        </button>
+
+                        <button
+                            onClick={() => setIsAdvancedFilterOpen(true)}
+                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            title="Filtres avancés"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" /></svg>
+                        </button>
 
                         <button
                             onClick={handleRefresh}
@@ -690,6 +940,34 @@ const App: React.FC = () => {
                 </div>
             )}
             <ToastContainer toasts={toasts} onDismiss={removeToast} />
+            <SyncCenterDialog
+                isOpen={isSyncCenterOpen}
+                queueItems={offlineQueueItems}
+                lastResult={lastSyncResult}
+                isSyncing={isSyncingQueue}
+                onClose={() => setIsSyncCenterOpen(false)}
+                onResyncAll={() => void handleResyncAll()}
+                onRetryItem={(itemId) => void handleRetryQueueItem(itemId)}
+            />
+            <AdvancedFilterDialog
+                isOpen={isAdvancedFilterOpen}
+                state={advancedFilterState}
+                presets={filterPresets}
+                onClose={() => setIsAdvancedFilterOpen(false)}
+                onStateChange={setAdvancedFilterState}
+                onReset={handleResetAdvancedFilters}
+                onSavePreset={handleSaveFilterPreset}
+                onApplyPreset={handleApplyFilterPreset}
+                onDeletePreset={handleDeleteFilterPreset}
+            />
+            <StatsExportDialog
+                isOpen={isStatsExportDialogOpen}
+                isExporting={isExportingStats}
+                state={statsExportDialogState}
+                onStateChange={setStatsExportDialogState}
+                onClose={() => setIsStatsExportDialogOpen(false)}
+                onConfirm={() => void handleConfirmStatsExport()}
+            />
 
             {/* Backup Button (Desktop Only) */}
             {!isMobileView && (

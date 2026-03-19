@@ -135,6 +135,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     // Debounce species autocomplete suggestions (French-first via iNaturalist).
     useEffect(() => {
         let cancelled = false;
+        const abortController = new AbortController();
         const query = formData.speciesName.trim();
 
         if (skipNextSuggestionsFetchRef.current) {
@@ -152,7 +153,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
         setIsFetchingSuggestions(true);
         const timeoutId = window.setTimeout(async () => {
-            const suggestions = await suggestSpeciesAutocomplete(query, 5);
+            const suggestions = await suggestSpeciesAutocomplete(query, 5, { signal: abortController.signal });
             if (cancelled) return;
 
             setSpeciesSuggestions(suggestions);
@@ -163,6 +164,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
         return () => {
             cancelled = true;
+            abortController.abort();
             clearTimeout(timeoutId);
         };
     }, [formData.speciesName]);
@@ -207,6 +209,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     // Debounce fetching species info
     useEffect(() => {
         let cancelled = false;
+        const abortController = new AbortController();
         const lookupForRequest = lookupKey;
         const normalizedLookupForRequest = normalizedLookupKey;
         const fetchInfo = async () => {
@@ -214,53 +217,58 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 const requestId = latestSpeciesRequestRef.current + 1;
                 latestSpeciesRequestRef.current = requestId;
                 setIsFetchingInfo(true);
-                const info = await fetchSpeciesInfo(lookupForRequest);
-                if (cancelled || requestId !== latestSpeciesRequestRef.current) {
-                    return;
-                }
-                setSpeciesInfo(info);
-                setIsFetchingInfo(false);
+                try {
+                    const info = await fetchSpeciesInfo(lookupForRequest, { signal: abortController.signal });
+                    if (cancelled || requestId !== latestSpeciesRequestRef.current) {
+                        return;
+                    }
+                    setSpeciesInfo(info);
 
-                // Only pre-fill the latin name once when the field is still blank.
-                if (info?.latinName && !fieldTouched.latinName) {
-                    setFormData(prev => ({
-                        ...prev,
-                        latinName: prev.latinName || info.latinName || ''
-                    }));
-                }
+                    // Only pre-fill the latin name once when the field is still blank.
+                    if (info?.latinName && !fieldTouched.latinName) {
+                        setFormData(prev => ({
+                            ...prev,
+                            latinName: prev.latinName || info.latinName || ''
+                        }));
+                    }
 
-                // Auto-apply taxonomic group and wikipedia image
-                if (info) {
-                    setFormData(prev => {
-                        const currentLookup = normalizeLookupKey(getObservationLookupKey(prev.speciesName, prev.latinName));
-                        if (currentLookup !== normalizedLookupForRequest) {
-                            return prev;
-                        }
+                    // Auto-apply taxonomic group and wikipedia image
+                    if (info) {
+                        setFormData(prev => {
+                            const currentLookup = normalizeLookupKey(getObservationLookupKey(prev.speciesName, prev.latinName));
+                            if (currentLookup !== normalizedLookupForRequest) {
+                                return prev;
+                            }
 
-                        const next = { ...prev };
-                        let hasChanges = false;
+                            const next = { ...prev };
+                            let hasChanges = false;
 
-                        if (!prev.photo && info.imageUrl) {
-                            if (prev.wikipediaImage !== info.imageUrl) {
-                                next.wikipediaImage = info.imageUrl;
+                            if (!prev.photo && info.imageUrl) {
+                                if (prev.wikipediaImage !== info.imageUrl) {
+                                    next.wikipediaImage = info.imageUrl;
+                                    hasChanges = true;
+                                }
+                                lastAutoImageLookupKeyRef.current = normalizedLookupForRequest;
+                                lastAutoImageUrlRef.current = info.imageUrl;
+                            }
+
+                            if (!fieldTouched.taxonomicGroup && info.taxonomicGroup && prev.taxonomicGroup !== info.taxonomicGroup) {
+                                next.taxonomicGroup = info.taxonomicGroup;
                                 hasChanges = true;
                             }
-                            lastAutoImageLookupKeyRef.current = normalizedLookupForRequest;
-                            lastAutoImageUrlRef.current = info.imageUrl;
-                        }
 
-                        if (!fieldTouched.taxonomicGroup && info.taxonomicGroup && prev.taxonomicGroup !== info.taxonomicGroup) {
-                            next.taxonomicGroup = info.taxonomicGroup;
-                            hasChanges = true;
-                        }
+                            if (!fieldTouched.status && info.redListStatus && prev.status !== info.redListStatus) {
+                                next.status = info.redListStatus;
+                                hasChanges = true;
+                            }
 
-                        if (!fieldTouched.status && info.redListStatus && prev.status !== info.redListStatus) {
-                            next.status = info.redListStatus;
-                            hasChanges = true;
-                        }
-
-                        return hasChanges ? next : prev;
-                    });
+                            return hasChanges ? next : prev;
+                        });
+                    }
+                } finally {
+                    if (!cancelled && requestId === latestSpeciesRequestRef.current) {
+                        setIsFetchingInfo(false);
+                    }
                 }
             } else {
                 setSpeciesInfo(null);
@@ -271,6 +279,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         const timeoutId = setTimeout(fetchInfo, 1000);
         return () => {
             cancelled = true;
+            abortController.abort();
             clearTimeout(timeoutId);
         };
     }, [fieldTouched.latinName, fieldTouched.status, fieldTouched.taxonomicGroup, lookupKey, normalizedLookupKey]);

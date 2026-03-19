@@ -9,6 +9,7 @@ import ImportPreviewDialog from './ImportPreviewDialog';
 import { ToastType } from './ToastContainer';
 import ExportScopeDialog from './ExportScopeDialog';
 import { ObservationExportType, runObservationExport } from '../services/observationExportService';
+import { buildImportPersistencePlan, ImportConflictMode } from '../services/importPolicy';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -17,7 +18,7 @@ interface ObservationListProps {
     onEdit: (id: string) => void;
     onDelete: (id: string) => void;
     onBulkDelete: (ids: string[]) => void;
-    onImport: (result: ImportResult) => Promise<void>;
+    onImport: (result: ImportResult, options?: { conflictMode: ImportConflictMode }) => Promise<void>;
     onToast: (type: ToastType, message: string) => void;
     searchTerm: string;
     onSearchChange: (value: string) => void;
@@ -72,6 +73,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
     const [isParsingImport, setIsParsingImport] = React.useState(false);
     const [previewImportResult, setPreviewImportResult] = React.useState<ImportResult | null>(null);
     const [previewImportFileName, setPreviewImportFileName] = React.useState('');
+    const [importConflictMode, setImportConflictMode] = React.useState<ImportConflictMode>('merge');
     const [pendingExportType, setPendingExportType] = React.useState<ObservationExportType | null>(null);
     const [isExporting, setIsExporting] = React.useState(false);
 
@@ -161,7 +163,31 @@ const ObservationList: React.FC<ObservationListProps> = ({
     const handleCancelPreview = () => {
         setPreviewImportResult(null);
         setPreviewImportFileName('');
+        setImportConflictMode('merge');
     };
+
+    const currentImportPlan = React.useMemo(() => {
+        if (!previewImportResult) return [];
+        return buildImportPersistencePlan(previewImportResult.observations, allObservations, { conflictMode: importConflictMode });
+    }, [allObservations, importConflictMode, previewImportResult]);
+
+    const importPlanSummary = React.useMemo(() => {
+        const existingIds = new Set(allObservations.map(obs => obs.id));
+        const collisionsWithExisting = previewImportResult
+            ? previewImportResult.observations.filter(obs => existingIds.has(obs.id)).length
+            : 0;
+        let plannedInserts = 0;
+        let plannedUpdates = 0;
+        currentImportPlan.forEach(step => {
+            if (step.mode === 'update') plannedUpdates += 1;
+            else plannedInserts += 1;
+        });
+        return {
+            collisionsWithExisting,
+            plannedInserts,
+            plannedUpdates
+        };
+    }, [allObservations, currentImportPlan, previewImportResult]);
 
     const handleConfirmPreview = async () => {
         if (!previewImportResult) return;
@@ -170,9 +196,10 @@ const ObservationList: React.FC<ObservationListProps> = ({
             return;
         }
         try {
-            await onImport(previewImportResult);
+            await onImport(previewImportResult, { conflictMode: importConflictMode });
             setPreviewImportResult(null);
             setPreviewImportFileName('');
+            setImportConflictMode('merge');
         } catch (error) {
             console.error(error);
             onToast('error', "L'import a échoué. Vérifiez les messages d'erreur.");
@@ -367,6 +394,11 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     fileName={previewImportFileName}
                     result={previewImportResult}
                     isImporting={isImporting}
+                    conflictMode={importConflictMode}
+                    onConflictModeChange={setImportConflictMode}
+                    collisionsWithExisting={importPlanSummary.collisionsWithExisting}
+                    plannedInserts={importPlanSummary.plannedInserts}
+                    plannedUpdates={importPlanSummary.plannedUpdates}
                     onCancel={handleCancelPreview}
                     onConfirm={handleConfirmPreview}
                 />
@@ -618,6 +650,11 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 fileName={previewImportFileName}
                 result={previewImportResult}
                 isImporting={isImporting}
+                conflictMode={importConflictMode}
+                onConflictModeChange={setImportConflictMode}
+                collisionsWithExisting={importPlanSummary.collisionsWithExisting}
+                plannedInserts={importPlanSummary.plannedInserts}
+                plannedUpdates={importPlanSummary.plannedUpdates}
                 onCancel={handleCancelPreview}
                 onConfirm={handleConfirmPreview}
             />

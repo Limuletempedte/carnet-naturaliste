@@ -239,4 +239,71 @@ describe('exportStatsBundle', () => {
 
         document.body.removeChild(element);
     });
+
+    it('mode léger: n’essaie pas de charger les logos distants', async () => {
+        const { exportStatsBundle } = await import('../services/statsExportService');
+        const element = document.createElement('div');
+        document.body.appendChild(element);
+        const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+        await exportStatsBundle({
+            observations: [{
+                ...makeObservation(),
+                taxonomicGroup: TaxonomicGroup.BIRD,
+                speciesName: 'Mésange bleue'
+            }],
+            statsRootElement: element,
+            isDarkMode: false,
+            includeVisualAssets: false,
+            exportedAt: new Date('2026-03-12T10:00:00')
+        });
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        document.body.removeChild(element);
+    });
+
+    it('filtre les observations exportées selon la plage de dates', async () => {
+        const { exportStatsBundle } = await import('../services/statsExportService');
+        const element = document.createElement('div');
+        document.body.appendChild(element);
+
+        const result = await exportStatsBundle({
+            observations: [
+                makeObservation(),
+                { ...makeObservation(), id: 'abc-124', date: '2026-04-10', speciesName: 'Corneille noire' }
+            ],
+            statsRootElement: element,
+            isDarkMode: false,
+            dateRange: { startDate: '2026-04-01', endDate: '2026-04-30' },
+            exportedAt: new Date('2026-03-12T10:00:00')
+        });
+
+        expect(result.exportedCount).toBe(1);
+        const blob = saveAsMock.mock.calls.at(-1)?.[0] as Blob;
+        const zip = await JSZip.loadAsync(blob);
+        const jsonText = await zip.files['stats-data.json'].async('string');
+        const json = JSON.parse(jsonText) as { totalObservations: number };
+        expect(json.totalObservations).toBe(1);
+
+        document.body.removeChild(element);
+    });
+
+    it('export programmatique: retourne le ZIP sans déclencher de téléchargement', async () => {
+        const { exportStatsBundleProgrammatic } = await import('../services/statsExportService');
+        const element = document.createElement('div');
+        document.body.appendChild(element);
+
+        const result = await exportStatsBundleProgrammatic({
+            observations: [makeObservation()],
+            statsRootElement: element,
+            isDarkMode: false,
+            exportedAt: new Date('2026-03-12T10:00:00')
+        });
+
+        expect(saveAsMock).not.toHaveBeenCalled();
+        expect(result.zipBlob).toBeInstanceOf(Blob);
+        expect(result.fileName).toMatch(/^carnet-naturaliste-stats-\d{4}-\d{2}-\d{2}\.zip$/);
+
+        document.body.removeChild(element);
+    });
 });

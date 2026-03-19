@@ -7,11 +7,13 @@ const orderMock = vi.fn();
 const selectEqMock = vi.fn(() => ({ order: orderMock }));
 const selectMock = vi.fn(() => ({ eq: selectEqMock, order: orderMock }));
 
-const updateEqUserMock = vi.fn();
+const updateSelectMock = vi.fn();
+const updateEqUserMock = vi.fn(() => ({ select: updateSelectMock }));
 const updateEqIdMock = vi.fn(() => ({ eq: updateEqUserMock }));
 const updateMock = vi.fn(() => ({ eq: updateEqIdMock }));
 
-const deleteEqUserMock = vi.fn();
+const deleteSelectMock = vi.fn();
+const deleteEqUserMock = vi.fn(() => ({ select: deleteSelectMock }));
 const deleteEqIdMock = vi.fn(() => ({ eq: deleteEqUserMock }));
 const deleteMock = vi.fn(() => ({ eq: deleteEqIdMock }));
 
@@ -99,15 +101,19 @@ beforeEach(() => {
     updateMock.mockReturnValue({ eq: updateEqIdMock });
     updateEqIdMock.mockReset();
     updateEqIdMock.mockReturnValue({ eq: updateEqUserMock });
+    updateSelectMock.mockReset();
+    updateSelectMock.mockResolvedValue({ error: null, data: [{ id: '123e4567-e89b-42d3-a456-426614174000' }] });
     updateEqUserMock.mockReset();
-    updateEqUserMock.mockResolvedValue({ error: null });
+    updateEqUserMock.mockReturnValue({ select: updateSelectMock });
 
     deleteMock.mockReset();
     deleteMock.mockReturnValue({ eq: deleteEqIdMock });
     deleteEqIdMock.mockReset();
     deleteEqIdMock.mockReturnValue({ eq: deleteEqUserMock });
+    deleteSelectMock.mockReset();
+    deleteSelectMock.mockResolvedValue({ error: null, data: [{ id: '123e4567-e89b-42d3-a456-426614174000' }] });
     deleteEqUserMock.mockReset();
-    deleteEqUserMock.mockResolvedValue({ error: null });
+    deleteEqUserMock.mockReturnValue({ select: deleteSelectMock });
 
     insertMock.mockReset();
     insertMock.mockReturnValue({ select: insertSelectMock });
@@ -248,6 +254,46 @@ describe('storageService security filters', () => {
         expect(deleteEqIdMock).toHaveBeenCalledWith('id', '123e4567-e89b-42d3-a456-426614174000');
         expect(deleteEqUserMock).toHaveBeenCalledWith('user_id', 'user-1');
     });
+
+    it('throws when online mutation is attempted without authenticated user', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        authGetUserMock.mockResolvedValue({ data: { user: null } } as any);
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        await expect(storageService.updateObservation(makeObservation('123e4567-e89b-42d3-a456-426614174000')))
+            .rejects
+            .toThrow('User not authenticated');
+
+        await expect(storageService.deleteObservation('123e4567-e89b-42d3-a456-426614174000'))
+            .rejects
+            .toThrow('User not authenticated');
+    });
+
+    it('throws when update affects no row', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        updateSelectMock.mockResolvedValueOnce({ error: null, data: [] });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        await expect(storageService.updateObservation(makeObservation('123e4567-e89b-42d3-a456-426614174000')))
+            .rejects
+            .toThrow('observation introuvable');
+    });
+
+    it('throws when delete affects no row', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        deleteSelectMock.mockResolvedValueOnce({ error: null, data: [] });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        await expect(storageService.deleteObservation('123e4567-e89b-42d3-a456-426614174000'))
+            .rejects
+            .toThrow('observation introuvable');
+    });
 });
 
 describe('storageService legacy schema fallback', () => {
@@ -310,14 +356,15 @@ describe('storageService legacy schema fallback', () => {
 
     it('retries updateObservation without count-breakdown columns when schema cache is outdated', async () => {
         vi.stubGlobal('navigator', { onLine: true });
-        updateEqUserMock
+        updateSelectMock
             .mockResolvedValueOnce({
                 error: {
                     code: 'PGRST204',
                     message: "Could not find the 'male_count' column in the schema cache"
-                }
+                },
+                data: null
             })
-            .mockResolvedValueOnce({ error: null });
+            .mockResolvedValueOnce({ error: null, data: [{ id: '123e4567-e89b-42d3-a456-426614174000' }] });
 
         const storageService = await import('../services/storageService');
         storageService.setStorageNamespace('user-1');
@@ -375,14 +422,15 @@ describe('storageService legacy schema fallback', () => {
                 },
                 error: null
             });
-        updateEqUserMock
+        updateSelectMock
             .mockResolvedValueOnce({
                 error: {
                     code: 'PGRST204',
                     message: "Could not find the 'male_count' column in the schema cache"
-                }
+                },
+                data: null
             })
-            .mockResolvedValueOnce({ error: null });
+            .mockResolvedValueOnce({ error: null, data: [{ id: '123e4567-e89b-42d3-a456-426614174001' }] });
 
         const storageService = await import('../services/storageService');
         storageService.setStorageNamespace('user-1');
@@ -428,6 +476,29 @@ describe('storageService legacy schema fallback', () => {
         expect(fallbackUpdateRow).not.toHaveProperty('male_count');
         expect(fallbackUpdateRow).not.toHaveProperty('female_count');
         expect(fallbackUpdateRow).not.toHaveProperty('unidentified_count');
+    });
+
+    it('supports targeted retry by queue item id and keeps non-selected items', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        const queue = [
+            { id: 'q1', action: 'UPDATE', payload: makeObservation('123e4567-e89b-42d3-a456-426614174000'), timestamp: 1 },
+            { id: 'q2', action: 'UPDATE', payload: makeObservation('123e4567-e89b-42d3-a456-426614174001'), timestamp: 2 }
+        ];
+        localStorage.setItem('offline_sync_queue:user-1', JSON.stringify(queue));
+
+        const result = await storageService.processOfflineQueue({ itemIds: ['q2'] });
+
+        expect(result.processed).toBe(1);
+        expect(result.failed).toBe(0);
+        expect(updateEqIdMock).toHaveBeenCalledWith('id', '123e4567-e89b-42d3-a456-426614174001');
+
+        const remainingQueue = JSON.parse(localStorage.getItem('offline_sync_queue:user-1') || '[]');
+        expect(remainingQueue).toHaveLength(1);
+        expect(remainingQueue[0].id).toBe('q1');
     });
 });
 

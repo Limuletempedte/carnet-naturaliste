@@ -144,7 +144,11 @@ create policy "Public Access"
 -- Allow authenticated users to upload photos
 create policy "Authenticated users can upload photos"
   on storage.objects for insert
-  with check ( bucket_id = 'photos' and auth.role() = 'authenticated' );
+  with check (
+    bucket_id = 'photos'
+    and auth.role() = 'authenticated'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
 
 -- Allow users to update/delete their own photos (optional, based on path convention)
 -- Assuming path is user_id/filename
