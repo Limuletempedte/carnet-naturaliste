@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
-import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup } from '../types';
+import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 
 const saveAsMock = vi.fn();
 
@@ -33,6 +33,7 @@ const makeObservation = () => ({
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
     photo: 'https://example.com/image.jpg',
     wikipediaImage: undefined,
     sound: undefined

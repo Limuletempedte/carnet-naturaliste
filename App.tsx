@@ -93,6 +93,7 @@ const App: React.FC = () => {
     const [offlineQueueItems, setOfflineQueueItems] = useState<OfflineQueueItem[]>([]);
     const [lastSyncResult, setLastSyncResult] = useState<OfflineSyncResult | null>(null);
     const [isSyncingQueue, setIsSyncingQueue] = useState(false);
+    const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
     const [advancedFilterState, setAdvancedFilterState] = useState<AdvancedFilterDialogState>(() => createDefaultAdvancedFilterState());
     const [filterPresets, setFilterPresets] = useState<StoredFilterPreset[]>(() => {
@@ -560,8 +561,12 @@ const App: React.FC = () => {
 
     const runQueueSync = async (itemIds?: string[]) => {
         setIsSyncingQueue(true);
+        setSyncProgress(null);
         try {
-            const syncResult = await processOfflineQueue(itemIds && itemIds.length > 0 ? { itemIds } : {});
+            const syncResult = await processOfflineQueue({
+                ...(itemIds && itemIds.length > 0 ? { itemIds } : {}),
+                onProgress: (current, total) => setSyncProgress({ current, total })
+            });
             setLastSyncResult(syncResult);
             refreshOfflineQueueSnapshot();
 
@@ -582,6 +587,7 @@ const App: React.FC = () => {
             pushToast('error', `Synchronisation impossible: ${message}`, 7000);
         } finally {
             setIsSyncingQueue(false);
+            setSyncProgress(null);
         }
     };
 
@@ -829,7 +835,7 @@ const App: React.FC = () => {
                             className="relative p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M5.5 15a7 7 0 0012.4 1.4M18.5 9A7 7 0 006.1 7.6" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-2 2m2-2l2 2" /></svg>
                             {offlineQueueItems.length > 0 && (
                                 <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-4 text-center">
                                     {offlineQueueItems.length}
@@ -883,7 +889,7 @@ const App: React.FC = () => {
                             className="relative p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M5.5 15a7 7 0 0012.4 1.4M18.5 9A7 7 0 006.1 7.6" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-2 2m2-2l2 2" /></svg>
                             {offlineQueueItems.length > 0 && (
                                 <span className="absolute -top-1 -right-1 min-w-[18px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-bold leading-5 text-center">
                                     {offlineQueueItems.length}
@@ -945,6 +951,7 @@ const App: React.FC = () => {
                 queueItems={offlineQueueItems}
                 lastResult={lastSyncResult}
                 isSyncing={isSyncingQueue}
+                syncProgress={syncProgress}
                 onClose={() => setIsSyncCenterOpen(false)}
                 onResyncAll={() => void handleResyncAll()}
                 onRetryItem={(itemId) => void handleRetryQueueItem(itemId)}

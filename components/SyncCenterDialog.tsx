@@ -7,6 +7,7 @@ interface SyncCenterDialogProps {
     queueItems: OfflineQueueItem[];
     lastResult: OfflineSyncResult | null;
     isSyncing: boolean;
+    syncProgress?: { current: number; total: number } | null;
     onClose: () => void;
     onResyncAll: () => void;
     onRetryItem: (itemId: string) => void;
@@ -40,6 +41,7 @@ const SyncCenterDialog: React.FC<SyncCenterDialogProps> = ({
     queueItems,
     lastResult,
     isSyncing,
+    syncProgress,
     onClose,
     onResyncAll,
     onRetryItem
@@ -77,7 +79,7 @@ const SyncCenterDialog: React.FC<SyncCenterDialogProps> = ({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 mb-5">
+                <div className="flex items-center gap-3 mb-3">
                     <button
                         onClick={onResyncAll}
                         disabled={isSyncing}
@@ -89,6 +91,21 @@ const SyncCenterDialog: React.FC<SyncCenterDialogProps> = ({
                         Relance l&apos;ensemble de la file et rafraîchit les observations.
                     </span>
                 </div>
+
+                {isSyncing && syncProgress && syncProgress.total > 0 && (
+                    <div className="mb-5">
+                        <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300 mb-1">
+                            <span>Progression</span>
+                            <span>{syncProgress.current}/{syncProgress.total}</span>
+                        </div>
+                        <div className="w-full h-2 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-nature-green rounded-full transition-all duration-300"
+                                style={{ width: `${Math.round((syncProgress.current / syncProgress.total) * 100)}%` }}
+                            />
+                        </div>
+                    </div>
+                )}
 
                 {lastResult && lastResult.failureReasons.length > 0 && (
                     <div className="mb-5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 p-3">

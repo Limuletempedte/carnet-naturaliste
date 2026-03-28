@@ -24,10 +24,11 @@ const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) =>
     if (toasts.length === 0) return null;
 
     return (
-        <div className="fixed top-4 right-4 z-[100] w-[90vw] max-w-sm space-y-2">
+        <div className="fixed top-4 right-4 z-[100] w-[90vw] max-w-sm space-y-2" aria-live="polite" aria-relevant="additions">
             {toasts.map(toast => (
                 <div
                     key={toast.id}
+                    role="alert"
                     className={`border backdrop-blur-md rounded-xl shadow-md px-4 py-3 ${toneClass[toast.type]}`}
                 >
                     <div className="flex items-start justify-between gap-3">

@@ -33,5 +33,6 @@ export const TAXON_LOGOS: Record<TaxonomicGroup, string> = {
     [TaxonomicGroup.BOTANY]: '/Logo/Botanique générale.png',
     [TaxonomicGroup.LICHEN]: '/Logo/lichen.png',
     [TaxonomicGroup.MUSHROOM]: '/Logo/Champigion.png',
+    [TaxonomicGroup.TREE]: '/Logo/Arbres.png',
     [TaxonomicGroup.OTHER]: '', // No logo for "Autre"
 };

@@ -6,7 +6,8 @@ import {
     Sexe,
     Age,
     ObservationCondition,
-    Comportement
+    Comportement,
+    WeatherCondition
 } from '../types';
 import { ImportError, ImportResult, ImportWarning } from './excelImportService';
 import { isIsoDateString } from '../utils/dateUtils';
@@ -172,6 +173,15 @@ const buildObservationFromRow = (
     const observationCondition = ensureEnum(rawRow.observationCondition, ObservationCondition, rowNum, 'observationCondition', errors);
     const comportement = ensureEnum(rawRow.comportement, Comportement, rowNum, 'comportement', errors);
 
+    // weather is optional for backward compatibility — default to UNKNOWN if missing
+    const rawWeather = rawRow.weather;
+    let weather: WeatherCondition = WeatherCondition.UNKNOWN;
+    if (rawWeather !== undefined && rawWeather !== null) {
+        const parsed = ensureEnum(rawWeather, WeatherCondition, rowNum, 'weather', errors);
+        if (!parsed) return null;
+        weather = parsed;
+    }
+
     if (!taxonomicGroup || !status || !protocol || !sexe || !age || !observationCondition || !comportement) {
         return null;
     }
@@ -249,6 +259,7 @@ const buildObservationFromRow = (
         age,
         observationCondition,
         comportement,
+        weather,
         photo,
         sound,
         wikipediaImage

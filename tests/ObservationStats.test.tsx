@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup } from '../types';
+import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 
 vi.mock('recharts', () => {
     const MockContainer = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
@@ -43,6 +43,7 @@ const makeObservation = (overrides: Partial<Observation>): Observation => ({
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
     ...overrides
 });
 

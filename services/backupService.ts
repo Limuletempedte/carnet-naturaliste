@@ -87,7 +87,7 @@ export const createBackup = async (observations: Observation[]): Promise<BackupR
     const csvHeader = [
         "ID", "Nom de l'espèce", "Nom latin", "Groupe taxonomique", "Date", "Heure", "Nombre", "Mâles", "Femelles", "Non identifiés",
         "Lieu-dit", "Latitude", "Longitude", "Commune", "Département", "Pays", "Altitude",
-        "Statut", "Code Atlas", "Protocole", "Sexe", "Age", "Condition d'observation", "Comportement", "Commentaire"
+        "Statut", "Code Atlas", "Protocole", "Sexe", "Age", "Condition d'observation", "Comportement", "Conditions météo", "Commentaire"
     ].join(",");
 
     const csvRows = observations.map(obs => {
@@ -116,6 +116,7 @@ export const createBackup = async (observations: Observation[]): Promise<BackupR
             escapeCsvCell(obs.age),
             escapeCsvCell(obs.observationCondition),
             escapeCsvCell(obs.comportement),
+            escapeCsvCell(obs.weather),
             escapeCsvCell(obs.comment)
         ].join(",");
     });

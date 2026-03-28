@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup } from '../types';
+import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 
 const authGetUserMock = vi.fn(async () => ({ data: { user: { id: 'user-1' } } }));
 
@@ -71,7 +71,8 @@ const makeObservation = (id: string) => ({
     sexe: Sexe.UNKNOWN,
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
-    comportement: Comportement.UNKNOWN
+    comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN
 });
 
 beforeEach(() => {

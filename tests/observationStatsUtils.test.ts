@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTaxonSpeciesCards } from '../utils/observationStatsUtils';
-import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup } from '../types';
+import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 
 const makeObservation = (overrides: Partial<Observation>): Observation => ({
     id: 'obs-1',
@@ -24,6 +24,7 @@ const makeObservation = (overrides: Partial<Observation>): Observation => ({
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
     ...overrides
 });
 

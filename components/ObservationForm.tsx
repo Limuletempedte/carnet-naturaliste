@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
-import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement } from '../types';
+import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition } from '../types';
 import { fetchSpeciesInfo, SpeciesInfo, SpeciesSuggestion, suggestSpeciesAutocomplete, mapINatIconicToTaxonomicGroup } from '../services/speciesService';
 import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
@@ -58,6 +58,7 @@ const createEmptyFormData = (defaultTaxonomicGroup: TaxonomicGroup): Observation
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
     photo: undefined,
     sound: undefined,
     wikipediaImage: undefined,
@@ -726,10 +727,19 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 <select id="status" name="status" value={formData.status} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
                                     {Object.values(Status).map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
-                                {speciesInfo?.redListStatus && (
+                                {isFetchingInfo && (
+                                    <p className="text-xs text-gray-400 mt-1 ml-1 flex items-center gap-1">
+                                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                        Recherche du statut...
+                                    </p>
+                                )}
+                                {!isFetchingInfo && speciesInfo?.redListStatus && (
                                     <p className="text-xs text-gray-500 mt-1 ml-1">
                                         {speciesInfo.redListSource === 'france' ? 'Liste Rouge France' : 'IUCN mondial'}: <span className="font-semibold">{speciesInfo.redListStatus}</span>
                                     </p>
+                                )}
+                                {!isFetchingInfo && speciesInfo && !speciesInfo.redListStatus && (
+                                    <p className="text-xs text-gray-400 mt-1 ml-1 italic">Statut non trouvé automatiquement</p>
                                 )}
                             </div>
                             <div>
@@ -764,6 +774,12 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 <label htmlFor="comportement" className={labelClass}>Comportement</label>
                                 <select id="comportement" name="comportement" value={formData.comportement} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
                                     {Object.values(Comportement).map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div className="lg:col-span-3">
+                                <label htmlFor="weather" className={labelClass}>Conditions météo</label>
+                                <select id="weather" name="weather" value={formData.weather} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                    {Object.values(WeatherCondition).map(w => <option key={w} value={w}>{w}</option>)}
                                 </select>
                             </div>
                         </FormSection>

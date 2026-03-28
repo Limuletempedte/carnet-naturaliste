@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildStatsReportData } from '../utils/statsReportData';
 import {
     Age, Comportement, Observation, ObservationCondition,
-    Protocol, Sexe, Status, TaxonomicGroup
+    Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition
 } from '../types';
 
 const makeObs = (overrides: Partial<Observation>): Observation => ({
@@ -27,6 +27,7 @@ const makeObs = (overrides: Partial<Observation>): Observation => ({
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
     ...overrides
 });
 

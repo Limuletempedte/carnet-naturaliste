@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { isUuid } from '../utils/uuidUtils';
-import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement } from '../types';
+import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition } from '../types';
 import { dateToIsoLocal, isIsoDateString } from '../utils/dateUtils';
 
 // ─── Import Report Types ────────────────────────────────────────────────────
@@ -101,7 +101,8 @@ const HEADER_ALIASES: Record<string, string[]> = {
     age: ['Age', 'Âge'],
     observationCondition: ["Condition d'observation", 'Condition observation', 'Condition'],
     comportement: ['Comportement', 'Comportement observé', 'Behavior', 'Behaviour'],
-    comment: ['Commentaire', 'Commentaires', 'Comment', 'Notes', 'Note']
+    comment: ['Commentaire', 'Commentaires', 'Comment', 'Notes', 'Note'],
+    weather: ['Conditions météo', 'Conditions meteo', 'Météo', 'Meteo', 'Weather']
 };
 
 const buildNormalizedRow = (rawRow: Record<string, unknown>): Record<string, unknown> => {
@@ -299,6 +300,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     const age = mapEnum(getRowValue(row, HEADER_ALIASES.age), Age, AGE_SYNONYMS, Age.UNKNOWN, 'Age', rowNum, warnings);
                     const observationCondition = mapEnum(getRowValue(row, HEADER_ALIASES.observationCondition), ObservationCondition, {}, ObservationCondition.UNKNOWN, "Condition d'observation", rowNum, warnings);
                     const comportement = mapEnum(getRowValue(row, HEADER_ALIASES.comportement), Comportement, {}, Comportement.UNKNOWN, 'Comportement', rowNum, warnings);
+                    const weather = mapEnum(getRowValue(row, HEADER_ALIASES.weather), WeatherCondition, WEATHER_SYNONYMS, WeatherCondition.UNKNOWN, 'Conditions météo', rowNum, warnings);
 
                     // ── Validation ──
                     const speciesName = toText(getRowValue(row, HEADER_ALIASES.speciesName));
@@ -369,6 +371,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                         age,
                         observationCondition,
                         comportement,
+                        weather,
                         comment: toText(getRowValue(row, HEADER_ALIASES.comment)),
                         photo: undefined,
                         sound: undefined,
@@ -461,6 +464,20 @@ const AGE_SYNONYMS: Record<string, Age> = {
     '1a': Age.FIRST_YEAR, '2a': Age.SECOND_YEAR, '3a': Age.THIRD_YEAR,
 };
 
+const WEATHER_SYNONYMS: Record<string, WeatherCondition> = {
+    'ensoleille': WeatherCondition.SUNNY, 'soleil': WeatherCondition.SUNNY, 'sunny': WeatherCondition.SUNNY,
+    'partiellement nuageux': WeatherCondition.PARTLY_CLOUDY, 'partly cloudy': WeatherCondition.PARTLY_CLOUDY,
+    'couvert': WeatherCondition.CLOUDY, 'nuageux': WeatherCondition.CLOUDY, 'cloudy': WeatherCondition.CLOUDY,
+    'pluie legere': WeatherCondition.LIGHT_RAIN, 'bruine': WeatherCondition.LIGHT_RAIN,
+    'pluie': WeatherCondition.RAIN, 'rain': WeatherCondition.RAIN,
+    'pluie forte': WeatherCondition.HEAVY_RAIN, 'averse': WeatherCondition.HEAVY_RAIN,
+    'neige': WeatherCondition.SNOW, 'snow': WeatherCondition.SNOW,
+    'brouillard': WeatherCondition.FOG, 'brume': WeatherCondition.FOG, 'fog': WeatherCondition.FOG,
+    'venteux': WeatherCondition.WIND, 'vent': WeatherCondition.WIND, 'windy': WeatherCondition.WIND,
+    'orage': WeatherCondition.STORM, 'storm': WeatherCondition.STORM,
+    'gel': WeatherCondition.FROST, 'givre': WeatherCondition.FROST, 'frost': WeatherCondition.FROST,
+};
+
 const PROTOCOL_SYNONYMS: Record<string, Protocol> = {
     'opportuniste': Protocol.OPPORTUNIST,
     'stoc': Protocol.STOC_EPS, 'stoc eps': Protocol.STOC_EPS,
@@ -501,7 +518,8 @@ const TAXON_KEYWORDS: Array<{ keywords: string[]; group: TaxonomicGroup }> = [
     { keywords: ['orchidee', 'orchis', 'ophrys'], group: TaxonomicGroup.ORCHID },
     { keywords: ['lichen', 'lichens', 'lichenise', 'lichenisee'], group: TaxonomicGroup.LICHEN },
     { keywords: ['champignon', 'champignons', 'mycologie', 'mycelium', 'fungi', 'basidiomycete', 'ascomycete'], group: TaxonomicGroup.MUSHROOM },
-    { keywords: ['botanique', 'plante', 'flore', 'arbre', 'arbuste', 'fleur', 'fougere'], group: TaxonomicGroup.BOTANY },
+    { keywords: ['arbre', 'arbres', 'arboriculture', 'sylviculture', 'forestier'], group: TaxonomicGroup.TREE },
+    { keywords: ['botanique', 'plante', 'flore', 'arbuste', 'fleur', 'fougere'], group: TaxonomicGroup.BOTANY },
 ];
 
 const mapTaxonomicGroup = (value: any, rowNum: number, warnings: ImportWarning[]): TaxonomicGroup => {

@@ -72,6 +72,13 @@ const isAbortError = (error: unknown): boolean => {
     return error instanceof DOMException && error.name === 'AbortError';
 };
 
+/** Combine an optional caller signal with a hard timeout. */
+const withTimeout = (signal?: AbortSignal, ms = 10_000): AbortSignal => {
+    const timeoutSignal = AbortSignal.timeout(ms);
+    if (!signal) return timeoutSignal;
+    return AbortSignal.any([signal, timeoutSignal]);
+};
+
 const getSpeciesInfoCacheKey = (value: string): string => normalizeTaxonText(value);
 
 const getCachedSpeciesInfo = (key: string): SpeciesInfo | null | undefined => {
@@ -182,7 +189,7 @@ const resolveSpeciesMatchMeta = (
 const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INatTaxonResult | null> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=8&locale=fr`;
-        const res = await fetch(url, { signal });
+        const res = await fetch(url, { signal: withTimeout(signal) });
         if (!res.ok) return null;
         const data = await res.json();
         const results: INatTaxonResult[] = data?.results ?? [];
@@ -197,7 +204,7 @@ const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INat
 const fetchINatSuggestions = async (query: string, limit: number, signal?: AbortSignal): Promise<INatTaxonResult[]> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=${limit}&locale=fr`;
-        const res = await fetch(url, { signal });
+        const res = await fetch(url, { signal: withTimeout(signal) });
         if (!res.ok) return [];
         const data = await res.json();
         return Array.isArray(data?.results) ? data.results : [];
@@ -246,7 +253,7 @@ export const matchSpecies = async (latinName: string, signal?: AbortSignal): Pro
     if (!latinName || latinName.trim().length < 2) return null;
     try {
         const url = `${GBIF_BASE}/match?name=${encodeURIComponent(latinName.trim())}&verbose=true`;
-        const res = await fetch(url, { signal });
+        const res = await fetch(url, { signal: withTimeout(signal) });
         if (!res.ok) return null;
         const data: GBIFMatchResult = await res.json();
         if (data.matchType === 'NONE') return null;
@@ -265,7 +272,7 @@ export const suggestSpecies = async (query: string, limit = 5, signal?: AbortSig
     if (!query || query.trim().length < 2) return [];
     try {
         const url = `${GBIF_BASE}/suggest?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
-        const res = await fetch(url, { signal });
+        const res = await fetch(url, { signal: withTimeout(signal) });
         if (!res.ok) return [];
         return await res.json();
     } catch (e) {
@@ -325,7 +332,7 @@ const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
 const fetchINatFranceStatus = async (taxonId: number, signal?: AbortSignal): Promise<Status | undefined> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/${taxonId}?place_id=${INAT_FRANCE_PLACE_ID}`;
-        const res = await fetch(url, { signal });
+        const res = await fetch(url, { signal: withTimeout(signal) });
         if (!res.ok) return undefined;
         const data = await res.json();
         const results: INatTaxonDetail[] = data?.results ?? [];
@@ -348,7 +355,7 @@ export const fetchGbifIucnStatus = async (latinName: string, signal?: AbortSigna
 
     try {
         const url = `${GBIF_V2_SPECIES_MATCH}?scientificName=${encodeURIComponent(latinName.trim())}`;
-        const response = await fetch(url, { signal });
+        const response = await fetch(url, { signal: withTimeout(signal) });
         if (!response.ok) return undefined;
 
         const data: GBIFV2MatchResult = await response.json();
@@ -639,13 +646,25 @@ export const fetchSpeciesInfo = async (
 
             let redListStatus: Status | undefined;
             let redListSource: 'france' | 'global' | undefined;
+
+            // Try iNat France first; on failure (non-abort), fall through to GBIF
             if (inat.id) {
-                redListStatus = await fetchINatFranceStatus(inat.id, options.signal);
-                if (redListStatus) redListSource = 'france';
+                try {
+                    redListStatus = await fetchINatFranceStatus(inat.id, options.signal);
+                    if (redListStatus) redListSource = 'france';
+                } catch (e) {
+                    if (isAbortError(e)) throw e;
+                    // Silently fall through to GBIF
+                }
             }
             if (!redListStatus && latinName) {
-                redListStatus = await fetchGbifIucnStatus(latinName, options.signal);
-                if (redListStatus) redListSource = 'global';
+                try {
+                    redListStatus = await fetchGbifIucnStatus(latinName, options.signal);
+                    if (redListStatus) redListSource = 'global';
+                } catch (e) {
+                    if (isAbortError(e)) throw e;
+                    // No red list status available
+                }
             }
 
             // Fallback: use iNaturalist iconic_taxon_name if GBIF didn't yield a group

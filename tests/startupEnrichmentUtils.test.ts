@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup } from '../types';
+import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 import { selectStartupEnrichmentCandidates } from '../services/startupEnrichmentUtils';
 
 const makeObservation = (overrides: Partial<Observation> = {}): Observation => ({
@@ -24,6 +24,7 @@ const makeObservation = (overrides: Partial<Observation> = {}): Observation => (
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
     photo: undefined,
     sound: undefined,
     wikipediaImage: undefined,

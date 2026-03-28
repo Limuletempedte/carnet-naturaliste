@@ -13,7 +13,19 @@ export interface SearchResult {
 }
 
 const NOMINATIM_TIMEOUT_MS = 7000;
+const NOMINATIM_MIN_INTERVAL_MS = 1000;
+let lastNominatimCallMs = 0;
+
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const throttleNominatim = async () => {
+    const now = Date.now();
+    const elapsed = now - lastNominatimCallMs;
+    if (elapsed < NOMINATIM_MIN_INTERVAL_MS) {
+        await sleep(NOMINATIM_MIN_INTERVAL_MS - elapsed);
+    }
+    lastNominatimCallMs = Date.now();
+};
 
 const fetchJsonWithTimeout = async (
     url: string,
@@ -44,6 +56,7 @@ const fetchNominatimWithRetry = async (url: string, signal?: AbortSignal): Promi
     const maxAttempts = 2;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await throttleNominatim();
         try {
             const response = await fetchJsonWithTimeout(
                 url,

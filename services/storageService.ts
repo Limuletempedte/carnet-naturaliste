@@ -24,6 +24,7 @@ export interface OfflineSyncResult {
 
 export interface ProcessOfflineQueueOptions {
     itemIds?: string[];
+    onProgress?: (current: number, total: number) => void;
 }
 
 interface PersistenceOptions {
@@ -86,6 +87,37 @@ const isMissingCountBreakdownColumnError = (error: any): boolean => {
     );
 };
 
+const WEATHER_COLUMN = 'weather_condition';
+
+const stripWeatherColumn = (row: Record<string, any>): Record<string, any> => {
+    const next = { ...row };
+    delete next[WEATHER_COLUMN];
+    return next;
+};
+
+const isMissingWeatherColumnError = (error: any): boolean => {
+    const combined = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase();
+    const code = String(error?.code || '').toUpperCase();
+    if (!combined.includes(WEATHER_COLUMN)) return false;
+    return (
+        code === '42703'
+        || code === 'PGRST204'
+        || combined.includes('does not exist')
+        || combined.includes('schema cache')
+        || combined.includes('could not find')
+    );
+};
+
+const isMissingColumnError = (error: any): boolean =>
+    isMissingCountBreakdownColumnError(error) || isMissingWeatherColumnError(error);
+
+const stripMissingColumns = (row: Record<string, any>, error: any): Record<string, any> => {
+    let result = row;
+    if (isMissingCountBreakdownColumnError(error)) result = stripCountBreakdownColumns(result);
+    if (isMissingWeatherColumnError(error)) result = stripWeatherColumn(result);
+    return result;
+};
+
 const mapToObservation = (row: any): Observation => ({
     id: row.id,
     speciesName: row.species_name,
@@ -111,6 +143,7 @@ const mapToObservation = (row: any): Observation => ({
     age: row.age,
     observationCondition: row.observation_condition,
     comportement: row.comportement,
+    weather: row.weather_condition || 'Non renseigné',
     photo: row.photo_url,
     wikipediaImage: row.wikipedia_image,
     sound: row.sound_url
@@ -143,6 +176,7 @@ const mapToRow = (obs: Observation, userId: string): Record<string, any> => {
         age: obs.age,
         observation_condition: obs.observationCondition,
         comportement: obs.comportement,
+        weather_condition: obs.weather || 'Non renseigné',
         photo_url: obs.photo,
         wikipedia_image: obs.wikipediaImage,
         sound_url: obs.sound
@@ -355,11 +389,11 @@ export const saveObservation = async (
         .select()
         .single();
 
-    if (error && isMissingCountBreakdownColumnError(error)) {
-        const legacyRow = stripCountBreakdownColumns(row);
+    if (error && isMissingColumnError(error)) {
+        const fallbackRow = stripMissingColumns(row, error);
         const fallback = await supabase
             .from('observations')
-            .insert(legacyRow)
+            .insert(fallbackRow)
             .select()
             .single();
         data = fallback.data;
@@ -405,11 +439,11 @@ export const updateObservation = async (
         .eq('user_id', userId)
         .select('id');
 
-    if (error && isMissingCountBreakdownColumnError(error)) {
-        const legacyRow = stripCountBreakdownColumns(row);
+    if (error && isMissingColumnError(error)) {
+        const fallbackRow = stripMissingColumns(row, error);
         const fallback = await supabase
             .from('observations')
-            .update(legacyRow)
+            .update(fallbackRow)
             .eq('id', observation.id)
             .eq('user_id', userId)
             .select('id');
@@ -562,102 +596,121 @@ export const processOfflineQueue = async (options: ProcessOfflineQueueOptions = 
     const failedItems: OfflineQueueItem[] = [];
     const idMap = new Map<string, string>();
     const failureReasons = new Map<string, number>();
+    const RETRY_DELAYS = [1000, 3000, 9000];
 
-    for (const rawItem of reducedQueue) {
-        const item = mapQueueItemIds(rawItem, idMap);
+    const processOneItem = async (item: OfflineQueueItem, userId: string) => {
+        if (item.action === 'INSERT') {
+            const payload = item.payload as Observation;
+            const row = mapToRow(payload, userId);
 
-        try {
-            if (item.action === 'INSERT') {
-                const payload = item.payload as Observation;
-                const row = mapToRow(payload, user.id);
+            if (isTempId(payload.id)) {
+                let rowWithoutId = { ...row };
+                delete rowWithoutId.id;
+                let { data, error } = await supabase
+                    .from('observations')
+                    .insert(rowWithoutId)
+                    .select('*')
+                    .single();
 
-                if (isTempId(payload.id)) {
-                    let rowWithoutId = { ...row };
-                    delete rowWithoutId.id;
-                    let { data, error } = await supabase
+                if (error && isMissingColumnError(error)) {
+                    rowWithoutId = stripMissingColumns(rowWithoutId, error);
+                    const fallback = await supabase
                         .from('observations')
                         .insert(rowWithoutId)
                         .select('*')
                         .single();
-
-                    if (error && isMissingCountBreakdownColumnError(error)) {
-                        rowWithoutId = stripCountBreakdownColumns(rowWithoutId);
-                        const fallback = await supabase
-                            .from('observations')
-                            .insert(rowWithoutId)
-                            .select('*')
-                            .single();
-                        data = fallback.data;
-                        error = fallback.error;
-                    }
-
-                    if (error) throw error;
-
-                    const created = mapToObservation(data);
-                    idMap.set(payload.id, created.id);
-                    replaceObservationIdInCache(payload.id, created.id);
-                } else {
-                    let { error } = await supabase
-                        .from('observations')
-                        .upsert(row, { onConflict: 'id' });
-
-                    if (error && isMissingCountBreakdownColumnError(error)) {
-                        const fallback = await supabase
-                            .from('observations')
-                            .upsert(stripCountBreakdownColumns(row), { onConflict: 'id' });
-                        error = fallback.error;
-                    }
-
-                    if (error) throw error;
-                }
-            } else if (item.action === 'UPDATE') {
-                const payload = item.payload as Observation;
-
-                if (isTempId(payload.id) && !idMap.has(payload.id)) {
-                    failedItems.push(item);
-                    continue;
-                }
-
-                const row = mapToRow(payload, user.id);
-                let { error } = await supabase
-                    .from('observations')
-                    .update(row)
-                    .eq('id', payload.id)
-                    .eq('user_id', user.id)
-                    .select('id');
-
-                if (error && isMissingCountBreakdownColumnError(error)) {
-                    const fallback = await supabase
-                        .from('observations')
-                        .update(stripCountBreakdownColumns(row))
-                        .eq('id', payload.id)
-                        .eq('user_id', user.id)
-                        .select('id');
+                    data = fallback.data;
                     error = fallback.error;
                 }
 
                 if (error) throw error;
-            } else if (item.action === 'DELETE') {
-                const payload = item.payload as { id: string };
 
-                if (isTempId(payload.id) && !idMap.has(payload.id)) {
-                    continue;
-                }
-
-                const { error } = await supabase
+                const created = mapToObservation(data);
+                idMap.set(payload.id, created.id);
+                replaceObservationIdInCache(payload.id, created.id);
+            } else {
+                let { error } = await supabase
                     .from('observations')
-                    .delete()
-                    .eq('id', payload.id)
-                    .eq('user_id', user.id)
-                    .select('id');
+                    .upsert(row, { onConflict: 'id' });
+
+                if (error && isMissingColumnError(error)) {
+                    const fallback = await supabase
+                        .from('observations')
+                        .upsert(stripMissingColumns(row, error), { onConflict: 'id' });
+                    error = fallback.error;
+                }
 
                 if (error) throw error;
             }
-        } catch (error) {
-            console.error('Error processing queue item:', error);
-            failedItems.push(mapQueueItemIds(rawItem, idMap));
-            const reason = error instanceof Error ? error.message : String(error);
-            failureReasons.set(reason, (failureReasons.get(reason) || 0) + 1);
+        } else if (item.action === 'UPDATE') {
+            const payload = item.payload as Observation;
+
+            if (isTempId(payload.id) && !idMap.has(payload.id)) {
+                throw new Error('SKIP_TEMP_ID');
+            }
+
+            const row = mapToRow(payload, userId);
+            let { error } = await supabase
+                .from('observations')
+                .update(row)
+                .eq('id', payload.id)
+                .eq('user_id', userId)
+                .select('id');
+
+            if (error && isMissingColumnError(error)) {
+                const fallback = await supabase
+                    .from('observations')
+                    .update(stripMissingColumns(row, error))
+                    .eq('id', payload.id)
+                    .eq('user_id', userId)
+                    .select('id');
+                error = fallback.error;
+            }
+
+            if (error) throw error;
+        } else if (item.action === 'DELETE') {
+            const payload = item.payload as { id: string };
+
+            if (isTempId(payload.id) && !idMap.has(payload.id)) {
+                return; // Nothing to delete
+            }
+
+            const { error } = await supabase
+                .from('observations')
+                .delete()
+                .eq('id', payload.id)
+                .eq('user_id', userId)
+                .select('id');
+
+            if (error) throw error;
+        }
+    };
+
+    for (let i = 0; i < reducedQueue.length; i++) {
+        const rawItem = reducedQueue[i];
+        const item = mapQueueItemIds(rawItem, idMap);
+        options.onProgress?.(i + 1, reducedQueue.length);
+
+        for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+            try {
+                await processOneItem(item, user.id);
+                break;
+            } catch (error) {
+                const msg = error instanceof Error ? error.message : '';
+                // Don't retry on skip or missing temp ID
+                if (msg === 'SKIP_TEMP_ID') {
+                    failedItems.push(item);
+                    break;
+                }
+                if (attempt < RETRY_DELAYS.length) {
+                    await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
+                } else {
+                    console.error('Error processing queue item:', error);
+                    failedItems.push(mapQueueItemIds(rawItem, idMap));
+                    const reason = error instanceof Error ? error.message : String(error);
+                    failureReasons.set(reason, (failureReasons.get(reason) || 0) + 1);
+                }
+            }
         }
     }
 

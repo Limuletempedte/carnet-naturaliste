@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup } from '../types';
+import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 import { applyImportedObservationPolicy, buildImportPersistencePlan } from '../services/importPolicy';
 
 const makeObservation = (id: string, speciesName = 'Test'): Observation => ({
@@ -23,7 +23,8 @@ const makeObservation = (id: string, speciesName = 'Test'): Observation => ({
     sexe: Sexe.UNKNOWN,
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
-    comportement: Comportement.UNKNOWN
+    comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN
 });
 
 describe('import policy', () => {

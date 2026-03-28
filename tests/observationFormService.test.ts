@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup } from '../types';
+import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 import { ObservationFormData, validateObservationForm } from '../services/observationFormService';
 
 const makeFormData = (overrides: Partial<ObservationFormData> = {}): ObservationFormData => ({
@@ -26,6 +26,7 @@ const makeFormData = (overrides: Partial<ObservationFormData> = {}): Observation
     age: Age.UNKNOWN,
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
     photo: undefined,
     sound: undefined,
     wikipediaImage: undefined,

@@ -20,7 +20,7 @@ const exportExcel = async (exportData: Observation[]) => {
         "ID", "Nom de l'espèce", "Nom latin", "Groupe taxonomique", "Date", "Heure",
         "Nombre", "Mâles", "Femelles", "Non identifiés", "Lieu-dit", "Latitude", "Longitude", "Commune", "Département",
         "Pays", "Altitude", "Statut", "Code Atlas", "Protocole", "Sexe", "Age",
-        "Condition d'observation", "Comportement", "Commentaire"
+        "Condition d'observation", "Comportement", "Conditions météo", "Commentaire"
     ];
 
     const data = exportData.map(obs => ({
@@ -48,6 +48,7 @@ const exportExcel = async (exportData: Observation[]) => {
         Age: obs.age,
         "Condition d'observation": obs.observationCondition,
         Comportement: obs.comportement,
+        "Conditions météo": obs.weather,
         Commentaire: obs.comment
     }));
 
@@ -85,7 +86,7 @@ const exportPdf = async (exportData: Observation[]) => {
                 `${index + 1}. ${obs.speciesName} (${obs.latinName || 'Nom latin non renseigné'})`,
                 `Date: ${obs.date} ${obs.time || ''} | Nombre: ${obs.count} | Détail: ${formatCountBreakdown(obs)} | Groupe: ${obs.taxonomicGroup}`,
                 `Lieu: ${obs.location || 'Lieu non renseigné'} ${obs.municipality ? `(${obs.municipality})` : ''}`,
-                `Commentaire: ${obs.comment || 'Aucun'}`
+                `Météo: ${obs.weather || 'Non renseigné'} | Commentaire: ${obs.comment || 'Aucun'}`
             ].join('\n'),
             right - left
         );

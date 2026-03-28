@@ -8,7 +8,7 @@ import {
 } from '../services/storageService';
 
 const CACHED_SESSION_KEY = 'cached_auth_session';
-const CACHED_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CACHED_SESSION_TTL_MS = 2 * 24 * 60 * 60 * 1000;
 const CACHED_SESSION_SCHEMA_VERSION = 2;
 
 interface AuthContextType {

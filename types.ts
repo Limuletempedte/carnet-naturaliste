@@ -31,6 +31,7 @@ export enum TaxonomicGroup {
     BOTANY = 'Botaniques générales',
     LICHEN = 'Lichens',
     MUSHROOM = 'Champignons',
+    TREE = 'Arbres',
     OTHER = 'Autre'
 }
 
@@ -99,6 +100,21 @@ export enum Comportement {
     IN_TRANSIT = 'En transit'
 }
 
+export enum WeatherCondition {
+    UNKNOWN = 'Non renseigné',
+    SUNNY = 'Ensoleillé',
+    PARTLY_CLOUDY = 'Partiellement nuageux',
+    CLOUDY = 'Couvert',
+    LIGHT_RAIN = 'Pluie légère',
+    RAIN = 'Pluie',
+    HEAVY_RAIN = 'Pluie forte',
+    SNOW = 'Neige',
+    FOG = 'Brouillard',
+    WIND = 'Venteux',
+    STORM = 'Orage',
+    FROST = 'Gel'
+}
+
 export interface Observation {
     id: string;
     speciesName: string;
@@ -124,6 +140,7 @@ export interface Observation {
     age: Age;
     observationCondition: ObservationCondition;
     comportement: Comportement;
+    weather: WeatherCondition;
     photo?: string; // URL Supabase Storage (ou base64 temporaire avant upload)
     sound?: string; // URL Supabase Storage (ou base64 temporaire avant upload)
     wikipediaImage?: string; // URL from Wikipedia
