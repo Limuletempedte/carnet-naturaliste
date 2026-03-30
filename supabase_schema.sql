@@ -29,6 +29,7 @@ create table observations (
   age text,
   observation_condition text,
   comportement text,
+  weather_condition text,
   photo_url text, -- URL to Supabase Storage
   wikipedia_image text,
   sound_url text,

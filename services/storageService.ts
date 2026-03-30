@@ -402,7 +402,10 @@ export const saveObservation = async (
 
     if (error) {
         console.error('Error saving observation:', error);
-        throw new Error(error.message);
+        const msg = isMissingColumnError(error)
+            ? 'Une migration de base de données est manquante. Contactez l\'administrateur.'
+            : (error.message || 'Sauvegarde impossible');
+        throw new Error(msg);
     }
 
     const savedObs = mapToObservation(data);
@@ -453,7 +456,10 @@ export const updateObservation = async (
 
     if (error) {
         console.error('Error updating observation:', error);
-        throw new Error(error.message);
+        const msg = isMissingColumnError(error)
+            ? 'Une migration de base de données est manquante. Contactez l\'administrateur.'
+            : (error.message || 'Mise à jour impossible');
+        throw new Error(msg);
     }
     assertMutationAffectedRows(Array.isArray(data) ? data.length : 0, 'update');
 
