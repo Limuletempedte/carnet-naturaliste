@@ -7,25 +7,38 @@ import {
     Age,
     ObservationCondition,
     Comportement,
-    WeatherCondition
+    WeatherCondition,
+    Habitat,
+    Phenology
 } from '../types';
 import { ImportError, ImportResult, ImportWarning } from './excelImportService';
 import { isIsoDateString } from '../utils/dateUtils';
-import { isUuid } from '../utils/uuidUtils';
+import { isUuid, generateUUID } from '../utils/uuidUtils';
 
-const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
 
 const asString = (value: unknown): string | null => {
+    if (value === undefined || value === null) return '';
     return typeof value === 'string' ? value : null;
 };
 
 const asOptionalString = (value: unknown): string | undefined => {
     if (value === undefined || value === null || value === '') return undefined;
     return typeof value === 'string' ? value : undefined;
+};
+
+const asOptionalUrl = (value: unknown): string | undefined => {
+    const str = asOptionalString(value);
+    if (str === undefined) return undefined;
+    try {
+        const url = new URL(str);
+        if (url.protocol === 'https:' || url.protocol === 'http:') return str;
+    } catch { /* invalid URL */ }
+    return undefined;
 };
 
 const asNumberOrNull = (value: unknown): number | null | undefined => {
@@ -97,10 +110,14 @@ const buildObservationFromRow = (
         return null;
     }
 
-    const time = asString(rawRow.time);
-    if (!time || !TIME_RE.test(time)) {
-        pushError(errors, rowNum, 'time', 'Heure invalide (attendu HH:mm)', rawRow.time);
-        return null;
+    const timeRaw = asString(rawRow.time);
+    let time = '';
+    if (timeRaw) {
+        if (!TIME_RE.test(timeRaw)) {
+            pushError(errors, rowNum, 'time', 'Heure invalide (attendu HH:mm)', rawRow.time);
+            return null;
+        }
+        time = timeRaw.slice(0, 5);
     }
 
     const count = rawRow.count;
@@ -188,26 +205,28 @@ const buildObservationFromRow = (
 
     let id = asString(rawRow.id)?.trim() ?? '';
     if (!id) {
-        id = crypto.randomUUID();
+        id = generateUUID();
         pushWarning(warnings, rowNum, 'id', 'ID manquant, UUID généré', rawRow.id, id);
     } else if (!isUuid(id)) {
-        const generated = crypto.randomUUID();
+        const generated = generateUUID();
         pushWarning(warnings, rowNum, 'id', 'ID non UUID, UUID régénéré', id, generated);
         id = generated;
     }
 
     if (seenIds.has(id)) {
-        const generated = crypto.randomUUID();
+        const generated = generateUUID();
         pushWarning(warnings, rowNum, 'id', 'ID doublon, UUID régénéré', id, generated);
         id = generated;
     }
     seenIds.add(id);
 
-    const altitude = asNumberOrNull(rawRow.altitude);
-    if (altitude === undefined) {
+    const hasAltitude = Object.prototype.hasOwnProperty.call(rawRow, 'altitude');
+    const altitudeParsed = hasAltitude ? asNumberOrNull(rawRow.altitude) : null;
+    if (hasAltitude && altitudeParsed === undefined) {
         pushError(errors, rowNum, 'altitude', 'Altitude doit être un nombre ou null', rawRow.altitude);
         return null;
     }
+    const altitude: number | null = altitudeParsed ?? null;
 
     const location = asString(rawRow.location);
     const latinName = asString(rawRow.latinName);
@@ -230,9 +249,22 @@ const buildObservationFromRow = (
         return null;
     }
 
-    const photo = asOptionalString(rawRow.photo);
-    const sound = asOptionalString(rawRow.sound);
-    const wikipediaImage = asOptionalString(rawRow.wikipediaImage);
+    const photo = asOptionalUrl(rawRow.photo);
+    const sound = asOptionalUrl(rawRow.sound);
+    const wikipediaImage = asOptionalUrl(rawRow.wikipediaImage);
+
+    const habitatRaw = asOptionalString(rawRow.habitat);
+    const habitat = habitatRaw && Object.values(Habitat).includes(habitatRaw as Habitat)
+        ? (habitatRaw as Habitat)
+        : undefined;
+    const phenologyRaw = asOptionalString(rawRow.phenology);
+    const phenology = phenologyRaw && Object.values(Phenology).includes(phenologyRaw as Phenology)
+        ? (phenologyRaw as Phenology)
+        : undefined;
+    const observersRaw = rawRow.observers;
+    const observers = Array.isArray(observersRaw)
+        ? observersRaw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+        : undefined;
 
     return {
         id,
@@ -262,7 +294,10 @@ const buildObservationFromRow = (
         weather,
         photo,
         sound,
-        wikipediaImage
+        wikipediaImage,
+        habitat,
+        phenology,
+        observers: observers && observers.length > 0 ? observers : undefined
     };
 };
 
