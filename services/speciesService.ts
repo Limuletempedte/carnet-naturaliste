@@ -239,6 +239,41 @@ const fetchINatSuggestions = async (query: string, limit: number, signal?: Abort
 };
 
 // ---------------------------------------------------------------------------
+// Wikipedia FR REST API (tertiary — used for French description + thumbnail)
+// Docs: https://en.wikipedia.org/api/rest_v1/
+// ---------------------------------------------------------------------------
+
+interface WikipediaSummary {
+    extract?: string;
+    extractHtml?: string;
+    thumbnail?: { source?: string };
+    content_urls?: { desktop?: { page?: string } };
+    type?: string;
+}
+
+/**
+ * Fetch French Wikipedia summary (extract + thumbnail) for a given title.
+ * Wikipedia REST API auto-resolves latin names to the FR article via redirects.
+ * Returns null on 404 (article missing) or network error.
+ */
+const fetchWikipediaFr = async (title: string, signal?: AbortSignal): Promise<WikipediaSummary | null> => {
+    if (!title || title.trim().length < 2) return null;
+    try {
+        const url = `https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.trim())}`;
+        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        if (!res.ok) return null;
+        const data: WikipediaSummary = await res.json();
+        // Skip disambiguation pages ("type": "disambiguation") — not useful for species
+        if (data.type === 'disambiguation') return null;
+        return data;
+    } catch (e) {
+        if (isAbortError(e)) throw e;
+        logger.error('Wikipedia FR fetch error:', e);
+        return null;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // GBIF Taxonomy API  (secondary — used for precise classification)
 // Docs: https://www.gbif.org/developer/species
 // ---------------------------------------------------------------------------
@@ -684,10 +719,16 @@ export const fetchSpeciesInfo = async (
             let redListSource: 'france' | 'global' | undefined;
 
             if (latinName || inat.id) {
-                // Launch independent API calls in parallel
-                const [gbifResult, franceStatusResult] = await Promise.allSettled([
+                // Launch 3 independent API calls in parallel:
+                //  - GBIF (taxonomy classification via latin name)
+                //  - iNat /taxa/{id}?place_id=6753 (France red list status)
+                //  - Wikipedia FR (French description + thumbnail fallback)
+                // Wikipedia FR is tried first with the French common name, latin as fallback.
+                const preferredWikiTitle = inat.preferred_common_name || latinName;
+                const [gbifResult, franceStatusResult, wikiResult] = await Promise.allSettled([
                     latinName ? matchSpecies(latinName, options.signal) : Promise.resolve(null),
-                    inat.id ? fetchINatFranceStatus(inat.id, options.signal) : Promise.resolve({} as INatFranceTaxonDetail)
+                    inat.id ? fetchINatFranceStatus(inat.id, options.signal) : Promise.resolve({} as INatFranceTaxonDetail),
+                    preferredWikiTitle ? fetchWikipediaFr(preferredWikiTitle, options.signal) : Promise.resolve(null)
                 ]);
 
                 // Process GBIF taxonomy result
@@ -704,15 +745,40 @@ export const fetchSpeciesInfo = async (
                         redListStatus = detail.status;
                         redListSource = 'france';
                     }
-                    // Autocomplete doesn't include wikipedia_summary — use detail endpoint response
-                    if (!description && detail.wikipediaSummary) {
-                        const d = stripHtml(detail.wikipediaSummary);
-                        description = d.length > 300 ? d.substring(0, 300) + '\u2026' : d;
-                    }
-                    if (!sourceUrl && detail.wikipediaUrl) sourceUrl = detail.wikipediaUrl;
                     if (!imageUrl && detail.defaultPhotoUrl) imageUrl = detail.defaultPhotoUrl;
                 } else if (franceStatusResult.status === 'rejected' && isAbortError(franceStatusResult.reason)) {
                     throw franceStatusResult.reason;
+                }
+
+                // Wikipedia FR : source principale de la description en français + fallback image
+                // (iNat wikipedia_summary est en anglais, Wikipedia FR donne du vrai français localisé)
+                let wikiTried = false;
+                if (wikiResult.status === 'fulfilled' && wikiResult.value) {
+                    const wiki = wikiResult.value;
+                    if (wiki.extract) {
+                        const d = stripHtml(wiki.extract);
+                        description = d.length > 300 ? d.substring(0, 300) + '\u2026' : d;
+                    }
+                    if (wiki.content_urls?.desktop?.page) sourceUrl = wiki.content_urls.desktop.page;
+                    if (!imageUrl && wiki.thumbnail?.source) imageUrl = wiki.thumbnail.source;
+                    wikiTried = true;
+                } else if (wikiResult.status === 'rejected' && isAbortError(wikiResult.reason)) {
+                    throw wikiResult.reason;
+                }
+
+                // Si le nom commun FR n'a rien donné ET qu'on avait un nom latin différent, retry avec latin
+                if (!description && wikiTried && latinName && preferredWikiTitle !== latinName) {
+                    try {
+                        const wikiLatin = await fetchWikipediaFr(latinName, options.signal);
+                        if (wikiLatin?.extract) {
+                            const d = stripHtml(wikiLatin.extract);
+                            description = d.length > 300 ? d.substring(0, 300) + '\u2026' : d;
+                            if (wikiLatin.content_urls?.desktop?.page) sourceUrl = wikiLatin.content_urls.desktop.page;
+                            if (!imageUrl && wikiLatin.thumbnail?.source) imageUrl = wikiLatin.thumbnail.source;
+                        }
+                    } catch (e) {
+                        if (isAbortError(e)) throw e;
+                    }
                 }
 
                 // Fallback to GBIF IUCN if no France status

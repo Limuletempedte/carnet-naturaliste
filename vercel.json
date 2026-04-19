@@ -31,7 +31,7 @@
                 },
                 {
                     "key": "Content-Security-Policy",
-                    "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://*.inaturalist.org https://upload.wikimedia.org https://server.arcgisonline.com https://*.tile.openstreetmap.org https://*.tile.opentopomap.org https://*.basemaps.cartocdn.com; connect-src 'self' https://*.supabase.co https://api.inaturalist.org https://api.gbif.org https://nominatim.openstreetmap.org https://api.open-meteo.com; font-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'"
+                    "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://*.inaturalist.org https://inaturalist-open-data.s3.amazonaws.com https://upload.wikimedia.org https://server.arcgisonline.com https://*.tile.openstreetmap.org https://*.tile.opentopomap.org https://*.basemaps.cartocdn.com; connect-src 'self' https://*.supabase.co https://api.inaturalist.org https://api.gbif.org https://fr.wikipedia.org https://nominatim.openstreetmap.org https://api.open-meteo.com; font-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'"
                 }
             ]
         }

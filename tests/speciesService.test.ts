@@ -127,6 +127,9 @@ describe('fetchSpeciesInfo', () => {
         vi.stubGlobal('fetch', fetchMock);
         vi.spyOn(console, 'error').mockImplementation(() => { });
         clearSpeciesInfoCache();
+        // Default implementation: return 404 for any URL not explicitly mocked.
+        // Explicit mockResolvedValueOnce calls are consumed FIFO before falling through here.
+        fetchMock.mockImplementation(async () => ({ ok: false, status: 404, json: async () => ({}) } as Response));
     });
 
     afterEach(() => {
@@ -174,7 +177,8 @@ describe('fetchSpeciesInfo', () => {
 
         const info = await fetchSpeciesInfo('Lepus');
 
-        expect(fetchMock).toHaveBeenCalledTimes(3);
+        // autocomplete + GBIF match + Wikipedia FR (common name, 404) + Wikipedia FR (latin retry) + GBIF v2 IUCN
+        expect(fetchMock).toHaveBeenCalledTimes(5);
         expect(info).toMatchObject({
             latinName: 'Lepus europaeus',
             imageUrl: 'https://example.com/species.jpg',
@@ -570,7 +574,8 @@ describe('fetchSpeciesInfo', () => {
         const first = await fetchSpeciesInfo('Vulpes vulpes');
         const second = await fetchSpeciesInfo('  VULPES   VULPES ');
 
-        expect(fetchMock).toHaveBeenCalledTimes(4);
+        // autocomplete + GBIF match + iNat France status + Wikipedia FR + GBIF v2 IUCN
+        expect(fetchMock).toHaveBeenCalledTimes(5);
         expect(second).toEqual(first);
     });
 
@@ -614,7 +619,8 @@ describe('fetchSpeciesInfo', () => {
             fetchSpeciesInfo('Lynx lynx')
         ]);
 
-        expect(fetchMock).toHaveBeenCalledTimes(4);
+        // autocomplete + GBIF match + iNat France status + Wikipedia FR (common 404) + Wikipedia FR (latin retry) + GBIF v2 IUCN
+        expect(fetchMock).toHaveBeenCalledTimes(6);
         expect(left).toEqual(right);
     });
 
