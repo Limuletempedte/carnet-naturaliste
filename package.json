@@ -12,13 +12,23 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm run lint && npm run test:run && npm run build",
-    "dev:test": "vite --mode test"
+    "dev:test": "vite --mode test",
+    "prepare": "husky",
+    "licenses": "license-checker --production --summary",
+    "licenses:check": "license-checker --production --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC-BY-4.0;CC0-1.0;0BSD;Unlicense;Python-2.0;MPL-2.0\""
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ]
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
     "@types/file-saver": "^2.0.7",
     "@types/leaflet.markercluster": "^1.5.6",
+    "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
@@ -28,8 +38,7 @@
     "react-calendar": "^6.0.0",
     "react-dom": "^19.1.0",
     "recharts": "^3.4.1",
-    "vite-plugin-pwa": "^1.2.0",
-    "xlsx": "^0.18.5"
+    "vite-plugin-pwa": "^1.2.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.0",
@@ -40,12 +49,17 @@
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "^3.2.4",
     "autoprefixer": "^10.4.17",
     "eslint": "^9.39.3",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
+    "husky": "^9.1.7",
     "jsdom": "^26.1.0",
+    "license-checker": "^25.0.1",
+    "lint-staged": "^15.2.10",
     "postcss": "^8.4.35",
+    "supabase": "^2.92.1",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.7.2",
     "vite": "^6.4.1",
@@ -53,6 +67,6 @@
   },
   "overrides": {
     "@rollup/plugin-terser": "1.0.0",
-    "serialize-javascript": "7.0.4"
+    "serialize-javascript": ">=7.0.5"
   }
 }

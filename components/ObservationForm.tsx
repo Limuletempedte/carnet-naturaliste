@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
-import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition } from '../types';
+import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
 import { fetchSpeciesInfo, SpeciesInfo, SpeciesSuggestion, suggestSpeciesAutocomplete, mapINatIconicToTaxonomicGroup } from '../services/speciesService';
 import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
@@ -8,7 +8,12 @@ import { buildObservationFromForm, ObservationFormData, validateObservationForm 
 import { uploadPhoto } from '../services/storageService';
 import { dateToIsoLocal } from '../utils/dateUtils';
 import { normalizeSearchText } from '../utils/textUtils';
+import { isSafeImageUrl } from '../utils/urlUtils';
+import { generateUUID } from '../utils/uuidUtils';
+import { logger } from '../utils/logger';
+import { useClickOutside } from '../hooks/useClickOutside';
 import { ToastType } from './ToastContainer';
+import FieldTooltip from './FieldTooltip';
 
 const MapInput = lazy(() => import('./MapInput'));
 
@@ -62,6 +67,9 @@ const createEmptyFormData = (defaultTaxonomicGroup: TaxonomicGroup): Observation
     photo: undefined,
     sound: undefined,
     wikipediaImage: undefined,
+    habitat: Habitat.UNKNOWN,
+    phenology: Phenology.UNKNOWN,
+    observers: undefined,
 });
 
 const mapObservationToFormData = (observation: Observation): ObservationFormData => ({
@@ -77,6 +85,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [formData, setFormData] = useState<ObservationFormData>(() => createEmptyFormData(defaultTaxonomicGroup));
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showMap, setShowMap] = useState(false);
+    const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
     const [speciesInfo, setSpeciesInfo] = useState<SpeciesInfo | null>(null);
     const [speciesSuggestions, setSpeciesSuggestions] = useState<SpeciesSuggestion[]>([]);
     const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
@@ -84,6 +93,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
     const [isFetchingInfo, setIsFetchingInfo] = useState(false);
     const [photoFile, setPhotoFile] = useState<Blob | null>(null);
+    const [observerInput, setObserverInput] = useState('');
 
     const [isUploading, setIsUploading] = useState(false);
     const latestSpeciesRequestRef = useRef(0);
@@ -92,6 +102,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const bottomButtonsRef = useRef<HTMLDivElement>(null);
     const speciesInputWrapperRef = useRef<HTMLDivElement>(null);
     const skipNextSuggestionsFetchRef = useRef(false);
+    const blobUrlsRef = useRef<Set<string>>(new Set());
     const [showStickyBar, setShowStickyBar] = useState(false);
     const [fieldTouched, setFieldTouched] = useState<{ latinName: boolean; taxonomicGroup: boolean; status: boolean }>({
         latinName: false,
@@ -171,24 +182,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     }, [formData.speciesName]);
 
     // Close autocomplete when clicking/tapping outside the species input area.
-    useEffect(() => {
-        const handlePointerDownOutside = (event: MouseEvent | TouchEvent) => {
-            const wrapper = speciesInputWrapperRef.current;
-            const target = event.target as Node | null;
-            if (!wrapper || !target) return;
-            if (!wrapper.contains(target)) {
-                setShowSuggestions(false);
-                setActiveSuggestionIndex(-1);
-            }
-        };
-
-        document.addEventListener('mousedown', handlePointerDownOutside);
-        document.addEventListener('touchstart', handlePointerDownOutside);
-        return () => {
-            document.removeEventListener('mousedown', handlePointerDownOutside);
-            document.removeEventListener('touchstart', handlePointerDownOutside);
-        };
-    }, []);
+    useClickOutside(speciesInputWrapperRef, () => {
+        setShowSuggestions(false);
+        setActiveSuggestionIndex(-1);
+    });
 
     useEffect(() => {
         // Invalidate stale async species enrichment when identity changes.
@@ -285,16 +282,24 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         };
     }, [fieldTouched.latinName, fieldTouched.status, fieldTouched.taxonomicGroup, lookupKey, normalizedLookupKey]);
 
+    // Track blob URLs for revocation
     useEffect(() => {
-        return () => {
-            if (formData.photo?.startsWith('blob:')) {
-                URL.revokeObjectURL(formData.photo);
-            }
-            if (formData.sound?.startsWith('blob:')) {
-                URL.revokeObjectURL(formData.sound);
-            }
-        };
+        if (formData.photo?.startsWith('blob:')) {
+            blobUrlsRef.current.add(formData.photo);
+        }
+        if (formData.sound?.startsWith('blob:')) {
+            blobUrlsRef.current.add(formData.sound);
+        }
     }, [formData.photo, formData.sound]);
+
+    // Revoke all blob URLs only on final unmount
+    useEffect(() => {
+        const urls = blobUrlsRef.current;
+        return () => {
+            urls.forEach(url => URL.revokeObjectURL(url));
+            urls.clear();
+        };
+    }, []);
 
     const handleLocationChange = async (lat: number, lon: number, municipality: string, location: string, department: string, country: string) => {
         setFormData(prev => ({
@@ -350,6 +355,30 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         }
     };
 
+    const addObservers = (raw: string) => {
+        const tokens = raw
+            .split(/[,;]+/)
+            .map(s => s.trim())
+            .filter(Boolean);
+        if (tokens.length === 0) return;
+        setFormData(prev => {
+            const existing = prev.observers ?? [];
+            const merged = [...existing];
+            tokens.forEach(t => {
+                if (!merged.includes(t)) merged.push(t);
+            });
+            return { ...prev, observers: merged };
+        });
+        setObserverInput('');
+    };
+
+    const removeObserver = (name: string) => {
+        setFormData(prev => {
+            const next = (prev.observers ?? []).filter(n => n !== name);
+            return { ...prev, observers: next.length > 0 ? next : undefined };
+        });
+    };
+
     const handleCountBlur = (fieldName: 'count' | 'maleCount' | 'femaleCount' | 'unidentifiedCount') => {
         setFormData(prev => {
             const currentValue = prev[fieldName];
@@ -357,6 +386,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
             if (fieldName === 'count') {
                 if (currentValue === '' || !Number.isInteger(numericValue) || numericValue < 1) {
+                    onToast('info', 'Le comptage minimum est 1.');
                     return { ...prev, count: 1 };
                 }
                 return prev;
@@ -451,9 +481,16 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
 
 
+    const MAX_PHOTO_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, files } = e.target;
         if (files && files[0] && name === 'photo') {
+            if (files[0].size > MAX_PHOTO_SIZE_BYTES) {
+                onToast('error', 'La photo dépasse 20 Mo. Veuillez choisir un fichier plus léger.');
+                e.target.value = '';
+                return;
+            }
             try {
                 const compressedBlob = await compressImage(files[0]);
                 setPhotoFile(compressedBlob);
@@ -466,7 +503,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 const previewUrl = URL.createObjectURL(compressedBlob);
                 setFormData(prev => ({ ...prev, photo: previewUrl }));
             } catch (error) {
-                console.error("Erreur lors de la compression:", error);
+                logger.error("Erreur lors de la compression:", error);
                 onToast('error', "Impossible de traiter l'image.");
             }
         }
@@ -491,24 +528,30 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 }
             } else {
                 if (photoFile) {
-                    photoUrl = initialData?.photo || undefined;
+                    // Offline : conserver la photo en data-URL (déjà compressée par compressImage)
+                    photoUrl = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result as string);
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsDataURL(photoFile);
+                    });
                     strippedOfflineMedia.push('photo');
                 }
             }
 
             const observationToSave: Observation = buildObservationFromForm(
                 formData,
-                initialData?.id || crypto.randomUUID(),
+                initialData?.id || generateUUID(),
                 photoUrl,
                 soundUrl
             );
             await onSave(observationToSave);
 
             if (strippedOfflineMedia.length > 0) {
-                onToast('warning', `Observation enregistrée, mais le nouveau ${strippedOfflineMedia.join(' et ')} n'a pas pu être envoyé hors-ligne. Réessayez en ligne.`, 7000);
+                onToast('warning', `Observation enregistrée avec ${strippedOfflineMedia.join(' et ')} conservé(e) localement. L'envoi se fera automatiquement en ligne.`, 7000);
             }
         } catch (error) {
-            console.error("Erreur lors de l'envoi:", error);
+            logger.error("Erreur lors de l'envoi:", error);
             const errorMessage = error instanceof Error ? error.message : String(error);
             onToast('error', `Erreur lors de l'envoi de l'observation: ${errorMessage}`);
         } finally {
@@ -538,6 +581,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                         type="text"
                                         id="speciesName"
                                         name="speciesName"
+                                        role="combobox"
+                                        aria-expanded={showSuggestions && speciesSuggestions.length > 0}
+                                        aria-controls="species-suggestions-listbox"
+                                        aria-autocomplete="list"
+                                        aria-activedescendant={activeSuggestionIndex >= 0 ? `species-suggestion-${activeSuggestionIndex}` : undefined}
                                         value={formData.speciesName}
                                         onChange={handleChange}
                                         onKeyDown={handleSpeciesNameKeyDown}
@@ -547,21 +595,22 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                             }
                                         }}
                                         onBlur={() => {
-                                            window.setTimeout(() => {
-                                                setShowSuggestions(false);
-                                            }, 120);
+                                            setShowSuggestions(false);
                                         }}
                                         className={inputClass}
                                         required
                                         autoComplete="off"
                                         placeholder="Nom commun"
+                                        aria-invalid={!!errors.speciesName}
+                                        aria-describedby={errors.speciesName ? 'speciesName-error' : undefined}
                                     />
                                     {showSuggestions && speciesSuggestions.length > 0 && (
-                                        <ul className="absolute z-30 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg max-h-64 overflow-y-auto dark:border-white/10 dark:bg-nature-dark-surface" role="listbox" aria-label="Suggestions espèces">
+                                        <ul id="species-suggestions-listbox" className="absolute z-30 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg max-h-64 overflow-y-auto dark:border-white/10 dark:bg-nature-dark-surface" role="listbox" aria-label="Suggestions espèces">
                                             {speciesSuggestions.map((suggestion, index) => (
-                                                <li key={`${suggestion.source}-${suggestion.latinName}-${index}`}>
+                                                <li key={`${suggestion.source}-${suggestion.latinName}-${index}`} id={`species-suggestion-${index}`} role="option" aria-selected={index === activeSuggestionIndex}>
                                                     <button
                                                         type="button"
+                                                        tabIndex={-1}
                                                         className={`w-full text-left px-3 py-2 transition-colors ${index === activeSuggestionIndex ? 'bg-nature-green/15 dark:bg-nature-green/20' : 'hover:bg-gray-50 dark:hover:bg-white/5'}`}
                                                         onMouseDown={(event) => {
                                                             event.preventDefault();
@@ -577,11 +626,14 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                                     </button>
                                                 </li>
                                             ))}
+                                            {speciesSuggestions.length > 5 && (
+                                                <li className="sticky bottom-0 h-4 bg-gradient-to-t from-white dark:from-nature-dark-surface pointer-events-none" aria-hidden="true" />
+                                            )}
                                         </ul>
                                     )}
                                 </div>
                                 <p className="text-xs text-gray-500 mt-1 ml-1">Exemple: Mésange charbonnière</p>
-                                {errors.speciesName && <p className={errorClass}>{errors.speciesName}</p>}
+                                {errors.speciesName && <p id="speciesName-error" role="alert" className={errorClass}>{errors.speciesName}</p>}
                                 {isFetchingSuggestions && <p className="text-xs text-gray-500 mt-1 ml-1">Suggestions...</p>}
                                 {isFetchingInfo && <p className="text-xs text-gray-500 mt-1 ml-1">Recherche d'infos...</p>}
                             </div>
@@ -592,17 +644,20 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             <div className="lg:col-span-3">
                                 <label className={labelClass}>Groupe taxonomique</label>
                                 <p className="text-xs text-gray-500 ml-1 mb-2">Choisissez le groupe le plus proche si la détection auto ne convient pas.</p>
-                                <div className="flex flex-wrap gap-3 pt-2">
+                                <div role="radiogroup" aria-label="Groupe taxonomique" className="flex flex-wrap gap-3 pt-2">
                                     {Object.entries(TAXON_LOGOS).map(([group, logoPath]) => (
                                         logoPath && (
                                             <button
                                                 type="button"
+                                                role="radio"
+                                                aria-checked={formData.taxonomicGroup === group}
+                                                aria-label={group}
                                                 key={group}
                                                 onClick={() => {
                                                     setFieldTouched(prev => ({ ...prev, taxonomicGroup: true }));
                                                     setFormData(prev => ({ ...prev, taxonomicGroup: group as TaxonomicGroup }));
                                                 }}
-                                                className={`p-2 rounded-full transition-all duration-300 transform hover:scale-110 ${formData.taxonomicGroup === group ? 'bg-nature-green ring-4 ring-nature-green/20 shadow-lg scale-110' : 'bg-nature-beige dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 grayscale hover:grayscale-0'}`}
+                                                className={`p-2 rounded-full transition-all duration-300 transform hover:scale-110 relative ${formData.taxonomicGroup === group ? 'bg-nature-green ring-4 ring-nature-green/20 shadow-lg scale-110 border-b-4 border-nature-green' : 'bg-nature-beige dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 grayscale hover:grayscale-0'}`}
                                                 title={group}
                                             >
                                                 <img src={logoPath} alt={group} className="w-10 h-10 object-contain" />
@@ -613,8 +668,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </div>
                             <div className="lg:col-span-1">
                                 <label htmlFor="date" className={labelClass}>Date *</label>
-                                <input type="date" id="date" name="date" value={formData.date} onChange={handleChange} className={inputClass} required />
-                                {errors.date && <p className={errorClass}>{errors.date}</p>}
+                                <input type="date" id="date" name="date" value={formData.date} onChange={handleChange} className={inputClass} required aria-invalid={!!errors.date} aria-describedby={errors.date ? 'date-error' : undefined} />
+                                {errors.date && <p id="date-error" role="alert" className={errorClass}>{errors.date}</p>}
                             </div>
                             <div className="lg:col-span-1">
                                 <label htmlFor="time" className={labelClass}>Heure</label>
@@ -622,8 +677,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </div>
                             <div className="lg:col-span-1">
                                 <label htmlFor="count" className={labelClass}>Nombre d'individus</label>
-                                <input type="number" id="count" name="count" value={formData.count} onChange={handleChange} onBlur={() => handleCountBlur('count')} min="1" className={inputClass} />
-                                {errors.count && <p className={errorClass}>{errors.count}</p>}
+                                <input type="number" id="count" name="count" value={formData.count} onChange={handleChange} onBlur={() => handleCountBlur('count')} min="1" className={inputClass} aria-invalid={!!errors.count} aria-describedby={errors.count ? 'count-error' : undefined} />
+                                {errors.count && <p id="count-error" role="alert" className={errorClass}>{errors.count}</p>}
                             </div>
                             <div className="lg:col-span-2">
                                 <label className={labelClass}>Répartition (optionnel)</label>
@@ -639,8 +694,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                             onChange={handleChange}
                                             onBlur={() => handleCountBlur('maleCount')}
                                             className={inputClass}
+                                            aria-invalid={!!errors.maleCount}
+                                            aria-describedby={errors.maleCount ? 'maleCount-error' : undefined}
                                         />
-                                        {errors.maleCount && <p className={errorClass}>{errors.maleCount}</p>}
+                                        {errors.maleCount && <p id="maleCount-error" role="alert" className={errorClass}>{errors.maleCount}</p>}
                                     </div>
                                     <div>
                                         <label htmlFor="femaleCount" className="block text-[11px] font-semibold text-gray-500 mb-1 ml-1">Femelle</label>
@@ -653,8 +710,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                             onChange={handleChange}
                                             onBlur={() => handleCountBlur('femaleCount')}
                                             className={inputClass}
+                                            aria-invalid={!!errors.femaleCount}
+                                            aria-describedby={errors.femaleCount ? 'femaleCount-error' : undefined}
                                         />
-                                        {errors.femaleCount && <p className={errorClass}>{errors.femaleCount}</p>}
+                                        {errors.femaleCount && <p id="femaleCount-error" role="alert" className={errorClass}>{errors.femaleCount}</p>}
                                     </div>
                                     <div>
                                         <label htmlFor="unidentifiedCount" className="block text-[11px] font-semibold text-gray-500 mb-1 ml-1">Non identifié</label>
@@ -667,12 +726,23 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                             onChange={handleChange}
                                             onBlur={() => handleCountBlur('unidentifiedCount')}
                                             className={inputClass}
+                                            aria-invalid={!!errors.unidentifiedCount}
+                                            aria-describedby={errors.unidentifiedCount ? 'unidentifiedCount-error' : undefined}
                                         />
-                                        {errors.unidentifiedCount && <p className={errorClass}>{errors.unidentifiedCount}</p>}
+                                        {errors.unidentifiedCount && <p id="unidentifiedCount-error" role="alert" className={errorClass}>{errors.unidentifiedCount}</p>}
                                     </div>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-2 ml-1">Si tu renseignes la répartition, la somme doit être égale au total.</p>
-                                {errors.countBreakdown && <p className={errorClass}>{errors.countBreakdown}</p>}
+                                {(() => {
+                                    const hasAny = formData.maleCount !== '' || formData.femaleCount !== '' || formData.unidentifiedCount !== '';
+                                    if (!hasAny) return <p className="text-xs text-gray-500 mt-2 ml-1">Si tu renseignes la répartition, la somme doit être égale au total.</p>;
+                                    const total = Number(formData.count);
+                                    const sum = (Number(formData.maleCount) || 0) + (Number(formData.femaleCount) || 0) + (Number(formData.unidentifiedCount) || 0);
+                                    if (Number.isInteger(total) && total >= 1 && sum !== total) {
+                                        return <p className={errorClass}>Répartition ({sum}) ≠ total ({total}). La somme mâle + femelle + non identifié doit être égale au total.</p>;
+                                    }
+                                    return <p className="text-xs text-gray-500 mt-2 ml-1">Si tu renseignes la répartition, la somme doit être égale au total.</p>;
+                                })()}
+                                {errors.countBreakdown && <p id="countBreakdown-error" role="alert" className={errorClass}>{errors.countBreakdown}</p>}
                             </div>
                         </FormSection>
 
@@ -695,21 +765,21 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </div>
                             <div>
                                 <label htmlFor="lat" className={labelClass}>Latitude</label>
-                                <input type="number" step="any" id="lat" name="lat" value={formData.gps.lat ?? ''} onChange={handleChange} className={inputClass} />
-                                {errors.lat && <p className={errorClass}>{errors.lat}</p>}
+                                <input type="number" step="any" id="lat" name="lat" value={formData.gps.lat ?? ''} onChange={handleChange} className={inputClass} aria-invalid={!!errors.lat} aria-describedby={errors.lat ? 'lat-error' : undefined} />
+                                {errors.lat && <p id="lat-error" role="alert" className={errorClass}>{errors.lat}</p>}
                             </div>
                             <div>
                                 <label htmlFor="lon" className={labelClass}>Longitude</label>
-                                <input type="number" step="any" id="lon" name="lon" value={formData.gps.lon ?? ''} onChange={handleChange} className={inputClass} />
-                                {errors.lon && <p className={errorClass}>{errors.lon}</p>}
+                                <input type="number" step="any" id="lon" name="lon" value={formData.gps.lon ?? ''} onChange={handleChange} className={inputClass} aria-invalid={!!errors.lon} aria-describedby={errors.lon ? 'lon-error' : undefined} />
+                                {errors.lon && <p id="lon-error" role="alert" className={errorClass}>{errors.lon}</p>}
                             </div>
                             <div>
                                 <label htmlFor="altitude" className={labelClass}>Altitude (m)</label>
                                 <input type="number" id="altitude" name="altitude" value={formData.altitude ?? ''} onChange={handleChange} className={inputClass} />
                             </div>
                             <div className="col-span-full">
-                                <button type="button" onClick={() => setShowMap(!showMap)} className={`${secondaryButtonClass} w-full bg-blue-500 hover:bg-blue-600`}>
-                                    {showMap ? 'Cacher la carte' : '📍 Localiser sur la carte'}
+                                <button type="button" onClick={() => setShowMap(!showMap)} className={`w-full py-3 px-6 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-[1.02] active:scale-95 shadow-md ${showMap ? 'bg-gray-500 hover:bg-gray-600' : 'bg-nature-green hover:bg-green-600 animate-pulse-once'}`}>
+                                    {showMap ? 'Masquer la carte' : <><span aria-hidden="true">📍</span> Localiser sur la carte (recommandé)</>}
                                 </button>
                                 {showMap && (
                                     <div className="mt-4 rounded-2xl overflow-hidden shadow-inner ring-1 ring-black/5">
@@ -723,7 +793,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
 
                         <FormSection title="Détails">
                             <div>
-                                <label htmlFor="status" className={labelClass}>Statut</label>
+                                <label htmlFor="status" className={labelClass}>
+                                    Statut
+                                    <FieldTooltip text="Statut de conservation IUCN. Laissez « NE » (Non Évalué) si vous ne savez pas. Le statut est détecté automatiquement pour les espèces connues." />
+                                </label>
                                 <select id="status" name="status" value={formData.status} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
                                     {Object.values(Status).map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
@@ -743,44 +816,122 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 )}
                             </div>
                             <div>
-                                <label htmlFor="protocol" className={labelClass}>Protocole</label>
+                                <label htmlFor="protocol" className={labelClass}>
+                                    Protocole
+                                    <FieldTooltip text="Protocole scientifique de suivi (STOC-EPS, EPOC, Wetlands, battage, fauchage…). Choisissez « Opportuniste » pour une observation classique." />
+                                </label>
                                 <select id="protocol" name="protocol" value={formData.protocol} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
                                     {Object.values(Protocol).map(p => <option key={p} value={p}>{p}</option>)}
                                 </select>
                             </div>
+                            <div className="col-span-full">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAdvancedDetails(!showAdvancedDetails)}
+                                    className="text-sm font-medium text-nature-green-text hover:text-green-600 transition-colors flex items-center gap-1"
+                                >
+                                    <svg className={`w-4 h-4 transition-transform ${showAdvancedDetails ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                                    {showAdvancedDetails ? 'Masquer les détails avancés' : 'Afficher les détails avancés'}
+                                </button>
+                            </div>
+                            {showAdvancedDetails && (
+                                <>
+                                    <div>
+                                        <label htmlFor="atlasCode" className={labelClass}>
+                                            Code atlas
+                                            <FieldTooltip text="Code de reproduction atlas (ex: 14 = nid avec œufs, 19 = adulte avec nourriture pour jeunes). Utilisé pour les atlas de nidification. Laissez vide si non pertinent." />
+                                        </label>
+                                        <input type="text" id="atlasCode" name="atlasCode" value={formData.atlasCode} onChange={handleChange} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="sexe" className={labelClass}>Sexe</label>
+                                        <select id="sexe" name="sexe" value={formData.sexe} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                            {Object.values(Sexe).map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="age" className={labelClass}>Age</label>
+                                        <select id="age" name="age" value={formData.age} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                            {Object.values(Age).map(a => <option key={a} value={a}>{a}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label htmlFor="observationCondition" className={labelClass}>Condition</label>
+                                        <select id="observationCondition" name="observationCondition" value={formData.observationCondition} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                            {Object.values(ObservationCondition).map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="lg:col-span-3">
+                                        <label htmlFor="comportement" className={labelClass}>Comportement</label>
+                                        <select id="comportement" name="comportement" value={formData.comportement} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                            {Object.values(Comportement).map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="lg:col-span-3">
+                                        <label htmlFor="weather" className={labelClass}>Conditions météo</label>
+                                        <select id="weather" name="weather" value={formData.weather} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                            {Object.values(WeatherCondition).map(w => <option key={w} value={w}>{w}</option>)}
+                                        </select>
+                                    </div>
+                                </>
+                            )}
+                        </FormSection>
+
+                        <FormSection title="Contexte écologique">
                             <div>
-                                <label htmlFor="atlasCode" className={labelClass}>Code atlas</label>
-                                <input type="text" id="atlasCode" name="atlasCode" value={formData.atlasCode} onChange={handleChange} className={inputClass} />
-                            </div>
-                            <div>
-                                <label htmlFor="sexe" className={labelClass}>Sexe</label>
-                                <select id="sexe" name="sexe" value={formData.sexe} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
-                                    {Object.values(Sexe).map(s => <option key={s} value={s}>{s}</option>)}
+                                <label htmlFor="habitat" className={labelClass}>Habitat</label>
+                                <select id="habitat" name="habitat" value={formData.habitat ?? Habitat.UNKNOWN} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                    {Object.values(Habitat).map(h => <option key={h} value={h}>{h}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label htmlFor="age" className={labelClass}>Age</label>
-                                <select id="age" name="age" value={formData.age} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
-                                    {Object.values(Age).map(a => <option key={a} value={a}>{a}</option>)}
+                                <label htmlFor="phenology" className={labelClass}>Phénologie</label>
+                                <select id="phenology" name="phenology" value={formData.phenology ?? Phenology.UNKNOWN} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                    {Object.values(Phenology).map(p => <option key={p} value={p}>{p}</option>)}
                                 </select>
                             </div>
-                            <div>
-                                <label htmlFor="observationCondition" className={labelClass}>Condition</label>
-                                <select id="observationCondition" name="observationCondition" value={formData.observationCondition} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
-                                    {Object.values(ObservationCondition).map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                            </div>
-                            <div className="lg:col-span-3">
-                                <label htmlFor="comportement" className={labelClass}>Comportement</label>
-                                <select id="comportement" name="comportement" value={formData.comportement} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
-                                    {Object.values(Comportement).map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                            </div>
-                            <div className="lg:col-span-3">
-                                <label htmlFor="weather" className={labelClass}>Conditions météo</label>
-                                <select id="weather" name="weather" value={formData.weather} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
-                                    {Object.values(WeatherCondition).map(w => <option key={w} value={w}>{w}</option>)}
-                                </select>
+                            <div className="md:col-span-2 lg:col-span-3">
+                                <label htmlFor="observerInput" className={labelClass}>Observateurs associés</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        id="observerInput"
+                                        value={observerInput}
+                                        onChange={(e) => setObserverInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                addObservers(observerInput);
+                                            }
+                                        }}
+                                        placeholder="Ex: Jean Dupont (séparer par virgule ou Entrée)"
+                                        className={inputClass}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => addObservers(observerInput)}
+                                        className="px-4 py-2 rounded-full bg-nature-green/10 text-nature-green-text font-semibold hover:bg-nature-green/20 transition"
+                                    >
+                                        Ajouter
+                                    </button>
+                                </div>
+                                {formData.observers && formData.observers.length > 0 && (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {formData.observers.map(name => (
+                                            <span key={name} className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-nature-green/20 text-nature-green-text text-sm">
+                                                {name}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeObserver(name)}
+                                                    aria-label={`Retirer ${name}`}
+                                                    className="ml-1 w-4 h-4 inline-flex items-center justify-center rounded-full hover:bg-nature-green/30"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </FormSection>
 
@@ -791,15 +942,15 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </div>
                             <div>
                                 <label htmlFor="photo" className={labelClass}>Photo (perso)</label>
-                                <input type="file" id="photo" name="photo" accept="image/*" onChange={handleFileChange} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-nature-green/10 file:text-nature-green hover:file:bg-nature-green/20 transition cursor-pointer" />
+                                <input type="file" id="photo" name="photo" accept="image/*" onChange={handleFileChange} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-nature-green/10 file:text-nature-green-text hover:file:bg-nature-green/20 transition cursor-pointer" />
                                 {formData.photo && <img src={formData.photo} alt="Aperçu" className="mt-4 h-32 w-32 object-cover rounded-2xl shadow-md ring-1 ring-black/5" />}
                             </div>
-                            <div>
+                            <div className={formData.sound ? '' : 'opacity-50 pointer-events-none'}>
                                 <label className={labelClass}>Son</label>
                                 {formData.sound ? (
                                     <audio controls src={formData.sound} className="mt-2 w-full rounded-full shadow-sm"></audio>
                                 ) : (
-                                    <p className="text-xs text-gray-400 italic mt-1">Fonctionnalité temporairement indisponible</p>
+                                    <p className="text-xs text-gray-400 italic mt-1">Enregistrement sonore — bientôt disponible</p>
                                 )}
                             </div>
                         </FormSection>
@@ -811,7 +962,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             <h3 className="text-xl font-bold text-nature-dark dark:text-white mb-4 pb-2 border-b border-gray-100 dark:border-white/5">Informations Espèce</h3>
                             {speciesInfo ? (
                                 <div className="space-y-4 animate-fadeIn">
-                                    {speciesInfo.imageUrl && (
+                                    {speciesInfo.imageUrl && isSafeImageUrl(speciesInfo.imageUrl) && (
                                         <img src={speciesInfo.imageUrl} alt={formData.speciesName} className="w-full h-48 object-cover rounded-2xl shadow-sm" />
                                     )}
                                     <h4 className="font-bold text-lg text-nature-dark dark:text-white">{formData.speciesName}</h4>
@@ -819,7 +970,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                         {speciesInfo.description}
                                     </p>
                                     {speciesInfo.sourceUrl && (
-                                        <a href={speciesInfo.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-nature-green hover:text-green-600 block mt-2">
+                                        <a href={speciesInfo.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-nature-green-text hover:text-green-600 block mt-2">
                                             Voir la source →
                                         </a>
                                     )}
@@ -833,10 +984,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                     </div>
                 </div>
 
-                <div ref={bottomButtonsRef} className="flex justify-end space-x-4 pt-6 border-t border-gray-100 dark:border-white/5">
+                <div ref={bottomButtonsRef} className={`flex justify-end space-x-4 pt-6 border-t border-gray-100 dark:border-white/5 ${showStickyBar ? 'invisible' : ''}`}>
                     <button type="button" onClick={onCancel} className={secondaryButtonClass}>Annuler</button>
-                    <button type="submit" disabled={isUploading} className={`${primaryButtonClass} ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                        {isUploading ? 'Envoi...' : 'Sauvegarder'}
+                    <button type="submit" disabled={isUploading || isFetchingInfo} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        {isUploading ? 'Envoi...' : isFetchingInfo ? 'Recherche du statut...' : 'Sauvegarder'}
                     </button>
                 </div>
             </form>
@@ -846,8 +997,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 showStickyBar && (
                     <div className="fixed bottom-0 left-0 right-0 z-40 px-4 py-3 bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md border-t border-gray-200/50 dark:border-white/10 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] flex justify-end gap-3">
                         <button type="button" onClick={onCancel} className={secondaryButtonClass}>Annuler</button>
-                        <button type="button" onClick={() => bottomButtonsRef.current?.closest('form')?.requestSubmit()} disabled={isUploading} className={`${primaryButtonClass} ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                            {isUploading ? 'Envoi...' : 'Sauvegarder'}
+                        <button type="button" onClick={() => bottomButtonsRef.current?.closest('form')?.requestSubmit()} disabled={isUploading || isFetchingInfo} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                            {isUploading ? 'Envoi...' : isFetchingInfo ? 'Recherche du statut...' : 'Sauvegarder'}
                         </button>
                     </div>
                 )

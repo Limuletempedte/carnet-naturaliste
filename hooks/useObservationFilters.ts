@@ -137,7 +137,11 @@ export const useObservationFilters = (
                     const centerLon = parseOptionalNumber(filters.radiusCenterLon);
                     const radiusKm = parseOptionalNumber(filters.radiusKm);
                     if (centerLat === null || centerLon === null || radiusKm === null || radiusKm <= 0) {
-                        return true;
+                        return true; // filtre incomplet → inclure (flag geoFilterIncomplete ci-dessous)
+                    }
+                    // Valider les bornes des coordonnées
+                    if (centerLat < -90 || centerLat > 90 || centerLon < -180 || centerLon > 180) {
+                        return true; // coordonnées invalides → inclure tout
                     }
                     return distanceKm(centerLat, centerLon, obs.gps.lat, obs.gps.lon) <= radiusKm;
                 }
@@ -149,7 +153,7 @@ export const useObservationFilters = (
                     const rawMaxLon = parseOptionalNumber(filters.bboxMaxLon);
 
                     if (rawMinLat === null || rawMaxLat === null || rawMinLon === null || rawMaxLon === null) {
-                        return true;
+                        return true; // filtre incomplet → inclure (flag geoFilterIncomplete ci-dessous)
                     }
 
                     const minLat = Math.min(rawMinLat, rawMaxLat);
@@ -189,6 +193,22 @@ export const useObservationFilters = (
         return sortableItems;
     }, [additionalSorts, filters, observations, sortConfig]);
 
+    const geoFilterIncomplete = useMemo(() => {
+        const geoMode = filters.geoMode || 'none';
+        if (geoMode === 'radius') {
+            const lat = parseOptionalNumber(filters.radiusCenterLat);
+            const lon = parseOptionalNumber(filters.radiusCenterLon);
+            const km = parseOptionalNumber(filters.radiusKm);
+            return lat === null || lon === null || km === null || km <= 0
+                || lat < -90 || lat > 90 || lon < -180 || lon > 180;
+        }
+        if (geoMode === 'bbox') {
+            const vals = [filters.bboxMinLat, filters.bboxMaxLat, filters.bboxMinLon, filters.bboxMaxLon].map(parseOptionalNumber);
+            return vals.some(v => v === null);
+        }
+        return false;
+    }, [filters]);
+
     const availableYears = useMemo(() => {
         const years = new Set(
             observations
@@ -202,6 +222,7 @@ export const useObservationFilters = (
         sortConfig,
         requestSort,
         sortedAndFilteredObservations,
-        availableYears
+        availableYears,
+        geoFilterIncomplete
     };
 };

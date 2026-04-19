@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAccessibleDialog } from '../hooks/useAccessibleDialog';
 
 export interface StatsExportDialogState {
     startDate: string;
@@ -23,18 +24,21 @@ const StatsExportDialog: React.FC<StatsExportDialogProps> = ({
     onClose,
     onConfirm
 }) => {
+    const { dialogRef, dialogProps } = useAccessibleDialog({ isOpen, onClose, titleId: 'stats-export-dialog-title' });
+
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-            <div className="w-full max-w-xl bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
-                <h3 className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Export stats avancé</h3>
+            <div ref={dialogRef} {...dialogProps} className="w-full max-w-xl bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
+                <h3 id="stats-export-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Export stats avancé</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-5">Mode léger (sans images/logos) + plage de dates pour export ciblé.</p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                     <div>
-                        <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">Date début</label>
+                        <label htmlFor="stats-export-start-date" className="text-xs font-semibold text-gray-600 dark:text-gray-300">Date début</label>
                         <input
+                            id="stats-export-start-date"
                             type="date"
                             value={state.startDate}
                             onChange={(e) => onStateChange({ ...state, startDate: e.target.value })}
@@ -42,8 +46,9 @@ const StatsExportDialog: React.FC<StatsExportDialogProps> = ({
                         />
                     </div>
                     <div>
-                        <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">Date fin</label>
+                        <label htmlFor="stats-export-end-date" className="text-xs font-semibold text-gray-600 dark:text-gray-300">Date fin</label>
                         <input
+                            id="stats-export-end-date"
                             type="date"
                             value={state.endDate}
                             onChange={(e) => onStateChange({ ...state, endDate: e.target.value })}
@@ -64,6 +69,10 @@ const StatsExportDialog: React.FC<StatsExportDialogProps> = ({
                     </div>
                 </label>
 
+                {state.startDate && state.endDate && state.startDate > state.endDate && (
+                    <p role="alert" className="text-xs text-red-500 mb-3">La date de début doit être antérieure à la date de fin.</p>
+                )}
+
                 <div className="flex justify-end gap-3">
                     <button
                         onClick={onClose}
@@ -74,8 +83,8 @@ const StatsExportDialog: React.FC<StatsExportDialogProps> = ({
                     </button>
                     <button
                         onClick={onConfirm}
-                        disabled={isExporting}
-                        className={`px-3 py-2 rounded-lg text-sm font-semibold text-white ${isExporting ? 'bg-gray-400 cursor-not-allowed' : 'bg-nature-green hover:bg-green-700'}`}
+                        disabled={isExporting || (!!state.startDate && !!state.endDate && state.startDate > state.endDate)}
+                        className={`px-3 py-2 rounded-lg text-sm font-semibold text-white ${isExporting || (!!state.startDate && !!state.endDate && state.startDate > state.endDate) ? 'bg-gray-400 cursor-not-allowed' : 'bg-nature-green hover:bg-green-700'}`}
                     >
                         {isExporting ? 'Export...' : 'Lancer export'}
                     </button>

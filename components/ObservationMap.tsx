@@ -8,6 +8,7 @@ import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { SearchResult, searchAddress } from '../services/locationService';
 import { isoToFrDisplay } from '../utils/dateUtils';
+import { logger } from '../utils/logger';
 
 // Fix for default marker icon
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -30,14 +31,7 @@ interface ObservationMapProps {
     onEdit?: (id: string) => void;
 }
 
-const isSafeImageUrl = (value: string): boolean => {
-    try {
-        const url = new URL(value, window.location.origin);
-        return ['http:', 'https:', 'blob:'].includes(url.protocol);
-    } catch {
-        return false;
-    }
-};
+import { isSafeImageUrl } from '../utils/urlUtils';
 
 const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: string) => void): HTMLElement => {
     const root = document.createElement('div');
@@ -80,7 +74,7 @@ const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: stri
     details.appendChild(date);
 
     const location = document.createElement('p');
-    location.textContent = `Lieu: ${obs.location || obs.municipality}`;
+    location.textContent = `Lieu: ${obs.location || obs.municipality || 'Non renseigné'}`;
     details.appendChild(location);
 
     const count = document.createElement('p');
@@ -95,7 +89,8 @@ const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: stri
         btn.style.marginTop = '10px';
         btn.style.width = '100%';
         btn.style.padding = '6px 12px';
-        btn.style.backgroundColor = '#5D7B45';
+        // CO-23: couleur adaptee au mode sombre via la variable CSS partagee --map-accent (index.css)
+        btn.style.backgroundColor = 'var(--map-accent, #5D7B45)';
         btn.style.color = 'white';
         btn.style.border = 'none';
         btn.style.borderRadius = '8px';
@@ -123,6 +118,10 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
     const userAccuracyCircleRef = useRef<L.Circle | null>(null);
 
     const tileLayerRef = useRef<L.TileLayer | null>(null);
+    const onEditRef = useRef(onEdit);
+    const isDarkModeRef = useRef(isDarkMode);
+    onEditRef.current = onEdit;
+    isDarkModeRef.current = isDarkMode;
 
     const [userAccuracy, setUserAccuracy] = React.useState<number | null>(null);
     const [activeLayer, setActiveLayer] = React.useState<'auto' | 'osm' | 'satellite' | 'topo'>('auto');
@@ -234,25 +233,36 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
             }
         });
 
+        // PE-24: Cache divIcon by taxonomic group to avoid recreating identical icons
+        const iconCache = new Map<string, L.Icon>();
+
         observations.forEach(obs => {
-            if (typeof obs.gps.lat === 'number' && Number.isFinite(obs.gps.lat) && typeof obs.gps.lon === 'number' && Number.isFinite(obs.gps.lon)) {
+            if (obs.gps && typeof obs.gps.lat === 'number' && Number.isFinite(obs.gps.lat) && typeof obs.gps.lon === 'number' && Number.isFinite(obs.gps.lon)) {
                 const logo = TAXON_LOGOS[obs.taxonomicGroup as keyof typeof TAXON_LOGOS];
 
-                // Custom icon with taxon logo if available
+                // Custom icon with taxon logo if available (PE-24: cached per group)
                 let customIcon = DefaultIcon;
                 if (logo) {
-                    customIcon = L.divIcon({
-                        className: 'custom-div-icon',
-                        html: `<div style="background-color: white; border-radius: 50%; padding: 2px; border: 2px solid #5D7B45; width: 30px; height: 30px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
-                                <img src="${logo}" style="width: 20px; height: 20px; object-fit: contain;" />
-                               </div>`,
-                        iconSize: [30, 30],
-                        iconAnchor: [15, 15]
-                    }) as L.Icon;
+                    const cached = iconCache.get(obs.taxonomicGroup);
+                    if (cached) {
+                        customIcon = cached;
+                    } else {
+                        // CO-23: bordure du divIcon adaptee au mode sombre via var(--map-accent)
+                        customIcon = L.divIcon({
+                            className: 'custom-div-icon',
+                            html: `<div style="background-color: white; border-radius: 50%; padding: 2px; border: 2px solid var(--map-accent, #5D7B45); width: 30px; height: 30px; display: flex; justify-content: center; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+                                    <img src="${logo}" alt="${obs.taxonomicGroup}" style="width: 20px; height: 20px; object-fit: contain;" />
+                                   </div>`,
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15]
+                        }) as L.Icon;
+                        iconCache.set(obs.taxonomicGroup, customIcon);
+                    }
                 }
 
                 const marker = L.marker([obs.gps.lat, obs.gps.lon], { icon: customIcon });
-                marker.bindPopup(buildPopupContent(obs, isDarkMode, onEdit));
+                // PE-22: Lazy popup — DOM created only when popup is opened
+                marker.bindPopup(() => buildPopupContent(obs, isDarkModeRef.current, onEditRef.current));
 
                 // Hover effect
                 marker.on('mouseover', function (this: L.Marker) {
@@ -275,7 +285,8 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
         return () => {
             map.removeLayer(markers);
         };
-    }, [observations, isDarkMode, onEdit]);
+    // PE-23: onEdit and isDarkMode stored in refs — only observations triggers marker recreation
+    }, [observations]);
 
     const [searchQuery, setSearchQuery] = React.useState('');
     const [searchResults, setSearchResults] = React.useState<SearchResult[]>([]);
@@ -310,8 +321,8 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 onToast('info', 'Aucun résultat trouvé pour cette recherche.');
             }
         } catch (error) {
-            console.error(error);
-            onToast('warning', (error as Error).message || "Erreur lors de la recherche d'adresse.");
+            logger.error(error);
+            onToast('warning', (error instanceof Error && error.message) ? error.message : "Erreur lors de la recherche d'adresse.");
         } finally {
             setIsSearching(false);
         }
@@ -395,7 +406,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 }).addTo(mapRef.current);
             },
             (error) => {
-                console.error("Erreur de géolocalisation:", error);
+                logger.error("Erreur de géolocalisation:", error);
                 onToast('warning', "Impossible de vous localiser. Vérifiez vos autorisations.");
             },
             HIGH_ACCURACY_OPTIONS
@@ -403,7 +414,8 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
     };
 
     return (
-        <div className={`relative w-full rounded-3xl shadow-ios border border-white/20 dark:border-white/5 overflow-hidden group ${isMobileView ? 'h-[calc(100vh-200px)]' : 'h-[600px]'}`}>
+        // CO-22: hauteur fluide en desktop pour ne pas deborder sur petits ecrans (laptop 13" 768px)
+        <div className={`relative w-full rounded-3xl shadow-ios border border-white/20 dark:border-white/5 overflow-hidden group ${isMobileView ? 'h-[calc(100vh-200px)]' : 'h-[min(600px,calc(100vh-200px))]'}`}>
             <div ref={mapContainerRef} className="h-full w-full" />
 
             {/* Search Overlay */}

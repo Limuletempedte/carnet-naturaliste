@@ -115,6 +115,37 @@ export enum WeatherCondition {
     FROST = 'Gel'
 }
 
+export enum Habitat {
+    UNKNOWN = 'Non renseigné',
+    FOREST_DECIDUOUS = 'Forêt de feuillus',
+    FOREST_CONIFEROUS = 'Forêt de conifères',
+    FOREST_MIXED = 'Forêt mixte',
+    GRASSLAND = 'Prairie',
+    WETLAND = 'Zone humide',
+    FRESHWATER = 'Eau douce',
+    COASTAL = 'Littoral',
+    MARINE = 'Milieu marin',
+    AGRICULTURAL = 'Milieu agricole',
+    URBAN = 'Milieu urbain',
+    MOUNTAIN = 'Montagne',
+    CAVE = 'Grotte/souterrain',
+    CLIFF_ROCK = 'Falaise/rocher',
+    OTHER = 'Autre'
+}
+
+export enum Phenology {
+    UNKNOWN = 'Non renseigné',
+    VEGETATIVE = 'Végétatif',
+    FLOWER_BUD = 'Bouton floral',
+    FLOWERING = 'En fleur',
+    FRUITING = 'En fruit',
+    SENESCENT = 'Sénescent',
+    DORMANT = 'Dormant',
+    MIGRATION = 'En migration',
+    BREEDING = 'En reproduction',
+    MOULTING = 'En mue'
+}
+
 export interface Observation {
     id: string;
     speciesName: string;
@@ -144,6 +175,11 @@ export interface Observation {
     photo?: string; // URL Supabase Storage (ou base64 temporaire avant upload)
     sound?: string; // URL Supabase Storage (ou base64 temporaire avant upload)
     wikipediaImage?: string; // URL from Wikipedia
+    createdAt?: string; // ISO 8601 — rempli par le serveur (SR-14)
+    updatedAt?: string; // ISO 8601 — rempli par le serveur (SR-14)
+    habitat?: Habitat; // VP-04
+    phenology?: Phenology; // VP-08
+    observers?: string[]; // VP-05 — noms libres séparés, ex: ['Jean D.', 'Marie L.']
 }
 
 export enum View {
@@ -152,5 +188,9 @@ export enum View {
     MAP,
     STATS,
     GALLERY,
-    CALENDAR
+    CALENDAR,
+    PRIVACY = 7,
+    TERMS = 8,
+    LEGAL_NOTICES = 9,
+    HELP = 10,
 }

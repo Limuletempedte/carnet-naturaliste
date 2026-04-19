@@ -1,4 +1,9 @@
 import { Observation, TaxonomicGroup } from '../types';
+import { safeGet, safeSet } from './safeStorage';
+import { logger } from './logger';
+
+export const EARNED_BADGES_STORAGE_KEY = 'earned-badges-v1';
+export const BADGES_SEED_FLAG_KEY = 'badges-v1-seeded';
 
 export interface BadgeDefinition {
     id: string;
@@ -87,3 +92,54 @@ export const BADGES_DEFINITIONS: BadgeDefinition[] = [
         color: 'bg-indigo-100 text-indigo-800 border-indigo-200'
     }
 ];
+
+// VP-20 — détection des badges nouvellement débloqués + persistance
+
+export const computeEarnedBadgeIds = (observations: Observation[]): Set<string> => {
+    const earned = new Set<string>();
+    BADGES_DEFINITIONS.forEach(def => {
+        if (def.condition(observations)) earned.add(def.id);
+    });
+    return earned;
+};
+
+export const getPreviouslyEarnedBadgeIds = (): Set<string> => {
+    const raw = safeGet(EARNED_BADGES_STORAGE_KEY);
+    if (!raw) return new Set();
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return new Set();
+        return new Set(parsed.filter((v): v is string => typeof v === 'string'));
+    } catch (err) {
+        logger.warn('[badgeUtils] earned-badges-v1 corrompu, reset', err);
+        return new Set();
+    }
+};
+
+export const setPreviouslyEarnedBadgeIds = (ids: Set<string>): void => {
+    try {
+        safeSet(EARNED_BADGES_STORAGE_KEY, JSON.stringify(Array.from(ids)));
+    } catch {
+        // safeSet a déjà logué / dispatché storage-quota-exceeded
+    }
+};
+
+export const isBadgesSeeded = (): boolean => safeGet(BADGES_SEED_FLAG_KEY) === 'true';
+
+export const markBadgesSeeded = (): void => {
+    try {
+        safeSet(BADGES_SEED_FLAG_KEY, 'true');
+    } catch {
+        // non bloquant
+    }
+};
+
+export const detectNewlyEarnedBadges = (observations: Observation[]): BadgeDefinition[] => {
+    const earned = computeEarnedBadgeIds(observations);
+    const previous = getPreviouslyEarnedBadgeIds();
+    const newly: BadgeDefinition[] = [];
+    BADGES_DEFINITIONS.forEach(def => {
+        if (earned.has(def.id) && !previous.has(def.id)) newly.push(def);
+    });
+    return newly;
+};

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
+import '../calendar.css';
 import { Observation } from '../types';
 import ObservationRow from './ObservationRow';
 import { dateToIsoLocal } from '../utils/dateUtils';
@@ -51,7 +52,8 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
         return null;
     };
 
-    const selectedObservations = date instanceof Date ? getObservationsForDate(date) : [];
+    const selectedDate = Array.isArray(date) ? date[0] : date;
+    const selectedObservations = selectedDate instanceof Date ? getObservationsForDate(selectedDate) : [];
 
     return (
         <div className={`space-y-8 animate-fadeIn ${isMobileView ? 'pb-24' : ''}`}>
@@ -105,82 +107,6 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
                     )}
                 </div>
             )}
-            <style>{`
-                .react-calendar-custom {
-                    width: 100%;
-                    background: transparent;
-                    font-family: 'Inter', sans-serif;
-                }
-                .react-calendar__navigation {
-                    margin-bottom: 1rem;
-                }
-                .react-calendar__navigation button {
-                    color: #1C1C1E;
-                    min-width: 44px;
-                    background: none;
-                    font-size: 16px;
-                    font-weight: 600;
-                    border-radius: 8px;
-                }
-                .dark .react-calendar__navigation button {
-                    color: #F2F2F7;
-                }
-                .react-calendar__navigation button:enabled:hover,
-                .react-calendar__navigation button:enabled:focus {
-                    background-color: #F2F2F7;
-                }
-                .dark .react-calendar__navigation button:enabled:hover,
-                .dark .react-calendar__navigation button:enabled:focus {
-                    background-color: #2C2C2E;
-                }
-                .react-calendar__month-view__weekdays {
-                    text-transform: uppercase;
-                    font-weight: bold;
-                    font-size: 0.75em;
-                    color: #8E8E93;
-                    margin-bottom: 0.5rem;
-                }
-                .react-calendar__tile {
-                    padding: 10px 6px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    color: #1C1C1E;
-                }
-                .dark .react-calendar__tile {
-                    color: #F2F2F7;
-                }
-                .react-calendar__tile:enabled:hover,
-                .react-calendar__tile:enabled:focus {
-                    background: #F2F2F7;
-                    border-radius: 12px;
-                    color: #1C1C1E;
-                }
-                .dark .react-calendar__tile:enabled:hover,
-                .dark .react-calendar__tile:enabled:focus {
-                    background: #2C2C2E;
-                    color: #F2F2F7;
-                }
-                .react-calendar__tile--now {
-                    background: #FFD60A !important;
-                    border-radius: 12px;
-                    color: #000000 !important;
-                    font-weight: bold;
-                }
-                .react-calendar__tile--active {
-                    background: #34C759 !important;
-                    color: white !important;
-                    border-radius: 12px;
-                    font-weight: bold;
-                    box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);
-                }
-                .react-calendar__tile--active:enabled:hover,
-                .react-calendar__tile--active:enabled:focus {
-                    background: #34C759 !important;
-                }
-                .dark .react-calendar__month-view__days__day--weekend {
-                    color: #FF3B30;
-                }
-            `}</style>
         </div>
     );
 };

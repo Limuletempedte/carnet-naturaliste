@@ -1,3 +1,19 @@
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 300 700;
+    font-display: swap;
+    src: url('/fonts/inter-variable-latin.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Merriweather';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('/fonts/merriweather-700-latin.woff2') format('woff2');
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,12 +23,19 @@
     line-height: 1.5;
     font-weight: 400;
     color-scheme: light dark;
-    color: rgba(255, 255, 255, 0.87);
-    background-color: #242424;
+    /* CO-25: suppression des color/background-color hardcodes (#242424) qui
+       creaient un flash sombre avant le chargement React. Tailwind body bg gere. */
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* CO-23: variable CSS partagee pour la teinte verte de la carte (popups, divIcon)
+       afin que les surfaces injectees en HTML string puissent suivre le mode sombre. */
+    --map-accent: #5D7B45;
+}
+
+.dark {
+    --map-accent: #8FAD7A;
 }
 
 @keyframes fadeIn {
@@ -42,6 +65,11 @@
 .scrollbar-thin::-webkit-scrollbar-thumb {
     background-color: #5D7B45;
     border-radius: 20px;
+}
+
+/* CO-24: scrollbar adaptative en mode sombre (vert plus clair pour le contraste) */
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: #8FAD7A;
 }
 
 body {
@@ -109,4 +137,80 @@ body {
 .dark .glass-input {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Accessibilite — indicateur focus global */
+*:focus-visible {
+    outline: 2px solid #1B8A2F;
+    outline-offset: 2px;
+}
+
+/* Accessibilite — classe screen-reader-only */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+.sr-only-focusable:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+}
+
+/* Accessibilite — reduction de mouvement */
+@media (prefers-reduced-motion: reduce) {
+    .animate-fadeIn {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+
+    .animate-blob {
+        animation: none !important;
+        transform: none !important;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* CO-27: respecte la preference utilisateur "transparence reduite".
+   Le backdrop-filter est GPU-intensif et peut declencher des nausees ou
+   compliquer la lecture pour certains utilisateurs. */
+@media (prefers-reduced-transparency: reduce) {
+
+    .glass-panel,
+    .glass-input,
+    [class*="backdrop-blur"] {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+}
+
+/* CO-21: padding bas safe-area pour iPhone notch / Home indicator.
+   Utilise par BottomNavigation et toute surface fixe en bas de l'ecran. */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
 }

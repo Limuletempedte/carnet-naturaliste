@@ -449,8 +449,8 @@ describe('storageService legacy schema fallback', () => {
             unidentifiedCount: 0
         };
         localStorage.setItem('offline_sync_queue:user-1', JSON.stringify([
-            { id: 'q1', action: 'INSERT', payload: tempObservation, timestamp: 1 },
-            { id: 'q2', action: 'UPDATE', payload: persistedObservation, timestamp: 2 }
+            { id: 'q1', action: 'INSERT', payload: tempObservation, timestamp: Date.now() },
+            { id: 'q2', action: 'UPDATE', payload: persistedObservation, timestamp: Date.now() + 1 }
         ]));
 
         const result = await storageService.processOfflineQueue();
@@ -486,8 +486,8 @@ describe('storageService legacy schema fallback', () => {
         storageService.setStorageNamespace('user-1');
 
         const queue = [
-            { id: 'q1', action: 'UPDATE', payload: makeObservation('123e4567-e89b-42d3-a456-426614174000'), timestamp: 1 },
-            { id: 'q2', action: 'UPDATE', payload: makeObservation('123e4567-e89b-42d3-a456-426614174001'), timestamp: 2 }
+            { id: 'q1', action: 'UPDATE', payload: makeObservation('123e4567-e89b-42d3-a456-426614174000'), timestamp: Date.now() },
+            { id: 'q2', action: 'UPDATE', payload: makeObservation('123e4567-e89b-42d3-a456-426614174001'), timestamp: Date.now() + 1 }
         ];
         localStorage.setItem('offline_sync_queue:user-1', JSON.stringify(queue));
 
@@ -523,7 +523,7 @@ describe('storageService.bulkUpsertObservationsInCache', () => {
         const rawCache = localStorage.getItem(cacheKey);
         const parsed = JSON.parse(rawCache || '[]');
 
-        expect(setItemSpy).toHaveBeenCalledTimes(1);
+        expect(setItemSpy).toHaveBeenCalledTimes(2); // cache data + cache timestamp
         expect(parsed).toHaveLength(2);
         expect(parsed.find((o: any) => o.id === 'obs1')?.speciesName).toBe('Updated A');
         expect(parsed.find((o: any) => o.id === 'obs2')?.speciesName).toBe('Mésange');
@@ -557,5 +557,319 @@ describe('storageService.uploadSound', () => {
         const file = new Blob(['audio-data'], { type: 'audio/mpeg' });
 
         await expect(storageService.uploadSound(file)).rejects.toThrow("Impossible d'envoyer un son en mode hors-ligne");
+    });
+
+    it('rejects non-audio MIME types (SE-02)', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const storageService = await import('../services/storageService');
+        const file = new Blob(['not-audio'], { type: 'application/pdf' });
+
+        await expect(storageService.uploadSound(file)).rejects.toThrow('Type audio non autorisé');
+    });
+});
+
+describe('storageService cache TTL (VP-07)', () => {
+    it('returns cached observations when cache is fresh', async () => {
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        const cacheKey = 'local_observations_cache:user-1';
+        localStorage.setItem(cacheKey, JSON.stringify([makeObservation('obs1')]));
+        localStorage.setItem(cacheKey + '_ts', String(Date.now()));
+
+        vi.stubGlobal('navigator', { onLine: false });
+        orderMock.mockRejectedValue(new Error('offline'));
+
+        const result = await storageService.getObservations();
+        expect(result.observations).toHaveLength(1);
+        expect(result.source).toBe('cache');
+    });
+
+    it('returns empty cache when TTL has expired (VP-07)', async () => {
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        const cacheKey = 'local_observations_cache:user-1';
+        localStorage.setItem(cacheKey, JSON.stringify([makeObservation('obs1')]));
+        // Set timestamp to 91 days ago (beyond the 90-day TTL)
+        const ninetyOneDaysAgo = Date.now() - 91 * 24 * 60 * 60 * 1000;
+        localStorage.setItem(cacheKey + '_ts', String(ninetyOneDaysAgo));
+
+        vi.stubGlobal('navigator', { onLine: false });
+        orderMock.mockRejectedValue(new Error('offline'));
+
+        const result = await storageService.getObservations();
+        expect(result.observations).toHaveLength(0);
+        expect(localStorage.getItem(cacheKey)).toBeNull();
+        expect(localStorage.getItem(cacheKey + '_ts')).toBeNull();
+    });
+});
+
+describe('storageService SR-08 : fallback queue offline sur erreur Supabase récupérable', () => {
+    it('saveObservation : met en queue et dispatche supabase-recoverable-error sur erreur 503', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        insertSingleMock.mockResolvedValueOnce({ data: null, error: { message: 'Service unavailable', status: 503 } });
+
+        const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+        const observation = { ...makeObservation('src-1'), id: '' };
+        const result = await storageService.saveObservation(observation);
+
+        expect(result.id.startsWith('temp-')).toBe(true);
+        const snapshot = storageService.getOfflineQueueSnapshot();
+        expect(snapshot.length).toBe(1);
+        expect(snapshot[0].action).toBe('INSERT');
+
+        const event = dispatchSpy.mock.calls.find(([e]) =>
+            e instanceof CustomEvent && e.type === 'supabase-recoverable-error'
+        );
+        expect(event).toBeDefined();
+        dispatchSpy.mockRestore();
+    });
+
+    it('saveObservation : throw sur erreur métier (non récupérable)', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        insertSingleMock.mockResolvedValueOnce({ data: null, error: { message: 'permission denied', code: '42501' } });
+
+        await expect(storageService.saveObservation(makeObservation('src-2'))).rejects.toThrow('permission denied');
+    });
+
+    it('updateObservation : met en queue sur TypeError réseau', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        updateSelectMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+        const obs = { ...makeObservation('123e4567-e89b-42d3-a456-426614174000') };
+        await storageService.updateObservation(obs);
+
+        const snapshot = storageService.getOfflineQueueSnapshot();
+        expect(snapshot.some(i => i.action === 'UPDATE')).toBe(true);
+    });
+
+    it('deleteObservation : met en queue sur erreur 503', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        deleteSelectMock.mockResolvedValueOnce({ data: null, error: { message: 'gateway timeout', status: 504 } });
+
+        await storageService.deleteObservation('123e4567-e89b-42d3-a456-426614174000');
+
+        const snapshot = storageService.getOfflineQueueSnapshot();
+        expect(snapshot.some(i => i.action === 'DELETE')).toBe(true);
+    });
+});
+
+describe('storageService corruption detection (SR-09)', () => {
+    it('dispatches storage-corruption-detected when the queue JSON is invalid', async () => {
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        localStorage.setItem('offline_sync_queue:user-1', '{not-json}');
+
+        const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+        const snapshot = storageService.getOfflineQueueSnapshot();
+
+        expect(snapshot).toEqual([]);
+        const corruptionEvent = dispatchSpy.mock.calls.find(([event]) =>
+            event instanceof CustomEvent && event.type === 'storage-corruption-detected'
+        );
+        expect(corruptionEvent).toBeDefined();
+        const detail = corruptionEvent ? (corruptionEvent[0] as CustomEvent).detail : null;
+        expect(detail).toEqual({ scope: 'queue' });
+        dispatchSpy.mockRestore();
+    });
+
+    it('dispatches storage-corruption-detected when the cache JSON is invalid', async () => {
+        vi.stubGlobal('navigator', { onLine: false });
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        localStorage.setItem('local_observations_cache:user-1', '{{not-json');
+
+        const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+        const result = await storageService.getObservations();
+
+        expect(result.observations).toEqual([]);
+        const corruptionEvent = dispatchSpy.mock.calls.find(([event]) =>
+            event instanceof CustomEvent && event.type === 'storage-corruption-detected'
+        );
+        expect(corruptionEvent).toBeDefined();
+        const detail = corruptionEvent ? (corruptionEvent[0] as CustomEvent).detail : null;
+        expect(detail).toEqual({ scope: 'cache' });
+        dispatchSpy.mockRestore();
+    });
+});
+
+describe('storageService SR-14 : timestamps serveur exposés', () => {
+    it('mapToObservation expose createdAt et updatedAt quand présents dans la row', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        orderMock.mockResolvedValue({
+            data: [{
+                id: '123e4567-e89b-42d3-a456-426614174000',
+                species_name: 'Mésange',
+                latin_name: '',
+                taxonomic_group: 'Oiseaux',
+                date: '2026-03-01',
+                time: '12:00',
+                count: 1,
+                location: '',
+                gps_lat: null,
+                gps_lon: null,
+                municipality: '',
+                department: '',
+                country: 'France',
+                altitude: null,
+                comment: '',
+                status: 'NE',
+                atlas_code: '',
+                protocol: 'Opportuniste',
+                sexe: 'Non renseigné',
+                age: 'Non renseigné',
+                observation_condition: 'Non renseigné',
+                comportement: 'Non renseigné',
+                created_at: '2026-03-01T12:00:00Z',
+                updated_at: '2026-03-02T08:30:00Z',
+            }],
+            error: null,
+        });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+        const result = await storageService.getObservations();
+
+        expect(result.observations[0].createdAt).toBe('2026-03-01T12:00:00Z');
+        expect(result.observations[0].updatedAt).toBe('2026-03-02T08:30:00Z');
+    });
+
+    it('mapToObservation laisse createdAt/updatedAt undefined quand absents', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        orderMock.mockResolvedValue({
+            data: [{
+                id: '123e4567-e89b-42d3-a456-426614174001',
+                species_name: 'Mésange',
+                latin_name: '',
+                taxonomic_group: 'Oiseaux',
+                date: '2026-03-01',
+                time: '12:00',
+                count: 1,
+                location: '',
+                gps_lat: null,
+                gps_lon: null,
+                municipality: '',
+                department: '',
+                country: 'France',
+                altitude: null,
+                comment: '',
+                status: 'NE',
+                atlas_code: '',
+                protocol: 'Opportuniste',
+                sexe: 'Non renseigné',
+                age: 'Non renseigné',
+                observation_condition: 'Non renseigné',
+                comportement: 'Non renseigné',
+            }],
+            error: null,
+        });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+        const result = await storageService.getObservations();
+
+        expect(result.observations[0].createdAt).toBeUndefined();
+        expect(result.observations[0].updatedAt).toBeUndefined();
+    });
+});
+
+describe('storageService thème 12 : habitat, phenology, observers (VP-04, VP-05, VP-08)', () => {
+    it('mapToObservation expose habitat, phenology et observers quand présents dans la row', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        orderMock.mockResolvedValue({
+            data: [{
+                id: '123e4567-e89b-42d3-a456-426614174010',
+                species_name: 'Mésange bleue',
+                latin_name: 'Cyanistes caeruleus',
+                taxonomic_group: 'Oiseaux',
+                date: '2026-04-20',
+                time: '09:15',
+                count: 2,
+                location: 'Forêt de Fontainebleau',
+                gps_lat: 48.4,
+                gps_lon: 2.7,
+                municipality: 'Fontainebleau',
+                department: '77',
+                country: 'France',
+                altitude: 80,
+                comment: '',
+                status: 'LC',
+                atlas_code: '',
+                protocol: 'Opportuniste',
+                sexe: 'Non renseigné',
+                age: 'Adulte',
+                observation_condition: 'Vu posé',
+                comportement: 'Non renseigné',
+                habitat: 'Forêt de feuillus',
+                phenology: 'En reproduction',
+                observers: ['Alice Dupont', 'Bob Martin'],
+            }],
+            error: null,
+        });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+        const result = await storageService.getObservations();
+
+        expect(result.observations[0].habitat).toBe('Forêt de feuillus');
+        expect(result.observations[0].phenology).toBe('En reproduction');
+        expect(result.observations[0].observers).toEqual(['Alice Dupont', 'Bob Martin']);
+    });
+
+    it('mapToObservation laisse habitat/phenology/observers undefined quand absents ou vides', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        orderMock.mockResolvedValue({
+            data: [{
+                id: '123e4567-e89b-42d3-a456-426614174011',
+                species_name: 'Mésange',
+                latin_name: '',
+                taxonomic_group: 'Oiseaux',
+                date: '2026-04-20',
+                time: '09:15',
+                count: 1,
+                location: '',
+                gps_lat: null,
+                gps_lon: null,
+                municipality: '',
+                department: '',
+                country: 'France',
+                altitude: null,
+                comment: '',
+                status: 'NE',
+                atlas_code: '',
+                protocol: 'Opportuniste',
+                sexe: 'Non renseigné',
+                age: 'Non renseigné',
+                observation_condition: 'Non renseigné',
+                comportement: 'Non renseigné',
+                habitat: null,
+                phenology: null,
+                observers: [],
+            }],
+            error: null,
+        });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+        const result = await storageService.getObservations();
+
+        expect(result.observations[0].habitat).toBeUndefined();
+        expect(result.observations[0].phenology).toBeUndefined();
+        expect(result.observations[0].observers).toBeUndefined();
     });
 });

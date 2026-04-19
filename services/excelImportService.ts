@@ -1,7 +1,34 @@
-import * as XLSX from 'xlsx';
-import { isUuid } from '../utils/uuidUtils';
+import { isUuid, generateUUID } from '../utils/uuidUtils';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition } from '../types';
 import { dateToIsoLocal, isIsoDateString } from '../utils/dateUtils';
+import { logger } from '../utils/logger';
+
+// Lazy-loaded ExcelJS module (SE-13: replaced vulnerable xlsx with exceljs)
+let _ExcelJS: typeof import('exceljs') | null = null;
+const loadExcelJS = async () => {
+    if (!_ExcelJS) _ExcelJS = await import('exceljs');
+    return _ExcelJS;
+};
+
+/** Normalize ExcelJS cell value to a plain JS value */
+const normalizeCellValue = (value: unknown): unknown => {
+    if (value === null || value === undefined) return '';
+    if (value instanceof Date) return value;
+    if (typeof value === 'object' && value !== null) {
+        if ('result' in value) return (value as { result: unknown }).result;
+        if ('richText' in value) {
+            return (value as { richText: Array<{ text: string }> }).richText
+                .map(r => r.text).join('');
+        }
+    }
+    return value;
+};
+
+/** Convert Excel serial date number to JS Date */
+const excelSerialToDate = (serial: number): Date => {
+    // Excel epoch: Jan 0, 1900 (with Lotus 1-2-3 leap year bug)
+    return new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+};
 
 // ─── Import Report Types ────────────────────────────────────────────────────
 
@@ -152,6 +179,7 @@ const hasAnyAlias = (normalizedHeaders: Set<string>, aliases: string[]): boolean
 // ─── Main Parse Function ────────────────────────────────────────────────────
 
 export const parseExcel = async (file: File): Promise<ImportResult> => {
+    const ExcelJS = await loadExcelJS();
     return new Promise((resolve) => {
         let settled = false;
         let timeoutId: number | null = null;
@@ -165,7 +193,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
         };
 
         if (file.size > MAX_IMPORT_FILE_BYTES) {
-            console.warn(`[security][excel-import] Import bloqué: fichier trop volumineux (${file.size} bytes).`);
+            logger.warn(`[security][excel-import] Import bloqué: fichier trop volumineux (${file.size} bytes).`);
             safeResolve(createBlockingResult(
                 `Le fichier dépasse la taille maximale autorisée (${Math.round(MAX_IMPORT_FILE_BYTES / (1024 * 1024))} Mo).`,
                 `${file.name} (${file.size} bytes)`
@@ -173,37 +201,63 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
             return;
         }
 
+        const reader = new FileReader();
+
         timeoutId = window.setTimeout(() => {
-            console.warn(`[security][excel-import] Import interrompu après ${IMPORT_PARSE_TIMEOUT_MS}ms.`);
+            logger.warn(`[security][excel-import] Import interrompu après ${IMPORT_PARSE_TIMEOUT_MS}ms.`);
+            reader.abort();
             safeResolve(createBlockingResult(
                 'Le parsing du fichier a expiré (timeout). Réduisez la taille du fichier ou découpez-le.',
                 file.name
             ));
         }, IMPORT_PARSE_TIMEOUT_MS);
 
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const data = e.target?.result;
-                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-                const sheetName = workbook.SheetNames[0];
-                if (!sheetName) {
+                if (!data || !(data instanceof ArrayBuffer)) {
+                    safeResolve(createBlockingResult('Impossible de lire le fichier Excel.', file.name));
+                    return;
+                }
+
+                const workbook = new ExcelJS.Workbook();
+                await workbook.xlsx.load(data);
+
+                const worksheet = workbook.worksheets[0];
+                if (!worksheet || worksheet.rowCount === 0) {
                     safeResolve(createBlockingResult('Aucune feuille trouvée dans le fichier Excel.', file.name));
                     return;
                 }
 
-                const worksheet = workbook.Sheets[sheetName];
-                if (!worksheet) {
-                    safeResolve(createBlockingResult('Feuille Excel introuvable ou illisible.', sheetName));
+                // Extract headers from first row
+                const headerRow = worksheet.getRow(1);
+                const headers: string[] = [];
+                headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                    headers[colNumber] = String(normalizeCellValue(cell.value) ?? '').trim();
+                });
+
+                if (headers.length === 0) {
+                    safeResolve(createBlockingResult('Feuille Excel introuvable ou illisible.', file.name));
                     return;
                 }
 
-                const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
-                const rawHeaders = Array.from(new Set(rawRows.flatMap(row => Object.keys(row))));
+                // Convert rows to array of objects (like xlsx sheet_to_json with defval: '')
+                const rawRows: Record<string, unknown>[] = [];
+                for (let rowIdx = 2; rowIdx <= worksheet.rowCount; rowIdx++) {
+                    const row = worksheet.getRow(rowIdx);
+                    const record: Record<string, unknown> = {};
+                    headers.forEach((header, colIdx) => {
+                        if (header) {
+                            record[header] = normalizeCellValue(row.getCell(colIdx).value);
+                        }
+                    });
+                    rawRows.push(record);
+                }
+
+                const rawHeaders = headers.filter(h => h !== '' && h !== undefined);
 
                 if (rawHeaders.some(isDangerousObjectKey)) {
-                    console.warn('[security][excel-import] En-têtes potentiellement dangereux détectés, import rejeté.');
+                    logger.warn('[security][excel-import] En-têtes potentiellement dangereux détectés, import rejeté.');
                     safeResolve(createBlockingResult(
                         'Le fichier contient des en-têtes non autorisés.',
                         rawHeaders.join(', ')
@@ -212,7 +266,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                 }
 
                 if (rawHeaders.length > MAX_IMPORT_COLUMNS) {
-                    console.warn(`[security][excel-import] Import bloqué: ${rawHeaders.length} colonnes détectées.`);
+                    logger.warn(`[security][excel-import] Import bloqué: ${rawHeaders.length} colonnes détectées.`);
                     safeResolve(createBlockingResult(
                         `Le fichier contient trop de colonnes (${rawHeaders.length}, max: ${MAX_IMPORT_COLUMNS}).`,
                         file.name
@@ -224,7 +278,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                 const hasSpeciesColumn = hasAnyAlias(normalizedHeaders, HEADER_ALIASES.speciesName);
                 const hasDateColumn = hasAnyAlias(normalizedHeaders, HEADER_ALIASES.date);
                 if (!hasSpeciesColumn || !hasDateColumn) {
-                    console.warn('[security][excel-import] Import bloqué: colonnes obligatoires manquantes.');
+                    logger.warn('[security][excel-import] Import bloqué: colonnes obligatoires manquantes.');
                     safeResolve(createBlockingResult(
                         "Colonnes obligatoires manquantes (au minimum: nom d'espèce et date).",
                         file.name
@@ -274,7 +328,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                             idCollisions++;
                             warnings.push({ row: rowNum, field: 'ID', message: 'ID en doublon, nouveau UUID généré', original: id, applied: '(nouveau UUID)' });
                         }
-                        id = crypto.randomUUID();
+                        id = generateUUID();
                     }
                     seenIds.add(id);
 
@@ -341,7 +395,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                         warnings.push({
                             row: rowNum,
                             field: 'Répartition',
-                            message: 'Somme mâles/femelles/non identifiés différente du total, répartition ignorée',
+                            message: `Somme mâles(${safeMaleCount ?? 0})+femelles(${safeFemaleCount ?? 0})+indét.(${safeUnidentifiedCount ?? 0})=${breakdownSum} ≠ total(${safeCount}), répartition ignorée`,
                             original: `${safeMaleCount ?? ''}/${safeFemaleCount ?? ''}/${safeUnidentifiedCount ?? ''}`,
                             applied: '(répartition vidée)'
                         });
@@ -391,7 +445,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     }
                 });
             } catch (error) {
-                console.error("Excel parse error:", error);
+                logger.error("Excel parse error:", error);
                 safeResolve(createBlockingResult(
                     "Impossible de lire le fichier Excel (format invalide ou fichier corrompu).",
                     error instanceof Error ? error.message : String(error)
@@ -409,7 +463,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
 // ─── Generic Enum Mapper (accent/case insensitive + synonyms) ───────────────
 
 function mapEnum<T extends string>(
-    value: any,
+    value: unknown,
     enumObj: Record<string, T>,
     synonyms: Record<string, T>,
     fallback: T,
@@ -522,7 +576,7 @@ const TAXON_KEYWORDS: Array<{ keywords: string[]; group: TaxonomicGroup }> = [
     { keywords: ['botanique', 'plante', 'flore', 'arbuste', 'fleur', 'fougere'], group: TaxonomicGroup.BOTANY },
 ];
 
-const mapTaxonomicGroup = (value: any, rowNum: number, warnings: ImportWarning[]): TaxonomicGroup => {
+const mapTaxonomicGroup = (value: unknown, rowNum: number, warnings: ImportWarning[]): TaxonomicGroup => {
     if (value === undefined || value === null || String(value).trim() === '') {
         warnings.push({ row: rowNum, field: 'Groupe taxonomique', message: 'Groupe vide, fallback Autre', original: '', applied: TaxonomicGroup.OTHER });
         return TaxonomicGroup.OTHER;
@@ -552,7 +606,7 @@ const mapTaxonomicGroup = (value: any, rowNum: number, warnings: ImportWarning[]
 
 // ─── Time Parser ────────────────────────────────────────────────────────────
 
-const parseTime = (value: any): string => {
+const parseTime = (value: unknown): string => {
     if (!value && value !== 0) return '12:00';
 
     // Handle JS Date object (from cellDates: true)
@@ -589,7 +643,7 @@ const isValidIsoDate = (value: string): boolean => {
     return isIsoDateString(value);
 };
 
-const parseDate = (excelDate: any, rowNum: number, warnings: ImportWarning[]): string => {
+const parseDate = (excelDate: unknown, rowNum: number, warnings: ImportWarning[]): string => {
     if (!excelDate) return todayIso();
 
     // Handle JS Date object (from cellDates: true)
@@ -603,12 +657,12 @@ const parseDate = (excelDate: any, rowNum: number, warnings: ImportWarning[]): s
 
     // Handle Excel serial date (fallback)
     if (typeof excelDate === 'number') {
-        const parsed = XLSX.SSF.parse_date_code(excelDate);
-        if (!parsed || !parsed.y || !parsed.m || !parsed.d) {
+        const jsDate = excelSerialToDate(excelDate);
+        if (Number.isNaN(jsDate.getTime()) || jsDate.getUTCFullYear() < 1900) {
             warnings.push({ row: rowNum, field: 'Date', message: 'Date invalide, fallback date du jour', original: String(excelDate), applied: todayIso() });
             return todayIso();
         }
-        return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+        return `${jsDate.getUTCFullYear()}-${String(jsDate.getUTCMonth() + 1).padStart(2, '0')}-${String(jsDate.getUTCDate()).padStart(2, '0')}`;
     }
 
     // Handle string date (DD/MM/YYYY or YYYY-MM-DD)

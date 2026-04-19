@@ -22,6 +22,7 @@ export default {
                 'nature-dark-bg': '#000000',
                 'nature-dark-surface': '#1C1C1E',
                 'nature-dark-text': '#F2F2F7',
+                'nature-green-text': '#1B8A2F',
             },
             fontFamily: {
                 sans: ['Inter', 'sans-serif'],

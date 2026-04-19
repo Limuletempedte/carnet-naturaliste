@@ -51,21 +51,19 @@ const FilterBar: React.FC<FilterBarProps> = ({
                         ))}
                     </select>
                 </div>
-                {!isMobileView && (
-                    <div>
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Statut</label>
-                        <select
-                            value={statusFilter}
-                            onChange={e => onStatusChange(e.target.value as Status | 'all')}
-                            className="w-full border border-nature-light-gray dark:border-gray-600 rounded-lg p-2 focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white"
-                        >
-                            <option value="all">Tous</option>
-                            {Object.values(Status).map(status => (
-                                <option key={status} value={status}>{status}</option>
-                            ))}
-                        </select>
-                    </div>
-                )}
+                <div>
+                    <label className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Statut</label>
+                    <select
+                        value={statusFilter}
+                        onChange={e => onStatusChange(e.target.value as Status | 'all')}
+                        className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'p-1.5 text-xs' : 'p-2'}`}
+                    >
+                        <option value="all">Tous</option>
+                        {Object.values(Status).map(status => (
+                            <option key={status} value={status}>{status}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
         </div>
     );

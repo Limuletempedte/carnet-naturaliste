@@ -7,6 +7,7 @@ import {
 import { Observation } from '../types';
 import Badges from './Badges';
 import { buildStatsReportData } from '../utils/statsReportData';
+import { computeCurrentStreak, computeLongestStreak } from '../utils/observationStatsUtils';
 
 const useCountUp = (target: number, duration = 800): number => {
     const [value, setValue] = useState(0);
@@ -103,6 +104,17 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
     const rootRef = (statsRootRef as React.RefObject<HTMLDivElement | null> | undefined) ?? internalRef;
 
     const stats = useMemo(() => buildStatsReportData(observations), [observations]);
+    const currentStreak = useMemo(() => computeCurrentStreak(observations), [observations]);
+    const longestStreak = useMemo(() => computeLongestStreak(observations), [observations]);
+
+    if (observations.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
+                <p className="text-lg font-medium">Aucune observation</p>
+                <p className="text-sm mt-1">Ajoutez des observations pour voir les statistiques.</p>
+            </div>
+        );
+    }
 
     return (
         <div
@@ -144,6 +156,28 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                     note="Présents dans le carnet"
                     isMobileView={isMobileView}
                 />
+            </div>
+
+            {/* VP-22 — Compteur de série */}
+            <div className={`${cardShellClass} ${isMobileView ? 'p-5' : 'p-6'} flex flex-wrap items-center justify-between gap-4`}>
+                <div>
+                    <p className="text-[0.72rem] uppercase tracking-[0.2em] font-bold text-gray-500 dark:text-gray-400">Séries d&apos;observations</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">Jours consécutifs avec au moins une observation.</p>
+                </div>
+                <div className="flex items-center gap-6">
+                    <div className="text-center">
+                        <div className="text-3xl font-bold text-nature-dark dark:text-white">
+                            <span aria-hidden="true">🔥</span> {currentStreak}
+                        </div>
+                        <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1">Série actuelle</div>
+                    </div>
+                    <div className="text-center">
+                        <div className="text-3xl font-bold text-nature-dark dark:text-white">
+                            <span aria-hidden="true">🏅</span> {longestStreak}
+                        </div>
+                        <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1">Meilleure série</div>
+                    </div>
+                </div>
             </div>
 
             {stats.taxonSpeciesCards.length > 0 && (
@@ -216,7 +250,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                         <div
                             className="fixed z-[9999] pointer-events-none bg-nature-dark/95 text-white text-xs px-3 py-1.5 rounded-lg shadow-xl whitespace-nowrap"
                             style={{
-                                left: Math.min(groupTooltip.x + 14, window.innerWidth - 230),
+                                left: Math.max(8, Math.min(groupTooltip.x + 14, window.innerWidth - 250)),
                                 top: groupTooltip.y - 38 < 8 ? groupTooltip.y + 14 : groupTooltip.y - 38,
                             }}
                         >
@@ -278,7 +312,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                         </p>
                     </div>
 
-                    <div className="h-80">
+                    <div className="h-64 md:h-80">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={stats.activityData} margin={{ top: 8, right: 4, left: -18, bottom: 10 }}>
                                 <CartesianGrid strokeDasharray="4 6" vertical={false} stroke={chartGridColor} />
@@ -302,7 +336,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                                     cursor={{ fill: 'rgba(52, 199, 89, 0.10)' }}
                                     contentStyle={tooltipStyle}
                                 />
-                                <Bar dataKey="observations" fill="#34C759" radius={[10, 10, 0, 0]} barSize={24} />
+                                <Bar dataKey="observations" fill="#34C759" radius={[10, 10, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
@@ -354,7 +388,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                     </div>
 
                     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_220px] gap-6 items-center">
-                        <div className="h-80">
+                        <div className="h-64 md:h-80">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie

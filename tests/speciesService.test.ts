@@ -92,18 +92,18 @@ describe('suggestSpeciesAutocomplete', () => {
         });
     });
 
-    it('deduplicates by latin name and enforces max size', async () => {
+    it('deduplicates by composite key (latin+display) and enforces max size', async () => {
         fetchMock.mockResolvedValueOnce({
             ok: true,
             json: async () => ({
                 results: [
                     { name: 'Species A', preferred_common_name: 'Nom A' },
                     { name: 'Species B', preferred_common_name: 'Nom B' },
-                    { name: 'Species A', preferred_common_name: 'Nom A bis' },
+                    { name: 'Species A', preferred_common_name: 'Nom A' },   // exact duplicate — should be deduped
+                    { name: 'Species A', preferred_common_name: 'Nom A bis' }, // different display — should be kept
                     { name: 'Species C', preferred_common_name: 'Nom C' },
                     { name: 'Species D', preferred_common_name: 'Nom D' },
-                    { name: 'Species E', preferred_common_name: 'Nom E' },
-                    { name: 'Species F', preferred_common_name: 'Nom F' }
+                    { name: 'Species E', preferred_common_name: 'Nom E' }
                 ]
             })
         } as Response);
@@ -114,9 +114,9 @@ describe('suggestSpeciesAutocomplete', () => {
         expect(suggestions.map(s => s.latinName)).toEqual([
             'Species A',
             'Species B',
+            'Species A',  // kept because different displayName (Nom A bis)
             'Species C',
-            'Species D',
-            'Species E'
+            'Species D'
         ]);
     });
 });

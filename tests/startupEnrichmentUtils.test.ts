@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 import { selectStartupEnrichmentCandidates } from '../services/startupEnrichmentUtils';
+import { generateUUID } from '../utils/uuidUtils';
 
 const makeObservation = (overrides: Partial<Observation> = {}): Observation => ({
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     speciesName: 'Renard roux',
     latinName: 'Vulpes vulpes',
     taxonomicGroup: TaxonomicGroup.MAMMAL,

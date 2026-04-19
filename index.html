@@ -3,16 +3,26 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- CO-21: viewport-fit=cover pour exposer env(safe-area-inset-*) sur iPhone notch -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Carnet Naturaliste</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@700&display=swap"
-    rel="stylesheet">
+
+  <!-- CO-03: favicon explicite -->
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+  <!-- CO-02: meta tags Apple pour mode standalone iOS Safari -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Carnet Naturaliste" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+  <!-- CO-05: theme color aligne sur le fond beige plutot que blanc -->
+  <meta name="theme-color" content="#F2F2F7" />
 </head>
 
 <body class="bg-nature-beige text-nature-dark font-sans antialiased selection:bg-nature-green selection:text-white">
+  <a href="#main-content" class="sr-only" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" onfocus="this.style.position='fixed';this.style.left='1rem';this.style.top='1rem';this.style.width='auto';this.style.height='auto';this.style.overflow='visible';this.style.zIndex='9999';this.style.padding='0.5rem 1rem';this.style.background='white';this.style.borderRadius='0.5rem';this.style.boxShadow='0 4px 20px rgba(0,0,0,0.15)';this.style.color='#1C1C1E';this.style.fontWeight='600';" onblur="this.style.position='absolute';this.style.left='-9999px';this.style.width='1px';this.style.height='1px';this.style.overflow='hidden';">Aller au contenu principal</a>
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

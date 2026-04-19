@@ -1,24 +1,36 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 
-const UserProfile: React.FC = () => {
+interface UserProfileProps {
+    onExportData?: () => void;
+    onDeleteAccount?: () => void;
+}
+
+const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount }) => {
     const { user, signOut } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Close dropdown when clicking outside
+    // Close dropdown when clicking outside or pressing Escape
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
             }
         };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape' && isOpen) {
+                setIsOpen(false);
+            }
+        };
 
         document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleKeyDown);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
         };
-    }, []);
+    }, [isOpen]);
 
     if (!user) return null;
 
@@ -29,6 +41,9 @@ const UserProfile: React.FC = () => {
         <div className="relative z-50" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
+                aria-expanded={isOpen}
+                aria-haspopup="menu"
+                aria-label="Menu utilisateur"
                 className="flex items-center gap-2 p-1.5 pr-4 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 border border-white/20 dark:border-white/10 group"
             >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-nature-green to-emerald-600 flex items-center justify-center text-white font-bold shadow-sm">
@@ -48,25 +63,55 @@ const UserProfile: React.FC = () => {
             </button>
 
             {isOpen && (
-                <div className="absolute left-0 mt-2 w-64 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 dark:border-white/10 overflow-hidden animate-fadeIn origin-top-left">
+                <div role="menu" aria-label="Options du compte" className="absolute left-0 mt-2 w-64 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 dark:border-white/10 overflow-hidden animate-fadeIn origin-top-left">
                     <div className="p-4 border-b border-gray-100 dark:border-gray-700">
                         <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Connecté en tant que</p>
                         <p className="text-sm font-bold text-nature-dark dark:text-white truncate" title={email}>{email}</p>
                     </div>
 
                     <div className="p-2">
+                        {onExportData && (
+                            <button
+                                role="menuitem"
+                                onClick={() => { setIsOpen(false); onExportData(); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-nature-dark dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                </svg>
+                                Exporter mes données
+                            </button>
+                        )}
+
                         <button
-                            onClick={() => {
-                                signOut();
+                            role="menuitem"
+                            onClick={async () => {
                                 setIsOpen(false);
+                                await signOut();
                             }}
                             className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
                             </svg>
                             Se déconnecter
                         </button>
+
+                        {onDeleteAccount && (
+                            <>
+                                <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+                                <button
+                                    role="menuitem"
+                                    onClick={() => { setIsOpen(false); onDeleteAccount(); }}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                    </svg>
+                                    Supprimer mon compte
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

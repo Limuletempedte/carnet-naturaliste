@@ -1,5 +1,6 @@
 import React from 'react';
 import { SortDirection, SortKey } from '../hooks/useObservationFilters';
+import { useAccessibleDialog } from '../hooks/useAccessibleDialog';
 
 export interface AdvancedFilterDialogState {
     geoMode: 'none' | 'radius' | 'bbox';
@@ -58,6 +59,7 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
     onDeletePreset
 }) => {
     const [presetName, setPresetName] = React.useState('');
+    const { dialogRef, dialogProps } = useAccessibleDialog({ isOpen, onClose, titleId: 'advanced-filter-dialog-title' });
 
     if (!isOpen) return null;
 
@@ -74,10 +76,10 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
 
     return (
         <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-            <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
+            <div ref={dialogRef} {...dialogProps} className="w-full max-w-4xl max-h-[85vh] overflow-y-auto bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-4 md:p-6">
                 <div className="flex items-center justify-between gap-4 mb-5">
                     <div>
-                        <h3 className="text-2xl font-bold text-nature-dark dark:text-white">Filtres avancés</h3>
+                        <h3 id="advanced-filter-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white">Filtres avancés</h3>
                         <p className="text-sm text-gray-600 dark:text-gray-300">Geo-filtres, tri multi-critères et presets sauvegardés.</p>
                     </div>
                     <button onClick={onClose} className="px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/10 text-sm font-semibold text-gray-700 dark:text-gray-200">
@@ -92,21 +94,63 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
                         <button onClick={() => updateState({ geoMode: 'radius' })} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${state.geoMode === 'radius' ? 'bg-nature-green text-white' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'}`}>Rayon</button>
                         <button onClick={() => updateState({ geoMode: 'bbox' })} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${state.geoMode === 'bbox' ? 'bg-nature-green text-white' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'}`}>BBox</button>
                     </div>
-                    {state.geoMode === 'radius' && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <input type="number" step="any" placeholder="Lat centre" value={state.radiusCenterLat} onChange={(e) => updateState({ radiusCenterLat: e.target.value })} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white" />
-                            <input type="number" step="any" placeholder="Lon centre" value={state.radiusCenterLon} onChange={(e) => updateState({ radiusCenterLon: e.target.value })} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white" />
-                            <input type="number" step="any" placeholder="Rayon (km)" value={state.radiusKm} onChange={(e) => updateState({ radiusKm: e.target.value })} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white" />
-                        </div>
-                    )}
-                    {state.geoMode === 'bbox' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input type="number" step="any" placeholder="Lat min" value={state.bboxMinLat} onChange={(e) => updateState({ bboxMinLat: e.target.value })} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white" />
-                            <input type="number" step="any" placeholder="Lat max" value={state.bboxMaxLat} onChange={(e) => updateState({ bboxMaxLat: e.target.value })} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white" />
-                            <input type="number" step="any" placeholder="Lon min" value={state.bboxMinLon} onChange={(e) => updateState({ bboxMinLon: e.target.value })} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white" />
-                            <input type="number" step="any" placeholder="Lon max" value={state.bboxMaxLon} onChange={(e) => updateState({ bboxMaxLon: e.target.value })} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white" />
-                        </div>
-                    )}
+                    {state.geoMode === 'radius' && (() => {
+                        const lat = parseFloat(state.radiusCenterLat || '');
+                        const lon = parseFloat(state.radiusCenterLon || '');
+                        const radius = parseFloat(state.radiusKm || '');
+                        const latInvalid = state.radiusCenterLat !== '' && (isNaN(lat) || lat < -90 || lat > 90);
+                        const lonInvalid = state.radiusCenterLon !== '' && (isNaN(lon) || lon < -180 || lon > 180);
+                        const radiusInvalid = state.radiusKm !== '' && (isNaN(radius) || radius <= 0);
+                        const invalidBorder = 'border-red-400 dark:border-red-500';
+                        const normalBorder = 'border-gray-200 dark:border-white/10';
+                        return (
+                            <div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <input type="number" step="any" min="-90" max="90" placeholder="Lat centre (−90 à 90)" aria-label="Latitude centre" value={state.radiusCenterLat} onChange={(e) => updateState({ radiusCenterLat: e.target.value })} className={`px-3 py-2 rounded-lg border ${latInvalid ? invalidBorder : normalBorder} bg-white dark:bg-white/5 text-sm dark:text-white`} />
+                                    <input type="number" step="any" min="-180" max="180" placeholder="Lon centre (−180 à 180)" aria-label="Longitude centre" value={state.radiusCenterLon} onChange={(e) => updateState({ radiusCenterLon: e.target.value })} className={`px-3 py-2 rounded-lg border ${lonInvalid ? invalidBorder : normalBorder} bg-white dark:bg-white/5 text-sm dark:text-white`} />
+                                    <input type="number" step="any" min="0.01" placeholder="Rayon (km, > 0)" aria-label="Rayon en kilomètres" value={state.radiusKm} onChange={(e) => updateState({ radiusKm: e.target.value })} className={`px-3 py-2 rounded-lg border ${radiusInvalid ? invalidBorder : normalBorder} bg-white dark:bg-white/5 text-sm dark:text-white`} />
+                                </div>
+                                {(latInvalid || lonInvalid || radiusInvalid) && (
+                                    <p role="alert" className="text-xs text-red-500 mt-1">
+                                        {latInvalid && 'Latitude : −90 à 90. '}
+                                        {lonInvalid && 'Longitude : −180 à 180. '}
+                                        {radiusInvalid && 'Rayon doit être > 0.'}
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    {state.geoMode === 'bbox' && (() => {
+                        const minLat = parseFloat(state.bboxMinLat || '');
+                        const maxLat = parseFloat(state.bboxMaxLat || '');
+                        const minLon = parseFloat(state.bboxMinLon || '');
+                        const maxLon = parseFloat(state.bboxMaxLon || '');
+                        const minLatInvalid = state.bboxMinLat !== '' && (isNaN(minLat) || minLat < -90 || minLat > 90);
+                        const maxLatInvalid = state.bboxMaxLat !== '' && (isNaN(maxLat) || maxLat < -90 || maxLat > 90);
+                        const minLonInvalid = state.bboxMinLon !== '' && (isNaN(minLon) || minLon < -180 || minLon > 180);
+                        const maxLonInvalid = state.bboxMaxLon !== '' && (isNaN(maxLon) || maxLon < -180 || maxLon > 180);
+                        const anyInvalid = minLatInvalid || maxLatInvalid || minLonInvalid || maxLonInvalid;
+                        const swapped = !anyInvalid && state.bboxMinLat !== '' && state.bboxMaxLat !== '' && !isNaN(minLat) && !isNaN(maxLat) && minLat > maxLat;
+                        const swappedLon = !anyInvalid && state.bboxMinLon !== '' && state.bboxMaxLon !== '' && !isNaN(minLon) && !isNaN(maxLon) && minLon > maxLon;
+                        const invalidBorder = 'border-red-400 dark:border-red-500';
+                        const normalBorder = 'border-gray-200 dark:border-white/10';
+                        return (
+                            <div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <input type="number" step="any" min="-90" max="90" placeholder="Lat min (−90 à 90)" aria-label="Latitude minimum" value={state.bboxMinLat} onChange={(e) => updateState({ bboxMinLat: e.target.value })} className={`px-3 py-2 rounded-lg border ${minLatInvalid ? invalidBorder : normalBorder} bg-white dark:bg-white/5 text-sm dark:text-white`} />
+                                    <input type="number" step="any" min="-90" max="90" placeholder="Lat max (−90 à 90)" aria-label="Latitude maximum" value={state.bboxMaxLat} onChange={(e) => updateState({ bboxMaxLat: e.target.value })} className={`px-3 py-2 rounded-lg border ${maxLatInvalid ? invalidBorder : normalBorder} bg-white dark:bg-white/5 text-sm dark:text-white`} />
+                                    <input type="number" step="any" min="-180" max="180" placeholder="Lon min (−180 à 180)" aria-label="Longitude minimum" value={state.bboxMinLon} onChange={(e) => updateState({ bboxMinLon: e.target.value })} className={`px-3 py-2 rounded-lg border ${minLonInvalid ? invalidBorder : normalBorder} bg-white dark:bg-white/5 text-sm dark:text-white`} />
+                                    <input type="number" step="any" min="-180" max="180" placeholder="Lon max (−180 à 180)" aria-label="Longitude maximum" value={state.bboxMaxLon} onChange={(e) => updateState({ bboxMaxLon: e.target.value })} className={`px-3 py-2 rounded-lg border ${maxLonInvalid ? invalidBorder : normalBorder} bg-white dark:bg-white/5 text-sm dark:text-white`} />
+                                </div>
+                                {anyInvalid && (
+                                    <p role="alert" className="text-xs text-red-500 mt-1">Coordonnées hors limites (lat : −90/90, lon : −180/180).</p>
+                                )}
+                                {(swapped || swappedLon) && (
+                                    <p className="text-xs text-amber-500 dark:text-amber-400 mt-1">⚠ Les bornes {swapped ? 'lat' : ''}{swapped && swappedLon ? ' et ' : ''}{swappedLon ? 'lon' : ''} ont été inversées automatiquement.</p>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </section>
 
                 <section className="rounded-xl border border-gray-200 dark:border-white/10 p-4 mb-5">
@@ -143,7 +187,9 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
                             value={presetName}
                             onChange={(e) => setPresetName(e.target.value)}
                             placeholder="Nom du preset"
-                            className="flex-1 min-w-[220px] px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white"
+                            // CO-19: min-w-[220px] forcait un debordement horizontal sur viewport <320px.
+                            // Mobile: min-w-0 + w-full. Desktop (>=640px): restaure la largeur minimum.
+                            className="flex-1 min-w-0 w-full sm:min-w-[220px] px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white"
                         />
                         <button onClick={handleSavePreset} className="px-3 py-2 rounded-lg bg-nature-green text-white text-sm font-semibold">Sauvegarder</button>
                     </div>

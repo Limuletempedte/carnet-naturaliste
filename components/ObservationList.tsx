@@ -10,6 +10,7 @@ import { ToastType } from './ToastContainer';
 import ExportScopeDialog from './ExportScopeDialog';
 import { ObservationExportType, runObservationExport } from '../services/observationExportService';
 import { buildImportPersistencePlan, ImportConflictMode } from '../services/importPolicy';
+import { logger } from '../utils/logger';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -101,7 +102,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
         try {
             await runObservationExport(pendingExportType, exportData);
         } catch (error) {
-            console.error('Erreur export:', error);
+            logger.error('Erreur export:', error);
             onToast('error', "Impossible d'exporter les observations.");
         } finally {
             setIsExporting(false);
@@ -131,13 +132,17 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 } else if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
                     const { parseExcel } = await import('../services/excelImportService');
                     importResult = await parseExcel(file);
+                } else if (lowerName.endsWith('.zip')) {
+                    // SR-01 : restauration depuis un backup ZIP
+                    const { readBackupZip } = await import('../services/backupService');
+                    importResult = await readBackupZip(file);
                 } else {
-                    onToast('warning', "Format non supporté. Utilisez JSON ou Excel (.xlsx, .xls).");
+                    onToast('warning', "Format non supporté. Utilisez JSON, Excel (.xlsx, .xls) ou un backup ZIP.");
                     return;
                 }
 
                 if (importResult.report.warnings.length > 0) {
-                    console.warn(`Import: ${importResult.report.warnings.length} warning(s)`, importResult.report.warnings);
+                    logger.warn(`Import: ${importResult.report.warnings.length} warning(s)`, importResult.report.warnings);
                 }
                 if (importResult.report.errors.length > 0) {
                     onToast('warning', `${importResult.report.errors.length} erreur(s) de validation détectée(s).`);
@@ -149,7 +154,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 setPreviewImportFileName(file.name);
                 setPreviewImportResult(importResult);
             } catch (error) {
-                console.error("Erreur d'import:", error);
+                logger.error("Erreur d'import:", error);
                 onToast('error', "Erreur lors de l'importation du fichier. Vérifiez le format.");
             } finally {
                 setIsParsingImport(false);
@@ -201,7 +206,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
             setPreviewImportFileName('');
             setImportConflictMode('merge');
         } catch (error) {
-            console.error(error);
+            logger.error(error);
             onToast('error', "L'import a échoué. Vérifiez les messages d'erreur.");
         }
     };
@@ -281,7 +286,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             ref={fileInputRef}
                             onChange={handleFileChange}
                             className="hidden"
-                            accept=".json,.xlsx,.xls"
+                            accept=".json,.xlsx,.xls,.zip"
                         />
 
                         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
@@ -312,6 +317,22 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 className="h-8 px-3 rounded-lg text-xs font-medium bg-red-500 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
                             >
                                 {isExporting && pendingExportType === 'pdf' ? 'Export...' : 'PDF'}
+                            </button>
+                            <button
+                                onClick={() => openExportDialog('darwincore')}
+                                disabled={isExporting}
+                                title="Darwin Core — standard international GBIF/TDWG"
+                                className="h-8 px-3 rounded-lg text-xs font-medium bg-amber-600 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
+                            >
+                                {isExporting && pendingExportType === 'darwincore' ? 'Export...' : 'DwC'}
+                            </button>
+                            <button
+                                onClick={() => openExportDialog('geojson')}
+                                disabled={isExporting}
+                                title="GeoJSON — ouvrable dans QGIS / geojson.io"
+                                className="h-8 px-3 rounded-lg text-xs font-medium bg-indigo-500 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
+                            >
+                                {isExporting && pendingExportType === 'geojson' ? 'Export...' : 'GeoJSON'}
                             </button>
                         </div>
 
@@ -435,7 +456,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 ref={fileInputRef}
                                 onChange={handleFileChange}
                                 className="hidden"
-                                accept=".json,.xlsx,.xls"
+                                accept=".json,.xlsx,.xls,.zip"
                             />
                             <button
                                 onClick={handleImportClick}
@@ -447,6 +468,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <button onClick={() => openExportDialog('json')} disabled={isExporting} className={`${secondaryButtonClass} bg-blue-500/80 hover:bg-blue-600 backdrop-blur-md disabled:opacity-60`}>JSON</button>
                             <button onClick={() => openExportDialog('excel')} disabled={isExporting} className={`${secondaryButtonClass} bg-emerald-500/80 hover:bg-emerald-600 backdrop-blur-md disabled:opacity-60`}>Excel</button>
                             <button onClick={() => openExportDialog('pdf')} disabled={isExporting} className={`${secondaryButtonClass} bg-red-500/80 hover:bg-red-600 backdrop-blur-md disabled:opacity-60`}>PDF</button>
+                            <button onClick={() => openExportDialog('darwincore')} disabled={isExporting} title="Darwin Core — standard GBIF/TDWG" className={`${secondaryButtonClass} bg-amber-600/80 hover:bg-amber-700 backdrop-blur-md disabled:opacity-60`}>DwC</button>
+                            <button onClick={() => openExportDialog('geojson')} disabled={isExporting} title="GeoJSON — QGIS / geojson.io" className={`${secondaryButtonClass} bg-indigo-500/80 hover:bg-indigo-600 backdrop-blur-md disabled:opacity-60`}>GeoJSON</button>
                             <button onClick={onAdd} className={`${primaryButtonClass} shadow-lg shadow-nature-green/30`}>
                                 <span className="mr-1">+</span> Observation
                             </button>
@@ -582,6 +605,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                             type="checkbox"
                                             checked={selectedIds.size === observations.length && observations.length > 0}
                                             onChange={handleSelectAll}
+                                            aria-label="Sélectionner toutes les observations"
                                             className="w-5 h-5 rounded border-gray-300 text-nature-green focus:ring-nature-green cursor-pointer"
                                         />
                                     </th>

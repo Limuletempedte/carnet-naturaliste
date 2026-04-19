@@ -1,4 +1,5 @@
 import { Status, TaxonomicGroup } from '../types';
+import { logger } from '../utils/logger';
 
 export interface SpeciesInfo {
     description: string;
@@ -27,6 +28,7 @@ interface FetchSpeciesInfoOptions {
 
 interface SpeciesAutocompleteOptions {
     signal?: AbortSignal;
+    onWarning?: (message: string) => void;
 }
 
 interface SpeciesInfoCacheEntry {
@@ -34,7 +36,10 @@ interface SpeciesInfoCacheEntry {
     expiresAt: number;
 }
 
+const APP_USER_AGENT = 'CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)';
+
 const SPECIES_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_SPECIES_CACHE_SIZE = 200;
 const speciesInfoCache = new Map<string, SpeciesInfoCacheEntry>();
 const speciesInfoInFlightRequests = new Map<string, Promise<SpeciesInfo | null>>();
 
@@ -93,6 +98,11 @@ const getCachedSpeciesInfo = (key: string): SpeciesInfo | null | undefined => {
 };
 
 const setCachedSpeciesInfo = (key: string, value: SpeciesInfo | null): void => {
+    // PE-20: Evict oldest entries when cache exceeds max size
+    if (speciesInfoCache.size >= MAX_SPECIES_CACHE_SIZE) {
+        const firstKey = speciesInfoCache.keys().next().value;
+        if (firstKey !== undefined) speciesInfoCache.delete(firstKey);
+    }
     speciesInfoCache.set(key, {
         value,
         expiresAt: Date.now() + SPECIES_INFO_CACHE_TTL_MS
@@ -189,28 +199,32 @@ const resolveSpeciesMatchMeta = (
 const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INatTaxonResult | null> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=8&locale=fr`;
-        const res = await fetch(url, { signal: withTimeout(signal) });
+        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
         if (!res.ok) return null;
         const data = await res.json();
         const results: INatTaxonResult[] = data?.results ?? [];
         return pickBestINatTaxonResult(results, query);
     } catch (e) {
         if (isAbortError(e)) throw e;
-        console.error('iNaturalist fetch error:', e);
+        logger.error('iNaturalist fetch error:', e);
         return null;
     }
 };
 
-const fetchINatSuggestions = async (query: string, limit: number, signal?: AbortSignal): Promise<INatTaxonResult[]> => {
+const fetchINatSuggestions = async (query: string, limit: number, signal?: AbortSignal, onWarning?: (msg: string) => void): Promise<INatTaxonResult[]> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=${limit}&locale=fr`;
-        const res = await fetch(url, { signal: withTimeout(signal) });
-        if (!res.ok) return [];
+        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        if (!res.ok) {
+            onWarning?.('Service iNaturalist temporairement indisponible.');
+            return [];
+        }
         const data = await res.json();
         return Array.isArray(data?.results) ? data.results : [];
     } catch (e) {
         if (isAbortError(e)) throw e;
-        console.error('iNaturalist suggest error:', e);
+        logger.error('iNaturalist suggest error:', e);
+        onWarning?.('Service iNaturalist temporairement indisponible.');
         return [];
     }
 };
@@ -253,14 +267,14 @@ export const matchSpecies = async (latinName: string, signal?: AbortSignal): Pro
     if (!latinName || latinName.trim().length < 2) return null;
     try {
         const url = `${GBIF_BASE}/match?name=${encodeURIComponent(latinName.trim())}&verbose=true`;
-        const res = await fetch(url, { signal: withTimeout(signal) });
+        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
         if (!res.ok) return null;
         const data: GBIFMatchResult = await res.json();
         if (data.matchType === 'NONE') return null;
         return data;
     } catch (e) {
         if (isAbortError(e)) throw e;
-        console.error('GBIF match error:', e);
+        logger.error('GBIF match error:', e);
         return null;
     }
 };
@@ -272,12 +286,12 @@ export const suggestSpecies = async (query: string, limit = 5, signal?: AbortSig
     if (!query || query.trim().length < 2) return [];
     try {
         const url = `${GBIF_BASE}/suggest?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
-        const res = await fetch(url, { signal: withTimeout(signal) });
+        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
         if (!res.ok) return [];
         return await res.json();
     } catch (e) {
         if (isAbortError(e)) throw e;
-        console.error('GBIF suggest error:', e);
+        logger.error('GBIF suggest error:', e);
         return [];
     }
 };
@@ -345,7 +359,7 @@ const fetchINatFranceStatus = async (taxonId: number, signal?: AbortSignal): Pro
         return undefined;
     } catch (e) {
         if (isAbortError(e)) throw e;
-        console.error('iNaturalist France conservation status error:', e);
+        logger.error('iNaturalist France conservation status error:', e);
         return undefined;
     }
 };
@@ -355,7 +369,7 @@ export const fetchGbifIucnStatus = async (latinName: string, signal?: AbortSigna
 
     try {
         const url = `${GBIF_V2_SPECIES_MATCH}?scientificName=${encodeURIComponent(latinName.trim())}`;
-        const response = await fetch(url, { signal: withTimeout(signal) });
+        const response = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
         if (!response.ok) return undefined;
 
         const data: GBIFV2MatchResult = await response.json();
@@ -365,7 +379,7 @@ export const fetchGbifIucnStatus = async (latinName: string, signal?: AbortSigna
         return mapIucnStatusCodeToStatus(iucnEntry?.statusCode);
     } catch (error) {
         if (isAbortError(error)) throw error;
-        console.error('GBIF v2 IUCN status error:', error);
+        logger.error('GBIF v2 IUCN status error:', error);
         return undefined;
     }
 };
@@ -377,7 +391,7 @@ const dedupeAndLimitSuggestions = (suggestions: SpeciesSuggestion[], limit: numb
     const deduped: SpeciesSuggestion[] = [];
 
     for (const suggestion of suggestions) {
-        const key = normalizeSuggestionKey(suggestion.latinName || suggestion.displayName);
+        const key = normalizeSuggestionKey((suggestion.latinName || '') + '|' + (suggestion.displayName || ''));
         if (!key || seen.has(key)) continue;
         seen.add(key);
         deduped.push(suggestion);
@@ -400,7 +414,7 @@ export const suggestSpeciesAutocomplete = async (
     const safeLimit = Math.max(1, Math.min(limit, 10));
 
     try {
-        const inatSuggestions = await fetchINatSuggestions(query, safeLimit, options.signal);
+        const inatSuggestions = await fetchINatSuggestions(query, safeLimit, options.signal, options.onWarning);
         if (inatSuggestions.length > 0) {
             // Prioritize species/subspecies; if none found keep everything
             const speciesOnly = inatSuggestions.filter(r => r.rank === 'species' || r.rank === 'subspecies');
@@ -448,6 +462,8 @@ export const suggestSpeciesAutocomplete = async (
 
 // ---------------------------------------------------------------------------
 // Strip HTML tags
+// Best-effort sanitization for display readability only.
+// NOT a security boundary — React's JSX escaping is the real XSS protection.
 // ---------------------------------------------------------------------------
 
 const stripHtml = (html: string): string =>
@@ -629,41 +645,46 @@ export const fetchSpeciesInfo = async (
             const latinName = inat.name || undefined;
             const imageUrl = inat.default_photo?.medium_url ?? inat.default_photo?.square_url ?? null;
             const description = inat.wikipedia_summary
-                ? stripHtml(inat.wikipedia_summary).substring(0, 300) + '...'
+                ? (() => { const d = stripHtml(inat.wikipedia_summary); return d.length > 300 ? d.substring(0, 300) + '\u2026' : d; })()
                 : '';
             const sourceUrl = inat.wikipedia_url || '';
             const matchMeta = resolveSpeciesMatchMeta(speciesName, inat);
 
-            // Step 2: If we got a latin name from iNaturalist, enrich with GBIF taxonomy
+            // Step 2: Enrich with GBIF taxonomy + red list status in parallel (PE-14)
             let taxonomicGroup: TaxonomicGroup | undefined;
-
-            if (latinName) {
-                const gbif = await matchSpecies(latinName, options.signal);
-                if (gbif) {
-                    taxonomicGroup = mapGBIFToTaxonomicGroup(gbif.class, gbif.order, gbif.family, gbif.kingdom);
-                }
-            }
-
             let redListStatus: Status | undefined;
             let redListSource: 'france' | 'global' | undefined;
 
-            // Try iNat France first; on failure (non-abort), fall through to GBIF
-            if (inat.id) {
-                try {
-                    redListStatus = await fetchINatFranceStatus(inat.id, options.signal);
-                    if (redListStatus) redListSource = 'france';
-                } catch (e) {
-                    if (isAbortError(e)) throw e;
-                    // Silently fall through to GBIF
+            if (latinName || inat.id) {
+                // Launch independent API calls in parallel
+                const [gbifResult, franceStatusResult] = await Promise.allSettled([
+                    latinName ? matchSpecies(latinName, options.signal) : Promise.resolve(null),
+                    inat.id ? fetchINatFranceStatus(inat.id, options.signal) : Promise.resolve(undefined)
+                ]);
+
+                // Process GBIF taxonomy result
+                if (gbifResult.status === 'fulfilled' && gbifResult.value) {
+                    taxonomicGroup = mapGBIFToTaxonomicGroup(gbifResult.value.class, gbifResult.value.order, gbifResult.value.family, gbifResult.value.kingdom);
+                } else if (gbifResult.status === 'rejected' && isAbortError(gbifResult.reason)) {
+                    throw gbifResult.reason;
                 }
-            }
-            if (!redListStatus && latinName) {
-                try {
-                    redListStatus = await fetchGbifIucnStatus(latinName, options.signal);
-                    if (redListStatus) redListSource = 'global';
-                } catch (e) {
-                    if (isAbortError(e)) throw e;
-                    // No red list status available
+
+                // Process France red list result
+                if (franceStatusResult.status === 'fulfilled' && franceStatusResult.value) {
+                    redListStatus = franceStatusResult.value;
+                    redListSource = 'france';
+                } else if (franceStatusResult.status === 'rejected' && isAbortError(franceStatusResult.reason)) {
+                    throw franceStatusResult.reason;
+                }
+
+                // Fallback to GBIF IUCN if no France status
+                if (!redListStatus && latinName) {
+                    try {
+                        redListStatus = await fetchGbifIucnStatus(latinName, options.signal);
+                        if (redListStatus) redListSource = 'global';
+                    } catch (e) {
+                        if (isAbortError(e)) throw e;
+                    }
                 }
             }
 
@@ -688,7 +709,7 @@ export const fetchSpeciesInfo = async (
             return resolvedInfo;
         } catch (error) {
             if (isAbortError(error)) return null;
-            console.error('Erreur lors de la récupération des infos espèce:', error);
+            logger.error('Erreur lors de la récupération des infos espèce:', error);
             return null;
         }
     })();

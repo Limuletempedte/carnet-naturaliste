@@ -4,10 +4,10 @@ create extension if not exists "uuid-ossp";
 -- Create Observations Table
 create table observations (
   id uuid default uuid_generate_v4() primary key,
-  user_id uuid references auth.users not null,
+  user_id uuid references auth.users on delete cascade not null,
   species_name text not null,
   latin_name text,
-  taxonomic_group text,
+  taxonomic_group text not null default 'Autre',
   date date not null,
   time time,
   count int default 1,
@@ -33,6 +33,9 @@ create table observations (
   photo_url text, -- URL to Supabase Storage
   wikipedia_image text,
   sound_url text,
+  habitat text, -- VP-04 (theme 12)
+  phenology text, -- VP-08 (theme 12)
+  observers text[], -- VP-05 (theme 12) — tableau de noms libres
   created_at timestamp with time zone default timezone('utc'::text, now()),
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -79,6 +82,24 @@ alter table observations
   add constraint observations_gps_lon_range_check
   check (gps_lon is null or (gps_lon >= -180 and gps_lon <= 180));
 
+-- SI-22: Text length constraints
+alter table observations
+  add constraint observations_location_max_length_check
+  check (location is null or char_length(location) <= 500);
+
+alter table observations
+  add constraint observations_comment_max_length_check
+  check (comment is null or char_length(comment) <= 5000);
+
+alter table observations
+  add constraint observations_latin_name_max_length_check
+  check (latin_name is null or char_length(latin_name) <= 200);
+
+-- SI-23: taxonomic_group NOT NULL constraint
+alter table observations
+  add constraint observations_taxonomic_group_not_null_check
+  check (taxonomic_group is not null);
+
 -- Read/query indexes used by current app filters and sort
 create index if not exists idx_observations_user_date_created
   on observations (user_id, date desc, created_at desc);
@@ -93,6 +114,9 @@ create index if not exists idx_observations_user_gps_present
   on observations (user_id, gps_lat, gps_lon)
   where gps_lat is not null and gps_lon is not null;
 
+create index if not exists idx_observations_user_species_name
+  on observations (user_id, species_name);
+
 -- Keep updated_at synchronized
 create or replace function public.set_observations_updated_at()
 returns trigger
@@ -100,6 +124,7 @@ language plpgsql
 as $$
 begin
   new.updated_at = timezone('utc'::text, now());
+  new.created_at = old.created_at;  -- SI-24: Prevent client modification
   return new;
 end;
 $$;
@@ -123,10 +148,11 @@ create policy "Users can insert their own observations"
   on observations for insert
   with check (auth.uid() = user_id);
 
--- 3. Users can update their own observations
+-- 3. Users can update their own observations (WITH CHECK prevents user_id transfer)
 create policy "Users can update their own observations"
   on observations for update
-  using (auth.uid() = user_id);
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 -- 4. Users can delete their own observations
 create policy "Users can delete their own observations"
@@ -137,7 +163,9 @@ create policy "Users can delete their own observations"
 insert into storage.buckets (id, name, public) values ('photos', 'photos', true);
 
 -- Storage Policies
--- Allow public read access to photos
+-- SI-25: INTENTIONAL public read access — observation photo URLs are stored as public
+-- URLs in the observations table. Write policies below restrict uploads to the
+-- authenticated user's own folder prefix.
 create policy "Public Access"
   on storage.objects for select
   using ( bucket_id = 'photos' );

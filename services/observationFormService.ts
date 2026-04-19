@@ -58,10 +58,10 @@ export const buildObservationFromForm = (
     maleCount: formData.maleCount === '' ? undefined : Number(formData.maleCount),
     femaleCount: formData.femaleCount === '' ? undefined : Number(formData.femaleCount),
     unidentifiedCount: formData.unidentifiedCount === '' ? undefined : Number(formData.unidentifiedCount),
-    altitude: formData.altitude !== null ? Number(formData.altitude) : null,
+    altitude: formData.altitude !== null && Number.isFinite(Number(formData.altitude)) ? Number(formData.altitude) : null,
     gps: {
-        lat: formData.gps.lat !== null ? Number(formData.gps.lat) : null,
-        lon: formData.gps.lon !== null ? Number(formData.gps.lon) : null
+        lat: formData.gps.lat !== null && Number.isFinite(Number(formData.gps.lat)) ? Number(formData.gps.lat) : null,
+        lon: formData.gps.lon !== null && Number.isFinite(Number(formData.gps.lon)) ? Number(formData.gps.lon) : null
     },
     sexe: formData.sexe,
     age: formData.age,

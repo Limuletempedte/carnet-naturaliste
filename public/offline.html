@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#F2F2F7" />
+    <title>Carnet Naturaliste — Hors-ligne</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: #F2F2F7;
+            color: #1C1C1E;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+
+        .card {
+            text-align: center;
+            padding: 2rem;
+            max-width: 420px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        .icon {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin: 0.5rem 0;
+            color: #1C1C1E;
+        }
+
+        p {
+            color: #6E6E73;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin: 0.75rem 0 1.25rem;
+        }
+
+        button {
+            background: #34C759;
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        button:hover {
+            background: #2EB050;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #1C1C1E;
+                color: #F2F2F7;
+            }
+
+            .card {
+                background: #2C2C2E;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            }
+
+            h1 {
+                color: #F2F2F7;
+            }
+
+            p {
+                color: #98989D;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="icon" aria-hidden="true">📡</div>
+        <h1>Mode hors-ligne</h1>
+        <p>Cette page n'est pas disponible hors connexion. Vérifiez votre réseau et réessayez. Vos observations enregistrées restent accessibles depuis l'application.</p>
+        <button type="button" onclick="location.reload()">Réessayer</button>
+    </div>
+</body>
+
+</html>

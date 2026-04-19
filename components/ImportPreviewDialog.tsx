@@ -1,6 +1,7 @@
 import React from 'react';
 import { ImportResult } from '../services/excelImportService';
 import { ImportConflictMode } from '../services/importPolicy';
+import { useAccessibleDialog } from '../hooks/useAccessibleDialog';
 
 interface ImportPreviewDialogProps {
     isOpen: boolean;
@@ -29,6 +30,8 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
     onCancel,
     onConfirm
 }) => {
+    const { dialogRef, dialogProps } = useAccessibleDialog({ isOpen: isOpen && !!result, onClose: onCancel, titleId: 'import-preview-dialog-title' });
+
     if (!isOpen || !result) return null;
 
     const previewRows = result.observations.slice(0, 5);
@@ -42,8 +45,8 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-            <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
-                <h3 className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Prévisualisation de l'import</h3>
+            <div ref={dialogRef} {...dialogProps} className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
+                <h3 id="import-preview-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Prévisualisation de l'import</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
                     Fichier: <span className="font-semibold">{fileName}</span>
                 </p>
@@ -51,11 +54,11 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">
                     <div className="rounded-xl bg-gray-100 dark:bg-white/10 p-3">
                         <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Lignes</p>
-                        <p className="text-lg font-bold dark:text-white">{result.report.totalRows}</p>
+                        <p className="text-lg font-bold dark:text-white">{result.report.totalRows.toLocaleString('fr-FR')}</p>
                     </div>
                     <div className="rounded-xl bg-gray-100 dark:bg-white/10 p-3">
                         <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Valides</p>
-                        <p className="text-lg font-bold dark:text-white">{result.report.validRows}</p>
+                        <p className="text-lg font-bold dark:text-white">{result.report.validRows.toLocaleString('fr-FR')}</p>
                     </div>
                     <div className="rounded-xl bg-gray-100 dark:bg-white/10 p-3">
                         <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Warnings</p>
@@ -91,8 +94,8 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                                 onChange={() => onConflictModeChange('merge')}
                                 className="mr-2"
                             />
-                            <span className="font-semibold text-sm dark:text-white">Fusionner (update)</span>
-                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">Écrase les observations déjà présentes avec le même ID.</p>
+                            <span className="font-semibold text-sm dark:text-white">Mettre à jour les doublons</span>
+                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">Les observations importées remplacent celles déjà présentes si elles ont le même identifiant.</p>
                         </label>
                         <label className={`rounded-lg border p-3 cursor-pointer ${conflictMode === 'no-overwrite' ? 'border-nature-green bg-green-50 dark:bg-green-500/10' : 'border-gray-200 dark:border-white/10'}`}>
                             <input
@@ -103,8 +106,8 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
                                 onChange={() => onConflictModeChange('no-overwrite')}
                                 className="mr-2"
                             />
-                            <span className="font-semibold text-sm dark:text-white">Ne pas écraser (insert)</span>
-                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">Conserve l&apos;existant et crée une nouvelle ligne en cas de collision.</p>
+                            <span className="font-semibold text-sm dark:text-white">Conserver les existantes</span>
+                            <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">En cas de doublon, l&apos;observation existante est conservée et l&apos;importée est ignorée.</p>
                         </label>
                     </div>
                     <p className="text-xs text-gray-700 dark:text-gray-300 mt-3">

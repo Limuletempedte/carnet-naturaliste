@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAccessibleDialog } from '../hooks/useAccessibleDialog';
 
 interface ExportScopeDialogProps {
     isOpen: boolean;
@@ -23,12 +24,14 @@ const ExportScopeDialog: React.FC<ExportScopeDialogProps> = ({
     onSelectAll,
     onSelectSelected
 }) => {
+    const { dialogRef, dialogProps } = useAccessibleDialog({ isOpen, onClose: onCancel, titleId: 'export-scope-dialog-title' });
+
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-            <div className="w-full max-w-lg bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
-                <h3 className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Choisir le périmètre d'export</h3>
+            <div ref={dialogRef} {...dialogProps} className="w-full max-w-lg bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
+                <h3 id="export-scope-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Choisir le périmètre d'export</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
                     Sélectionnez les données à exporter. L'annulation ferme simplement cette fenêtre sans lancer d'export.
                 </p>
@@ -40,22 +43,25 @@ const ExportScopeDialog: React.FC<ExportScopeDialogProps> = ({
                             onClick={onSelectSelected}
                             className={`${buttonClass} w-full text-left bg-purple-500/10 text-purple-700 hover:bg-purple-500/20 dark:text-purple-300`}
                         >
-                            Exporter la sélection ({selectedCount})
+                            <span className="block font-semibold">Exporter la sélection ({selectedCount})</span>
+                            <span className="block text-xs mt-0.5 opacity-80">Uniquement les observations cochées dans le tableau.</span>
                         </button>
                     )}
                     <button
                         type="button"
                         onClick={onSelectFiltered}
-                        className={`${buttonClass} w-full text-left bg-nature-green/10 text-nature-green hover:bg-nature-green/20`}
+                        className={`${buttonClass} w-full text-left bg-nature-green/10 text-nature-green-text hover:bg-nature-green/20`}
                     >
-                        Exporter les observations filtrées ({filteredCount})
+                        <span className="block font-semibold">Exporter les observations filtrées ({filteredCount})</span>
+                        <span className="block text-xs mt-0.5 opacity-80">{filteredCount === totalCount ? 'Aucun filtre actif — correspond à toutes vos observations.' : 'Résultat des filtres actuellement appliqués.'}</span>
                     </button>
                     <button
                         type="button"
                         onClick={onSelectAll}
                         className={`${buttonClass} w-full text-left bg-blue-500/10 text-blue-700 hover:bg-blue-500/20 dark:text-blue-300`}
                     >
-                        Exporter toutes les observations ({totalCount})
+                        <span className="block font-semibold">Exporter toutes les observations ({totalCount})</span>
+                        <span className="block text-xs mt-0.5 opacity-80">L&apos;intégralité de votre carnet, sans tenir compte des filtres.</span>
                     </button>
                 </div>
 

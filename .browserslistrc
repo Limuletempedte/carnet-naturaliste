@@ -1,0 +1,16 @@
+# CO-13 — Matrice de support navigateurs explicite (Carnet Naturaliste v5.2)
+# Cible alignee sur build.target dans vite.config.ts
+# Minimum effectif: Chrome 92, Firefox 95, Safari 15.2, Edge 92
+# (cf. 09-compatibilite.md — supporte crypto.randomUUID, dynamic import, ES2020)
+
+last 2 Chrome versions
+last 2 Firefox versions
+last 2 Safari versions
+last 2 Edge versions
+Chrome >= 92
+Firefox >= 95
+Safari >= 15.2
+Edge >= 92
+not dead
+not IE 11
+not op_mini all

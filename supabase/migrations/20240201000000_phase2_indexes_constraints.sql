@@ -19,21 +19,30 @@ set gps_lon = null
 where gps_lon < -180 or gps_lon > 180;
 
 -- 2) Add constraints (NOT VALID first, then VALIDATE).
-alter table observations
-  add constraint observations_count_positive_check
-  check (count is not null and count >= 1) not valid;
+-- Wrapped in DO blocks for idempotency: fresh DBs may already have these from initial_schema.sql.
+do $$ begin
+  alter table observations
+    add constraint observations_count_positive_check
+    check (count is not null and count >= 1) not valid;
+exception when duplicate_object then null; end $$;
 
-alter table observations
-  add constraint observations_species_name_not_blank_check
-  check (char_length(btrim(species_name)) > 0) not valid;
+do $$ begin
+  alter table observations
+    add constraint observations_species_name_not_blank_check
+    check (char_length(btrim(species_name)) > 0) not valid;
+exception when duplicate_object then null; end $$;
 
-alter table observations
-  add constraint observations_gps_lat_range_check
-  check (gps_lat is null or (gps_lat >= -90 and gps_lat <= 90)) not valid;
+do $$ begin
+  alter table observations
+    add constraint observations_gps_lat_range_check
+    check (gps_lat is null or (gps_lat >= -90 and gps_lat <= 90)) not valid;
+exception when duplicate_object then null; end $$;
 
-alter table observations
-  add constraint observations_gps_lon_range_check
-  check (gps_lon is null or (gps_lon >= -180 and gps_lon <= 180)) not valid;
+do $$ begin
+  alter table observations
+    add constraint observations_gps_lon_range_check
+    check (gps_lon is null or (gps_lon >= -180 and gps_lon <= 180)) not valid;
+exception when duplicate_object then null; end $$;
 
 alter table observations validate constraint observations_count_positive_check;
 alter table observations validate constraint observations_species_name_not_blank_check;

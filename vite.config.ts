@@ -45,6 +45,9 @@ export default defineConfig(({ mode }) => {
         cacheName: 'logo-assets-cache',
         expiration: {
           maxEntries: 80,
+          // CO-07: TTL 30j applique sur Android/desktop. iOS Safari evicte
+          // toutefois les caches SW apres ~7j d'inactivite (limite plateforme,
+          // non modifiable cote app). Documente ici pour reference.
           maxAgeSeconds: 60 * 60 * 24 * 30
         },
         cacheableResponse: {
@@ -78,37 +81,79 @@ export default defineConfig(({ mode }) => {
       react(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+        // CO-01: masked-icon.svg n'existe pas (feature Safari pinned-tab deprecated), retire de la liste.
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
         manifest: {
           name: 'Carnet Naturaliste',
           short_name: 'CarnetNat',
           description: 'Application de gestion d\'observations naturalistes',
-          theme_color: '#ffffff',
+          // CO-04: langue passee de 'en' (defaut) a 'fr' pour la conformite store/PWA
+          lang: 'fr',
+          // CO-05: couleurs alignees sur le theme nature-beige plutot que blanc
+          theme_color: '#F2F2F7',
+          background_color: '#F2F2F7',
+          // CO-10: metadonnees PWA additionnelles pour stores et lanceurs
+          categories: ['productivity', 'education', 'utilities'],
+          orientation: 'any',
           icons: [
+            // CO-09: tailles intermediaires pour Android (144) et splash haute resolution (384)
+            {
+              src: 'pwa-144x144.png',
+              sizes: '144x144',
+              type: 'image/png'
+            },
             {
               src: 'pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png'
             },
             {
+              src: 'pwa-384x384.png',
+              sizes: '384x384',
+              type: 'image/png'
+            },
+            {
               src: 'pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png'
+            },
+            // CO-09: variant maskable pour les launchers Android adaptifs
+            {
+              src: 'pwa-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
             }
           ],
           display: 'standalone',
           start_url: '/',
-          background_color: '#ffffff'
+          // CO-10: raccourci PWA pour creer une nouvelle observation rapidement
+          shortcuts: [
+            {
+              name: 'Nouvelle observation',
+              short_name: 'Nouvelle obs.',
+              description: 'Ajouter une nouvelle observation naturaliste',
+              url: '/',
+              icons: [{ src: 'pwa-192x192.png', sizes: '192x192' }]
+            }
+          ]
         },
         workbox: {
           maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MiB to accommodate the large main bundle
-          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-          globIgnores: ['**/Logo/*'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // PE-11: Exclude heavy vendor chunks from precache (loaded on-demand via runtime cache)
+          globIgnores: ['**/Logo/*', '**/vendor-exceljs*', '**/vendor-jspdf*', '**/vendor-html2canvas*', '**/vendor-jszip*', '**/vendor-file-saver*'],
+          // CO-08: page de fallback offline servie quand une navigation echoue
+          navigateFallback: '/offline.html',
+          navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
           runtimeCaching
         }
       })
     ],
     build: {
+      // CO-13: cible navigateurs explicite alignee sur le .browserslistrc.
+      // Minimum effectif: Chrome 92, Firefox 95, Safari 15.2, Edge 92.
+      target: ['es2020', 'chrome92', 'firefox95', 'safari15.2', 'edge92'],
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -118,8 +163,8 @@ export default defineConfig(({ mode }) => {
               return 'vendor-leaflet';
             }
 
-            if (id.includes('/xlsx/')) {
-              return 'vendor-xlsx';
+            if (id.includes('/exceljs/')) {
+              return 'vendor-exceljs';
             }
 
             if (id.includes('/jspdf/')) {
@@ -128,6 +173,23 @@ export default defineConfig(({ mode }) => {
 
             if (id.includes('/html2canvas/')) {
               return 'vendor-html2canvas';
+            }
+
+            // PE-10: Additional vendor chunks for better cache invalidation
+            if (id.includes('/recharts/') || id.includes('/d3-')) {
+              return 'vendor-recharts';
+            }
+
+            if (id.includes('/jszip/')) {
+              return 'vendor-jszip';
+            }
+
+            if (id.includes('/file-saver/')) {
+              return 'vendor-file-saver';
+            }
+
+            if (id.includes('/react-calendar/')) {
+              return 'vendor-react-calendar';
             }
 
             if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/@supabase/')) {

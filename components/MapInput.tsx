@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { SearchResult, reverseGeocode, searchAddress } from '../services/locationService';
+import { logger } from '../utils/logger';
 
 // Fix for default marker icon (Vite breaks the default paths)
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -33,6 +34,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
     const markerRef = useRef<L.Marker | null>(null);
     const accuracyCircleRef = useRef<L.Circle | null>(null);
     const watchIdRef = useRef<number | null>(null);
+    const watchGeocodeTimerRef = useRef<number | null>(null);
     const onLocationChangeRef = useRef(onLocationChange);
     const onToastRef = useRef(onToast);
 
@@ -87,14 +89,14 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                 clickTimer = setTimeout(() => {
                     abortCtrl = new AbortController();
                     reverseGeocode(lat, lng, abortCtrl?.signal).then(result => {
-                        if (result) {
-                            onLocationChangeRef.current(lat, lng, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
+                        if (result?.address) {
+                            onLocationChangeRef.current(lat, lng, result.address.municipality || '', result.address.location || '', result.address.department || '', result.address.country || '');
                         } else {
                             onLocationChangeRef.current(lat, lng, '', '', '', '');
                         }
                     }).catch(err => {
                         if (err.name !== 'AbortError') {
-                            console.error(err);
+                            logger.error(err);
                             onToastRef.current('warning', "Impossible de récupérer l'adresse exacte pour ce point.");
                         }
                     });
@@ -184,8 +186,8 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                 onToastRef.current('info', 'Aucun résultat trouvé pour cette recherche.');
             }
         } catch (error) {
-            console.error(error);
-            onToastRef.current('warning', (error as Error).message || "Erreur lors de la recherche d'adresse.");
+            logger.error(error);
+            onToastRef.current('warning', (error instanceof Error && error.message) ? error.message : "Erreur lors de la recherche d'adresse.");
         } finally {
             setIsSearching(false);
         }
@@ -256,6 +258,10 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
             navigator.geolocation.clearWatch(watchIdRef.current);
             watchIdRef.current = null;
         }
+        if (watchGeocodeTimerRef.current !== null) {
+            clearTimeout(watchGeocodeTimerRef.current);
+            watchGeocodeTimerRef.current = null;
+        }
         setIsLocating(false);
     };
 
@@ -311,17 +317,20 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                     }).addTo(mapRef.current);
                 }
 
-                // Reverse geocode
-                reverseGeocode(latitude, longitude).then(result => {
-                    if (result) {
-                        onLocationChangeRef.current(latitude, longitude, result.address?.municipality || '', result.address?.location || '', result.address?.department || '', result.address?.country || '');
-                    } else {
-                        onLocationChangeRef.current(latitude, longitude, '', '', '', '');
-                    }
-                }).catch((error) => {
-                    console.error(error);
-                    onToastRef.current('warning', (error as Error).message || "Impossible de récupérer l'adresse de votre position.");
-                });
+                // Reverse geocode — debounce pour éviter la saturation API
+                if (watchGeocodeTimerRef.current) clearTimeout(watchGeocodeTimerRef.current);
+                watchGeocodeTimerRef.current = window.setTimeout(() => {
+                    reverseGeocode(latitude, longitude).then(result => {
+                        if (result?.address) {
+                            onLocationChangeRef.current(latitude, longitude, result.address.municipality || '', result.address.location || '', result.address.department || '', result.address.country || '');
+                        } else {
+                            onLocationChangeRef.current(latitude, longitude, '', '', '', '');
+                        }
+                    }).catch((error) => {
+                        logger.error(error);
+                        onToastRef.current('warning', (error instanceof Error && error.message) ? error.message : "Impossible de récupérer l'adresse de votre position.");
+                    });
+                }, 2000);
 
                 // Stop watching once accuracy is good enough (<30m)
                 if (acc < 30) {
@@ -329,7 +338,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                 }
             },
             (error) => {
-                console.error("Erreur de géolocalisation:", error);
+                logger.error("Erreur de géolocalisation:", error);
                 onToastRef.current('warning', "Impossible de vous localiser. Vérifiez vos autorisations.");
                 stopWatching();
             },
@@ -375,7 +384,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                 </div>
                 {/* Search Results */}
                 {searchResults.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 dark:border-white/10 overflow-hidden max-h-48 overflow-y-auto">
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-xl shadow-lg border border-gray-100 dark:border-white/10 overflow-hidden max-h-[min(12rem,40vh)] overflow-y-auto">
                         {searchResults.map((result, index) => (
                             <button
                                 type="button"
@@ -411,13 +420,13 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
             <button
                 onClick={handleLocateMe}
                 type="button"
-                className={`absolute top-2 right-2 z-[1000] p-2 backdrop-blur-md rounded-full shadow-md border hover:scale-110 transition-transform ${isLocating ? 'bg-nature-accent/20 border-nature-accent text-nature-accent' : 'bg-white/90 dark:bg-nature-dark-surface/90 border-gray-200 dark:border-white/10 text-nature-accent'}`}
+                className={`absolute top-2 right-2 z-[1000] p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center backdrop-blur-md rounded-full shadow-md border hover:scale-110 transition-transform ${isLocating ? 'bg-nature-accent/20 border-nature-accent text-nature-accent' : 'bg-white/90 dark:bg-nature-dark-surface/90 border-gray-200 dark:border-white/10 text-nature-accent'}`}
                 title={isLocating ? "Arrêter la localisation" : "Me localiser"}
             >
                 {isLocating ? (
-                    <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <svg className="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 )}
             </button>
 
@@ -433,10 +442,10 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                 <button
                     type="button"
                     onClick={() => setShowLayerMenu(!showLayerMenu)}
-                    className="p-2 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-lg shadow-md border border-gray-200 dark:border-white/10 hover:scale-105 transition-transform"
+                    className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-lg shadow-md border border-gray-200 dark:border-white/10 hover:scale-105 transition-transform"
                     title="Changer le fond de carte"
                 >
-                    <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                    <svg className="w-6 h-6 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
                 </button>
                 {showLayerMenu && (
                     <div className="absolute bottom-10 left-0 bg-white/95 dark:bg-nature-dark-surface/95 backdrop-blur-md rounded-xl shadow-lg border border-gray-200 dark:border-white/10 overflow-hidden min-w-[120px]">

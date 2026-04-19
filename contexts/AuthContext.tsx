@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { isSupabaseConfigured, supabase } from '../supabaseClient';
 import { Session, User } from '@supabase/supabase-js';
 import {
@@ -6,10 +6,11 @@ import {
     migrateLegacyLocalStorageToScoped,
     setStorageNamespace
 } from '../services/storageService';
+import { logger } from '../utils/logger';
 
 const CACHED_SESSION_KEY = 'cached_auth_session';
 const CACHED_SESSION_TTL_MS = 2 * 24 * 60 * 60 * 1000;
-const CACHED_SESSION_SCHEMA_VERSION = 2;
+const CACHED_SESSION_SCHEMA_VERSION = 3;
 
 interface AuthContextType {
     session: Session | null;
@@ -33,14 +34,19 @@ const cacheSession = (session: Session | null) => {
         if (session) {
             localStorage.setItem(CACHED_SESSION_KEY, JSON.stringify({
                 schema_version: CACHED_SESSION_SCHEMA_VERSION,
-                user: session.user,
+                user: {
+                    id: session.user.id,
+                    user_metadata: {
+                        display_name: session.user.user_metadata?.display_name
+                    }
+                },
                 cached_at: Date.now()
             }));
         } else {
             localStorage.removeItem(CACHED_SESSION_KEY);
         }
     } catch (e) {
-        console.warn('Failed to cache session:', e);
+        logger.warn('Failed to cache session:', e);
     }
 };
 
@@ -73,7 +79,7 @@ const getCachedSession = (): { user: User } | null => {
             return { user: parsed.user };
         }
     } catch (e) {
-        console.warn('Failed to restore cached session:', e);
+        logger.warn('Failed to restore cached session:', e);
         localStorage.removeItem(CACHED_SESSION_KEY);
     }
     return null;
@@ -125,14 +131,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setStorageNamespace(null);
                 }
             } catch (e) {
-                console.warn('Auth getSession failed (likely offline), trying cache:', e);
+                logger.warn('Auth getSession failed (likely offline), trying cache:', e);
                 // Fallback to cached session
                 const cached = getCachedSession();
                 if (cached) {
                     setUser(cached.user);
                     setStorageNamespace(cached.user.id);
                     migrateLegacyLocalStorageToScoped(cached.user.id);
-                    console.log('Restored user from cache for offline mode');
+                    logger.info('Restored user from cache for offline mode');
                 } else {
                     setStorageNamespace(null);
                 }
@@ -164,17 +170,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
     }, []);
 
-    const signOut = async () => {
+    const signOut = useCallback(async () => {
         if (user?.id) {
             clearScopedOfflineData(user.id);
         }
         setStorageNamespace(null);
         cacheSession(null);
-        await supabase.auth.signOut();
-    };
+        try {
+            await supabase.auth.signOut();
+        } catch (e) {
+            logger.warn('signOut failed (likely offline):', e);
+            // SE-09: Explicit token cleanup when signOut fails offline
+            try {
+                const url = import.meta.env.VITE_SUPABASE_URL || '';
+                const match = url.match(/https?:\/\/([^.]+)\./);
+                if (match?.[1]) {
+                    localStorage.removeItem(`sb-${match[1]}-auth-token`);
+                }
+            } catch { /* ignore */ }
+        }
+    }, [user]);
+
+    const contextValue = useMemo(
+        () => ({ session, user, loading, isOffline, signOut }),
+        [session, user, loading, isOffline, signOut]
+    );
 
     return (
-        <AuthContext.Provider value={{ session, user, loading, isOffline, signOut }}>
+        <AuthContext.Provider value={contextValue}>
             {!loading && children}
         </AuthContext.Provider>
     );

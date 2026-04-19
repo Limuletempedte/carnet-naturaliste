@@ -1,7 +1,3 @@
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 import { Observation } from '../types';
 import { buildStatsReportData, StatsReportData } from '../utils/statsReportData';
 import { dateToIsoLocal } from '../utils/dateUtils';
@@ -331,6 +327,10 @@ body{margin:0}
 }
 
 async function generatePdfBlob(data: ExportStatsData, logoDataUrls: Map<string, string>, exportedAt: Date): Promise<Blob> {
+    const [{ jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas')
+    ]);
     try {
         await document.fonts.ready;
     } catch {
@@ -510,6 +510,7 @@ export async function exportStatsBundle(options: StatsExportOptions): Promise<St
         files: ['stats-report.pdf', 'stats-report.html', 'stats-data.json', 'manifest.json']
     };
 
+    const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     zip.file('stats-report.pdf', pdfBlob);
     zip.file('stats-report.html', htmlContent);
@@ -525,6 +526,7 @@ export async function exportStatsBundle(options: StatsExportOptions): Promise<St
 
     const fileName = `carnet-naturaliste-stats-${dateToIsoLocal(exportedAt)}.zip`;
     if (autoSave) {
+        const { saveAs } = await import('file-saver');
         saveAs(zipContent, fileName);
     }
 

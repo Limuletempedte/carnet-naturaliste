@@ -1,4 +1,4 @@
-
+import { logger } from '../utils/logger';
 
 export interface SearchResult {
     lat: number;
@@ -8,6 +8,20 @@ export interface SearchResult {
         municipality?: string;
         location?: string;
         department?: string;
+        country?: string;
+    };
+}
+
+interface NominatimResult {
+    lat: string;
+    lon: string;
+    display_name: string;
+    address?: {
+        village?: string;
+        town?: string;
+        city?: string;
+        road?: string;
+        postcode?: string;
         country?: string;
     };
 }
@@ -46,9 +60,7 @@ const fetchJsonWithTimeout = async (
         return response;
     } finally {
         window.clearTimeout(timeoutId);
-        if (externalSignal) {
-            externalSignal.removeEventListener('abort', abortListener);
-        }
+        // No manual removeEventListener needed — { once: true } auto-removes
     }
 };
 
@@ -63,7 +75,8 @@ const fetchNominatimWithRetry = async (url: string, signal?: AbortSignal): Promi
                 {
                     headers: {
                         Accept: 'application/json',
-                        'Accept-Language': 'fr'
+                        'Accept-Language': 'fr',
+                        'User-Agent': 'CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)'
                     }
                 },
                 NOMINATIM_TIMEOUT_MS,
@@ -72,7 +85,11 @@ const fetchNominatimWithRetry = async (url: string, signal?: AbortSignal): Promi
 
             if (response.status === 429) {
                 if (attempt < maxAttempts) {
-                    await sleep(350 * attempt);
+                    const retryAfter = response.headers.get('Retry-After');
+                    const retryMs = retryAfter && /^\d+$/.test(retryAfter)
+                        ? Math.min(parseInt(retryAfter, 10) * 1000, 10000)
+                        : 350 * attempt;
+                    await sleep(retryMs);
                     continue;
                 }
                 throw new Error('NOMINATIM_RATE_LIMIT');
@@ -105,7 +122,7 @@ export const fetchAltitude = async (lat: number, lon: number): Promise<number | 
         }
         return null;
     } catch (error) {
-        console.error("Erreur lors de la récupération de l'altitude:", error);
+        logger.error("Erreur lors de la récupération de l'altitude:", error);
         return null;
     }
 };
@@ -116,7 +133,7 @@ export const searchAddress = async (query: string): Promise<SearchResult[]> => {
         const response = await fetchNominatimWithRetry(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`);
         const data = await response.json();
 
-        return data.map((item: any) => ({
+        return (data as NominatimResult[]).map((item) => ({
             lat: parseFloat(item.lat),
             lon: parseFloat(item.lon),
             displayName: item.display_name,

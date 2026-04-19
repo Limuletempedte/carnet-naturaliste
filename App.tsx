@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View, TaxonomicGroup, Status } from './types';
 import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, OfflineSyncResult } from './services/storageService';
 import ObservationList from './components/ObservationList';
@@ -10,13 +11,19 @@ import FilterBar from './components/FilterBar';
 import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
 import { compareIsoDate } from './utils/dateUtils';
 import { buildImportPersistencePlan, ImportConflictMode } from './services/importPolicy';
-import { isUuid } from './utils/uuidUtils';
+import { isUuid, generateUUID } from './utils/uuidUtils';
 import { SortCriterion, useObservationFilters } from './hooks/useObservationFilters';
 import { selectStartupEnrichmentCandidates } from './services/startupEnrichmentUtils';
 import SyncCenterDialog from './components/SyncCenterDialog';
 import AdvancedFilterDialog, { AdvancedFilterDialogState, FilterPreset } from './components/AdvancedFilterDialog';
 import StatsExportDialog, { StatsExportDialogState } from './components/StatsExportDialog';
-import { OfflineQueueItem } from './services/storageQueueUtils';
+import ErrorBoundary from './components/ErrorBoundary';
+import StorageConsentBanner from './components/StorageConsentBanner';
+import { logger } from './utils/logger';
+import { safeGet, safeSet } from './utils/safeStorage';
+import { useOfflineQueue } from './hooks/useOfflineQueue';
+import { useStorageQuotaToasts } from './hooks/useStorageQuotaToasts';
+import { useBadgeUnlockToasts } from './hooks/useBadgeUnlockToasts';
 
 type AppConnectionStatus = 'online' | 'offline' | 'degraded';
 
@@ -30,6 +37,11 @@ const ObservationMap = lazy(() => import('./components/ObservationMap'));
 const ObservationStats = lazy(() => import('./components/ObservationStats'));
 const ObservationGallery = lazy(() => import('./components/ObservationGallery'));
 const ObservationCalendar = lazy(() => import('./components/ObservationCalendar'));
+const LegalPages = lazy(() => import('./components/LegalPages').then(m => ({ default: m.PrivacyPolicy })));
+const LegalTerms = lazy(() => import('./components/LegalPages').then(m => ({ default: m.TermsOfService })));
+const LegalNotices = lazy(() => import('./components/LegalPages').then(m => ({ default: m.MentionsLegales })));
+const HelpPage = lazy(() => import('./components/HelpPage'));
+const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
 
 const FILTER_PRESETS_STORAGE_KEY = 'observation-filter-presets-v1';
 
@@ -64,10 +76,12 @@ interface StoredFilterPreset extends FilterPreset {
     advancedFilters: AdvancedFilterDialogState;
 }
 
+const ENRICHMENT_BATCH_LIMIT = 10;
+const ENRICHMENT_CONCURRENCY = 3;
+
 const App: React.FC = () => {
-    const ENRICHMENT_BATCH_LIMIT = 20;
-    const ENRICHMENT_CONCURRENCY = 3;
     const { user, loading: authLoading, isOffline } = useAuth();
+    const { offlineQueueItems, refreshOfflineQueueSnapshot } = useOfflineQueue(user);
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
     const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
@@ -79,46 +93,58 @@ const App: React.FC = () => {
     const [endDateFilter, setEndDateFilter] = useState<string>('');
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // SR-12 : bandeau d'erreurs critiques persistant (pas d'auto-dismiss)
+    const [criticalError, setCriticalError] = useState<string | null>(null);
+    // VP-18 : affichage du tour guidé (piloté par localStorage onboarding-seen-v1)
+    const [showOnboarding, setShowOnboarding] = useState(false);
     const [confirmation, setConfirmation] = useState<{ title: string; message: string; onConfirm: () => void; } | null>(null);
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [isCreatingBackup, setIsCreatingBackup] = useState(false);
+    const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [isExportingStats, setIsExportingStats] = useState(false);
     const [isStatsExportDialogOpen, setIsStatsExportDialogOpen] = useState(false);
     const [statsExportDialogState, setStatsExportDialogState] = useState<StatsExportDialogState>(() => createDefaultStatsExportDialogState());
     const statsRootRef = useRef<HTMLDivElement | null>(null);
     const [isSyncCenterOpen, setIsSyncCenterOpen] = useState(false);
-    const [offlineQueueItems, setOfflineQueueItems] = useState<OfflineQueueItem[]>([]);
     const [lastSyncResult, setLastSyncResult] = useState<OfflineSyncResult | null>(null);
     const [isSyncingQueue, setIsSyncingQueue] = useState(false);
     const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
     const [advancedFilterState, setAdvancedFilterState] = useState<AdvancedFilterDialogState>(() => createDefaultAdvancedFilterState());
     const [filterPresets, setFilterPresets] = useState<StoredFilterPreset[]>(() => {
-        const raw = localStorage.getItem(FILTER_PRESETS_STORAGE_KEY);
+        const raw = safeGet(FILTER_PRESETS_STORAGE_KEY);
         if (!raw) return [];
         try {
             const parsed = JSON.parse(raw) as StoredFilterPreset[];
             return Array.isArray(parsed) ? parsed : [];
-        } catch {
+        } catch (err) {
+            logger.error('Presets de filtres corrompus dans localStorage, réinitialisation.', err);
+            window.setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('storage-corruption-detected', { detail: { scope: 'presets' } }));
+            }, 0);
             return [];
         }
     });
 
-    const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
+    const [isDarkMode, setIsDarkMode] = useState(() => safeGet('darkMode') === 'true');
+    const closeDeleteAccountDialog = useCallback(() => { setIsDeleteAccountOpen(false); setDeleteConfirmText(''); }, []);
+    const { dialogRef: deleteAccountDialogRef, dialogProps: deleteAccountDialogProps } = useAccessibleDialog({ isOpen: isDeleteAccountOpen, onClose: closeDeleteAccountDialog, titleId: 'delete-account-dialog-title' });
 
     useEffect(() => {
-        localStorage.setItem('darkMode', String(isDarkMode));
+        try { safeSet('darkMode', String(isDarkMode)); } catch { /* non-critical */ }
     }, [isDarkMode]);
 
-    const removeToast = (id: string) => {
+    const removeToast = useCallback((id: string) => {
         setToasts(prev => prev.filter(t => t.id !== id));
-    };
+    }, []);
 
-    const pushToast = (type: ToastType, message: string, durationMs = 4500) => {
-        const id = crypto.randomUUID();
+    const pushToast = useCallback((type: ToastType, message: string, durationMs = 4500) => {
+        const id = generateUUID();
         setToasts(prev => [...prev, { id, type, message }]);
         if (durationMs > 0) {
             window.setTimeout(() => {
@@ -126,22 +152,10 @@ const App: React.FC = () => {
             }, durationMs);
         }
         return id;
-    };
-
-    const refreshOfflineQueueSnapshot = useCallback(() => {
-        if (!user) {
-            setOfflineQueueItems([]);
-            return;
-        }
-        try {
-            setOfflineQueueItems(getOfflineQueueSnapshot());
-        } catch {
-            setOfflineQueueItems([]);
-        }
-    }, [user]);
+    }, []);
 
     useEffect(() => {
-        localStorage.setItem(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(filterPresets));
+        try { safeSet(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(filterPresets)); } catch { /* non-critical */ }
     }, [filterPresets]);
 
     useEffect(() => {
@@ -152,23 +166,20 @@ const App: React.FC = () => {
         }
     }, [isDarkMode]);
 
-    // Listen for localStorage quota exceeded and warn user
+    useStorageQuotaToasts(pushToast);
+    useBadgeUnlockToasts(observations, pushToast);
+
+    // VP-18 — afficher le tour guidé au 1er run pour un utilisateur connecté sans observation
     useEffect(() => {
-        const handleQuota = () => pushToast('warning', 'Stockage local plein — les données hors-ligne risquent de ne pas être sauvegardées. Libérez de l\'espace ou synchronisez vos données.', 8000);
-        const handleMediaStripped = (event: Event) => {
-            const strippedCount = (event as CustomEvent<{ count?: number }>).detail?.count;
-            if (!strippedCount || strippedCount < 1) return;
-            pushToast('warning', `⚠️ ${strippedCount} photo(s)/son(s) non disponibles hors-ligne (trop volumineuses pour le cache local).`, 8000);
-        };
-
-        window.addEventListener('storage-quota-exceeded', handleQuota);
-        window.addEventListener('media-stripped-offline', handleMediaStripped);
-
-        return () => {
-            window.removeEventListener('storage-quota-exceeded', handleQuota);
-            window.removeEventListener('media-stripped-offline', handleMediaStripped);
-        };
-    }, []);
+        if (!user) return;
+        if (isLoading) return;
+        try {
+            const seen = localStorage.getItem('onboarding-seen-v1') === 'true';
+            if (!seen && observations.length === 0) setShowOnboarding(true);
+        } catch {
+            // accès localStorage bloqué : on n'affiche simplement pas le tour
+        }
+    }, [user, isLoading, observations.length]);
 
     useEffect(() => {
         if (isOffline) {
@@ -178,10 +189,6 @@ const App: React.FC = () => {
         }
     }, [isOffline]);
 
-    useEffect(() => {
-        refreshOfflineQueueSnapshot();
-    }, [refreshOfflineQueueSnapshot]);
-
     // Auto-dismiss error banner after 10 seconds
     useEffect(() => {
         if (!error) return;
@@ -190,6 +197,8 @@ const App: React.FC = () => {
     }, [error]);
 
     useEffect(() => {
+        // supabaseConfigError is a module-level constant (never changes at runtime),
+        // so it does not need to be in the dependency array.
         if (authLoading || !user || supabaseConfigError) {
             return;
         }
@@ -199,14 +208,17 @@ const App: React.FC = () => {
         const loadData = async () => {
             setIsLoading(true);
             try {
-                // Try to sync if online
-                if (navigator.onLine) {
+                // Try to sync if online (PE-15: skip if queue empty to avoid unnecessary auth call)
+                const pendingQueue = getOfflineQueueSnapshot();
+                if (navigator.onLine && pendingQueue.length > 0) {
                     const syncResult = await processOfflineQueue();
                     if (syncResult.failed > 0) {
                         setConnectionStatus('degraded');
+                        const remainingQueue = getOfflineQueueSnapshot();
+                        const remaining = remainingQueue.length;
                         pushToast(
                             'warning',
-                            `Synchronisation partielle: ${syncResult.failed}/${syncResult.processed} action(s) en échec.${syncResult.failureReasons.length > 0 ? ` ${syncResult.failureReasons.slice(0, 2).join(' ; ')}` : ''}`,
+                            `Sync partielle : ${syncResult.failed}/${syncResult.processed} échec(s).${remaining > 0 ? ` ${remaining} action(s) encore en file.` : ''}${syncResult.failureReasons.length > 0 ? ` Raison : ${syncResult.failureReasons.slice(0, 2).join(' ; ')}` : ''}`,
                             8000
                         );
                     } else if (syncResult.processed > 0) {
@@ -237,7 +249,7 @@ const App: React.FC = () => {
                 const skippedForAmbiguity = startupSelection.skippedDueToMissingLatin;
 
                 if (skippedForAmbiguity > 0) {
-                    console.info(`[startup-enrichment] ${skippedForAmbiguity} observation(s) ignorée(s) (nom latin absent, source ambiguë).`);
+                    logger.info(`[startup-enrichment] ${skippedForAmbiguity} observation(s) ignorée(s) (nom latin absent, source ambiguë).`);
                 }
 
                 const obsWithMissingImages = startupSelection.candidates;
@@ -275,7 +287,7 @@ const App: React.FC = () => {
                                 hasUpdates = true;
                                 await updateObservation(nextObservation);
                             } catch (err) {
-                                console.error(`Failed to fetch info for ${obs.latinName}`, err);
+                                logger.error(`Failed to fetch info for ${obs.latinName}`, err);
                             }
                             await new Promise(resolve => setTimeout(resolve, 200));
                         }
@@ -289,12 +301,12 @@ const App: React.FC = () => {
                         setObservations(updatedObs);
                     }
                 }
-            } catch (e: any) {
+            } catch (e: unknown) {
                 if (!mounted) return;
-                const errorMsg = e.message || "Erreur inconnue";
+                const errorMsg = e instanceof Error ? e.message : "Erreur inconnue";
                 setConnectionStatus(navigator.onLine ? 'degraded' : 'offline');
                 setError(`Erreur connexion: ${errorMsg}.`);
-                console.error(e);
+                logger.error(e);
                 setIsLoading(false);
                 refreshOfflineQueueSnapshot();
             }
@@ -304,25 +316,28 @@ const App: React.FC = () => {
         return () => { mounted = false; };
     }, [authLoading, isOffline, refreshOfflineQueueSnapshot, user]);
 
-    const handleAddObservation = () => {
+    const handleAddObservation = useCallback(() => {
         setEditingObservation(null);
         setView(View.FORM);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    }, []);
 
-    const handleEditObservation = (id: string) => {
+    const handleEditObservation = useCallback((id: string) => {
         const observationToEdit = observations.find(obs => obs.id === id);
         if (observationToEdit) {
             setEditingObservation(observationToEdit);
             setView(View.FORM);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
-    };
+    }, [observations]);
 
-    const handleDeleteRequest = (id: string) => {
+    const handleDeleteRequest = useCallback((id: string) => {
+        if (isImporting) return;
+        const obs = observations.find(o => o.id === id);
+        const obsLabel = obs ? `${obs.speciesName} du ${obs.date}` : 'cette observation';
         setConfirmation({
             title: "Confirmer la suppression",
-            message: "Êtes-vous sûr de vouloir supprimer cette observation ? Cette action est irréversible.",
+            message: `Supprimer l'observation de ${obsLabel} ? Cette action est irréversible.`,
             onConfirm: async () => {
                 try {
                     await deleteObservation(id);
@@ -330,28 +345,35 @@ const App: React.FC = () => {
                     refreshOfflineQueueSnapshot();
                 } catch (e) {
                     setError("Erreur lors de la suppression de l'observation.");
-                    console.error(e);
+                    logger.error(e);
+                } finally {
+                    setConfirmation(null);
                 }
             }
         });
-    };
+    }, [observations, isImporting, refreshOfflineQueueSnapshot]);
 
     const handleBulkDeleteRequest = (ids: string[]) => {
+        const previewNames = ids.slice(0, 5).map(id => {
+            const obs = observations.find(o => o.id === id);
+            return obs?.speciesName || '?';
+        });
+        const preview = previewNames.join(', ') + (ids.length > 5 ? ` et ${ids.length - 5} autre(s)` : '');
         setConfirmation({
             title: "Confirmer la suppression multiple",
-            message: `Êtes-vous sûr de vouloir supprimer ces ${ids.length} observations ? Cette action est irréversible.`,
+            message: `Supprimer ${ids.length} observations ?\n\n${preview}\n\nCette action est irréversible.`,
             onConfirm: async () => {
                 setIsBulkDeleting(true);
                 try {
                     const results = await Promise.allSettled(ids.map(id => deleteObservation(id)));
                     const successIds: string[] = [];
-                    let failedCount = 0;
+                    const failedIds: string[] = [];
 
                     results.forEach((result, index) => {
                         if (result.status === 'fulfilled') {
                             successIds.push(ids[index]);
                         } else {
-                            failedCount++;
+                            failedIds.push(ids[index]);
                         }
                     });
 
@@ -359,12 +381,19 @@ const App: React.FC = () => {
                     setObservations(prev => prev.filter(obs => !idsSet.has(obs.id)));
                     refreshOfflineQueueSnapshot();
 
-                    if (failedCount > 0) {
-                        pushToast('warning', `${failedCount} suppression(s) ont échoué.`);
+                    if (failedIds.length > 0) {
+                        const failedNames = failedIds.map(fid => {
+                            const obs = observations.find(o => o.id === fid);
+                            return obs?.speciesName || fid.slice(0, 8);
+                        });
+                        const preview = failedNames.length > 3
+                            ? `${failedNames.slice(0, 3).join(', ')} et ${failedNames.length - 3} autre(s)`
+                            : failedNames.join(', ');
+                        pushToast('warning', `${failedIds.length} suppression(s) échouée(s) : ${preview}`);
                     }
                 } catch (e) {
                     setError("Erreur lors de la suppression multiple.");
-                    console.error(e);
+                    logger.error(e);
                 } finally {
                     setIsBulkDeleting(false);
                 }
@@ -373,6 +402,7 @@ const App: React.FC = () => {
     };
 
     const handleSaveObservation = async (observation: Observation) => {
+        if (isImporting) throw new Error('Un import est en cours. Veuillez patienter.');
         try {
             if (editingObservation) {
                 await updateObservation(observation);
@@ -390,7 +420,7 @@ const App: React.FC = () => {
         } catch (e) {
             const errorMessage = e instanceof Error ? e.message : String(e);
             setError(`Erreur lors de la sauvegarde de l'observation: ${errorMessage}`);
-            console.error(e);
+            logger.error(e);
             throw e;
         }
     };
@@ -477,15 +507,15 @@ const App: React.FC = () => {
             }
 
             // Cohérence Cache <-> React State
-            // 1. Mise à jour massive du cache local (1 écriture)
-            bulkUpsertObservationsInCache(successfulOps);
-
-            // 2. Mise à jour de l'état React
+            // 1. Mise à jour de l'état React d'abord (source de vérité UI)
             for (const obs of successfulOps) {
                 mergedById.set(obs.id, obs);
             }
             const mergedObservations = Array.from(mergedById.values()).sort((a, b) => compareIsoDate(b.date, a.date));
             setObservations(mergedObservations);
+
+            // 2. Mise à jour du cache local (si échoue, re-sync au prochain load)
+            bulkUpsertObservationsInCache(successfulOps);
 
             // UI Reset
             setView(View.LIST);
@@ -513,11 +543,11 @@ const App: React.FC = () => {
 
             refreshOfflineQueueSnapshot();
 
-        } catch (e: any) {
+        } catch (e: unknown) {
             const errorMessage = e instanceof Error ? e.message : String(e);
             setError(`Erreur lors de l'importation : ${errorMessage}`);
             pushToast('error', `Échec de l'import: ${errorMessage}`);
-            console.error(e);
+            logger.error(e);
             throw e;
         } finally {
             if (importToastId) {
@@ -526,11 +556,11 @@ const App: React.FC = () => {
             setIsImporting(false);
         }
     };
-    const handleCancel = () => {
+    const handleCancel = useCallback(() => {
         setView(View.LIST);
         setEditingObservation(null);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    }, []);
 
     const handleRefresh = async () => {
         try {
@@ -548,7 +578,7 @@ const App: React.FC = () => {
             refreshOfflineQueueSnapshot();
         } catch (e) {
             pushToast('error', 'Impossible d\'actualiser les données.');
-            console.error(e);
+            logger.error(e);
         } finally {
             setIsLoading(false);
         }
@@ -577,7 +607,9 @@ const App: React.FC = () => {
 
             if (syncResult.failed > 0) {
                 setConnectionStatus('degraded');
-                pushToast('warning', `Synchronisation partielle: ${syncResult.failed}/${syncResult.processed} échec(s).`, 7000);
+                const queueSnapshot = getOfflineQueueSnapshot();
+                const remaining = queueSnapshot.length;
+                pushToast('warning', `Sync partielle : ${syncResult.failed}/${syncResult.processed} échec(s).${remaining > 0 ? ` ${remaining} action(s) encore en file.` : ''}`, 7000);
             } else {
                 if (navigator.onLine) setConnectionStatus('online');
                 pushToast('success', `${syncResult.processed} action(s) synchronisée(s).`, 5000);
@@ -638,23 +670,63 @@ const App: React.FC = () => {
         setIsCreatingBackup(true);
         const backupToastId = pushToast('info', 'Préparation de la sauvegarde ZIP...', 0);
         try {
-            const { createBackup } = await import('./services/backupService');
-            const result = await createBackup(observations);
+            const { createBackup, estimateBackupSize, BACKUP_WARN_SIZE_BYTES } = await import('./services/backupService');
+            // SR-04 : au-delà du seuil, proposer d'exclure les images.
+            const estimated = estimateBackupSize(observations);
+            let includeImages = true;
+            if (estimated > BACKUP_WARN_SIZE_BYTES) {
+                const mb = Math.round(estimated / (1024 * 1024));
+                includeImages = window.confirm(
+                    `La sauvegarde risque d'être volumineuse (~${mb} Mo). Cliquez sur OK pour l'inclure tout de même, ou sur Annuler pour la créer sans les images.`,
+                );
+            }
+            const result = await createBackup(observations, { includeImages });
             removeToast(backupToastId);
             pushToast(
                 result.failedImages > 0 ? 'warning' : 'success',
-                result.failedImages > 0
-                    ? `ZIP créé (${result.fileName}) avec ${result.failedImages} image(s) manquante(s).`
-                    : `ZIP créé (${result.fileName}).`,
+                result.skippedImages
+                    ? `ZIP créé sans les images (${result.fileName}).`
+                    : result.failedImages > 0
+                        ? `ZIP créé (${result.fileName}) avec ${result.failedImages} image(s) manquante(s).`
+                        : `ZIP créé (${result.fileName}).`,
                 7000
             );
         } catch (backupError) {
             removeToast(backupToastId);
             const message = backupError instanceof Error ? backupError.message : String(backupError);
             pushToast('error', `Échec de la sauvegarde ZIP: ${message}`, 9000);
-            console.error('Backup ZIP error:', backupError);
+            logger.error('Backup ZIP error:', backupError);
         } finally {
             setIsCreatingBackup(false);
+        }
+    };
+
+    const handleExportUserData = async () => {
+        pushToast('info', 'Export de vos données (RGPD)...', 0);
+        try {
+            const { createBackup } = await import('./services/backupService');
+            const result = await createBackup(observations);
+            pushToast('success', `Export RGPD terminé : ${result.fileName}`, 7000);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            pushToast('error', `Échec de l'export : ${message}`, 9000);
+        }
+    };
+
+    const handleDeleteAccount = async () => {
+        if (isDeletingAccount) return;
+        setIsDeletingAccount(true);
+        try {
+            const { deleteAccount } = await import('./services/accountService');
+            await deleteAccount();
+            pushToast('success', 'Compte supprimé avec succès.', 5000);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            pushToast('error', `Échec de la suppression : ${message}`, 9000);
+        } finally {
+            setIsDeletingAccount(false);
+            setIsDeleteAccountOpen(false);
+            setDeleteConfirmText('');
         }
     };
 
@@ -686,7 +758,7 @@ const App: React.FC = () => {
 
     const handleSaveFilterPreset = (name: string) => {
         const newPreset: StoredFilterPreset = {
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             name,
             createdAt: new Date().toISOString(),
             searchTerm,
@@ -768,7 +840,7 @@ const App: React.FC = () => {
     }
 
     if (authLoading) {
-        return <div className="flex items-center justify-center h-screen"><p>Chargement de la session...</p></div>;
+        return <div role="status" className="flex items-center justify-center h-screen"><p>Chargement de la session...</p></div>;
     }
 
     if (!user) {
@@ -778,7 +850,7 @@ const App: React.FC = () => {
                 <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
                     <div className="w-full max-w-md bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-2xl shadow-ios p-8 border border-white/20 text-center">
                         <h1 className="text-3xl font-bold mb-2 text-nature-dark dark:text-white">Carnet Naturaliste</h1>
-                        <div className="text-6xl mb-4">📡</div>
+                        <div className="text-6xl mb-4" aria-hidden="true">📡</div>
                         <p className="text-gray-600 dark:text-gray-400 mb-4">Vous êtes hors-ligne. Connectez-vous à Internet pour vous identifier.</p>
                         <p className="text-sm text-gray-400 dark:text-gray-500">Une fois connecté, vos données seront disponibles hors-ligne.</p>
                     </div>
@@ -789,7 +861,7 @@ const App: React.FC = () => {
     }
 
     if (isLoading) {
-        return <div className="flex items-center justify-center h-screen"><p>Chargement des données...</p></div>;
+        return <div role="status" className="flex items-center justify-center h-screen"><p>Chargement des données...</p></div>;
     }
 
     const statusColorClass = connectionStatus === 'offline'
@@ -825,7 +897,7 @@ const App: React.FC = () => {
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
                 <header className="fixed top-0 left-0 right-0 z-50 px-4 py-2 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
-                    <UserProfile />
+                    <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} />
                     <div className="flex items-center gap-1.5">
                         {/* Server Status Mobile */}
                         <div className={`w-2.5 h-2.5 rounded-full ${statusColorClass}`} title={statusTitle}></div>
@@ -834,8 +906,9 @@ const App: React.FC = () => {
                             onClick={handleOpenSyncCenter}
                             className="relative p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
+                            aria-label="Centre de synchronisation"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-2 2m2-2l2 2" /></svg>
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-2 2m2-2l2 2" /></svg>
                             {offlineQueueItems.length > 0 && (
                                 <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-4 text-center">
                                     {offlineQueueItems.length}
@@ -847,22 +920,25 @@ const App: React.FC = () => {
                             onClick={() => setIsAdvancedFilterOpen(true)}
                             className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
+                            aria-label="Filtres avancés"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" /></svg>
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" /></svg>
                         </button>
 
                         <button
                             onClick={handleRefresh}
                             className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
+                            aria-label="Actualiser les données"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         </button>
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
                             className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? 'Mode Clair' : 'Mode Sombre'}
+                            aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
                             {isDarkMode
                                 ? <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
@@ -875,7 +951,7 @@ const App: React.FC = () => {
                 /* Desktop Layout: Floating Buttons */
                 <>
                     <div className="fixed top-6 left-6 z-50">
-                        <UserProfile />
+                        <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} />
                     </div>
 
                     <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
@@ -888,8 +964,9 @@ const App: React.FC = () => {
                             onClick={handleOpenSyncCenter}
                             className="relative p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
+                            aria-label="Centre de synchronisation"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-2 2m2-2l2 2" /></svg>
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6m0-6l-2 2m2-2l2 2" /></svg>
                             {offlineQueueItems.length > 0 && (
                                 <span className="absolute -top-1 -right-1 min-w-[18px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-bold leading-5 text-center">
                                     {offlineQueueItems.length}
@@ -901,22 +978,25 @@ const App: React.FC = () => {
                             onClick={() => setIsAdvancedFilterOpen(true)}
                             className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
+                            aria-label="Filtres avancés"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" /></svg>
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" /></svg>
                         </button>
 
                         <button
                             onClick={handleRefresh}
                             className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
+                            aria-label="Actualiser les données"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         </button>
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
                             className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
+                            aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
                             {isDarkMode
                                 ? <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
@@ -936,12 +1016,58 @@ const App: React.FC = () => {
                     message={confirmation.message}
                 />
             )}
+            {isDeleteAccountOpen && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                    <div ref={deleteAccountDialogRef} {...deleteAccountDialogProps} className="bg-white/80 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-xl shadow-2xl p-8 w-full max-w-md">
+                        <h3 id="delete-account-dialog-title" className="text-2xl font-serif font-bold text-red-600">Supprimer mon compte</h3>
+                        <p className="mt-4 text-gray-700 dark:text-gray-300">
+                            Cette action est <strong>irréversible</strong>. Toutes vos observations, photos et données seront définitivement supprimées.
+                        </p>
+                        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                            Tapez <strong className="text-red-600">SUPPRIMER</strong> pour confirmer :
+                        </p>
+                        <input
+                            type="text"
+                            value={deleteConfirmText}
+                            onChange={(e) => setDeleteConfirmText(e.target.value)}
+                            className="mt-2 w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-nature-dark-bg dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                            placeholder="SUPPRIMER"
+                        />
+                        <div className="mt-6 flex justify-end space-x-4">
+                            <button
+                                onClick={closeDeleteAccountDialog}
+                                className="px-6 py-2 rounded-md shadow-sm font-semibold text-gray-800 bg-gray-400 hover:bg-gray-500 transition-all"
+                            >
+                                Annuler
+                            </button>
+                            <button
+                                onClick={handleDeleteAccount}
+                                disabled={deleteConfirmText !== 'SUPPRIMER' || isDeletingAccount}
+                                className="px-6 py-2 rounded-md shadow-sm font-semibold text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isDeletingAccount ? 'Suppression...' : 'Supprimer définitivement'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {error && (
-                <div className={`fixed left-1/2 transform -translate-x-1/2 z-50 bg-red-100/90 backdrop-blur-md border border-red-200 text-red-700 px-6 py-4 rounded-2xl shadow-ios flex items-center gap-3 animate-fadeIn w-[90%] md:w-auto ${isMobileView ? 'top-24' : 'top-20'}`}>
+                <div role="alert" className={`fixed left-1/2 transform -translate-x-1/2 z-50 bg-red-100/90 backdrop-blur-md border border-red-200 text-red-700 px-6 py-4 rounded-2xl shadow-ios flex items-center gap-3 animate-fadeIn w-[90%] md:w-auto ${isMobileView ? 'top-24' : 'top-20'}`}>
                     <strong className="font-bold">Erreur:</strong>
                     <span className="block sm:inline"> {error}</span>
                     <button onClick={() => setError(null)} className="ml-4 text-red-500 hover:text-red-700">
                         <svg className="fill-current h-6 w-6" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z" /></svg>
+                    </button>
+                </div>
+            )}
+            {criticalError && (
+                <div role="alert" aria-live="assertive" className="fixed top-0 left-0 right-0 z-[60] bg-red-700 text-white px-6 py-3 shadow-lg flex items-start gap-3">
+                    <svg className="h-5 w-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+                    <div className="flex-1 min-w-0">
+                        <strong className="font-bold">Erreur critique :</strong> <span className="block sm:inline">{criticalError}</span>
+                    </div>
+                    <button onClick={() => setCriticalError(null)} className="ml-4 text-white hover:text-red-100 flex-shrink-0" aria-label="Fermer le bandeau d'erreur critique">
+                        <svg className="fill-current h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z" /></svg>
                     </button>
                 </div>
             )}
@@ -991,14 +1117,18 @@ const App: React.FC = () => {
                 </button>
             )}
 
-            <div
+            <div aria-live="polite" className="sr-only" role="status">
+                {view === View.LIST ? 'Vue liste active' : view === View.MAP ? 'Vue carte active' : view === View.STATS ? 'Vue statistiques active' : view === View.CALENDAR ? 'Vue calendrier active' : view === View.GALLERY ? 'Vue galerie active' : view === View.FORM ? 'Formulaire actif' : ''}
+            </div>
+            <main
+                id="main-content"
                 className={`container mx-auto p-4 md:p-8 max-w-7xl ${isMobileView ? 'px-2' : ''}`}
                 style={isMobileView ? { paddingTop: '6rem' } : undefined}
             >
                 {/* Navigation Tabs - Desktop Only */}
                 {!isMobileView && view !== View.FORM && (
-                    <div className="flex justify-center mb-10 sticky top-4 z-40">
-                        <div className="bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-xl rounded-full p-1.5 shadow-ios border border-white/20 dark:border-white/5 flex gap-1 overflow-x-auto max-w-full">
+                    <nav aria-label="Navigation principale" className="flex justify-center mb-10 sticky top-4 z-40">
+                        <div role="tablist" aria-label="Vues" className="bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-xl rounded-full p-1.5 shadow-ios border border-white/20 dark:border-white/5 flex gap-1 overflow-x-auto max-w-full">
                             {[
                                 {
                                     id: View.LIST, label: 'Liste',
@@ -1023,6 +1153,8 @@ const App: React.FC = () => {
                             ].map((tab) => (
                                 <button
                                     key={tab.id}
+                                    role="tab"
+                                    aria-selected={view === tab.id}
                                     onClick={() => setView(tab.id)}
                                     className={`
                                         px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 whitespace-nowrap
@@ -1031,12 +1163,12 @@ const App: React.FC = () => {
                                             : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5'}
                                     `}
                                 >
-                                    {tab.icon}
+                                    <span aria-hidden="true">{tab.icon}</span>
                                     {tab.label}
                                 </button>
                             ))}
                         </div>
-                    </div>
+                    </nav>
                 )}
 
                 {/* Bottom Navigation - Mobile Only */}
@@ -1044,6 +1176,7 @@ const App: React.FC = () => {
                     <BottomNavigation currentView={view} onViewChange={setView} />
                 )}
 
+                <ErrorBoundary fallbackLabel="cette vue" onReset={() => setView(View.LIST)}>
                 <Suspense fallback={lazyFallback}>
                     {view === View.LIST ? (
                         <ObservationList
@@ -1148,6 +1281,21 @@ const App: React.FC = () => {
                                 </button>
                             </div>
                         </div>
+                    ) : view === View.PRIVACY ? (
+                        <LegalPages onBack={() => setView(View.LIST)} />
+                    ) : view === View.TERMS ? (
+                        <LegalTerms onBack={() => setView(View.LIST)} />
+                    ) : view === View.LEGAL_NOTICES ? (
+                        <LegalNotices onBack={() => setView(View.LIST)} />
+                    ) : view === View.HELP ? (
+                        <HelpPage
+                            onBack={() => setView(View.LIST)}
+                            onReplayTour={() => {
+                                try { localStorage.removeItem('onboarding-seen-v1'); } catch { /* noop */ }
+                                setShowOnboarding(true);
+                                setView(View.LIST);
+                            }}
+                        />
                     ) : (
                         <ObservationForm
                             onSave={handleSaveObservation}
@@ -1157,7 +1305,25 @@ const App: React.FC = () => {
                         />
                     )}
                 </Suspense>
-            </div>
+                </ErrorBoundary>
+
+                {/* Legal footer links */}
+                <footer className="text-center text-xs text-gray-400 dark:text-gray-500 py-4 space-x-2">
+                    <button onClick={() => setView(View.HELP)} className="hover:text-nature-green transition-colors">Aide</button>
+                    <span>|</span>
+                    <button onClick={() => setView(View.PRIVACY)} className="hover:text-nature-green transition-colors">Politique de confidentialite</button>
+                    <span>|</span>
+                    <button onClick={() => setView(View.TERMS)} className="hover:text-nature-green transition-colors">CGU</button>
+                    <span>|</span>
+                    <button onClick={() => setView(View.LEGAL_NOTICES)} className="hover:text-nature-green transition-colors">Mentions legales</button>
+                </footer>
+            </main>
+            <StorageConsentBanner />
+            {showOnboarding && (
+                <Suspense fallback={null}>
+                    <OnboardingTour isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
+                </Suspense>
+            )}
         </div>
     );
 };

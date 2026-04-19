@@ -1,0 +1,65 @@
+# Recapitulatif des conditions d'utilisation des APIs tierces
+
+**Date de mise a jour** : 2026-04-11
+
+---
+
+## 1. iNaturalist API
+
+| Champ | Detail |
+|---|---|
+| URL | `https://api.inaturalist.org/v1/` |
+| Usage | Autocompletion taxonomique, images d'especes, infos Wikipedia |
+| Conditions | [API Terms](https://www.inaturalist.org/pages/api+terms) |
+| Rate limit | Non documente officiellement, usage raisonnable attendu |
+| Attribution | Requise — nom « iNaturalist » + licence CC BY-NC 4.0 pour les photos |
+| Donnees envoyees | Termes de recherche (noms d'especes partiels). Aucune donnee personnelle. |
+| User-Agent | `CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)` |
+| Implementation | `services/speciesService.ts` |
+
+## 2. GBIF API
+
+| Champ | Detail |
+|---|---|
+| URL | `https://api.gbif.org/v1/` |
+| Usage | Validation taxonomique (fallback quand iNat ne renvoie pas de resultats) |
+| Conditions | [GBIF Data Use](https://www.gbif.org/terms/data-user) |
+| Rate limit | Aucune limite documentee pour les recherches simples |
+| Attribution | Requise — mention « GBIF.org » + licence CC BY 4.0 / CC0 |
+| Donnees envoyees | Termes de recherche. Aucune donnee personnelle. |
+| User-Agent | `CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)` |
+| Implementation | `services/speciesService.ts` |
+
+## 3. Nominatim (OpenStreetMap)
+
+| Champ | Detail |
+|---|---|
+| URL | `https://nominatim.openstreetmap.org/reverse` |
+| Usage | Geocodage inverse (coordonnees GPS → commune, departement, pays) |
+| Conditions | [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) |
+| Rate limit | 1 req/seconde (respecte par l'app — une seule requete a la saisie GPS) |
+| Attribution | Requise — « OpenStreetMap contributors » sous licence ODbL |
+| Donnees envoyees | Latitude, longitude. L'adresse IP de l'utilisateur est visible par le serveur. |
+| User-Agent | `CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)` |
+| Implementation | `services/locationService.ts` |
+
+## 4. Open-Meteo
+
+| Champ | Detail |
+|---|---|
+| URL | `https://api.open-meteo.com/v1/forecast` |
+| Usage | Recuperation des conditions meteo actuelles pour une observation |
+| Conditions | [Open-Meteo Terms](https://open-meteo.com/en/terms) |
+| Rate limit | 10 000 req/jour (plan gratuit) |
+| Attribution | Requise — « Open-Meteo.com » sous licence CC BY 4.0 |
+| Donnees envoyees | Latitude, longitude. |
+| User-Agent | Non requis (API ouverte) |
+| Implementation | `components/ObservationForm.tsx` (inline fetch) |
+
+---
+
+## Conformite
+
+- **User-Agent** : toutes les APIs identifient l'application via un User-Agent dedie (VP-15/16/17)
+- **Attribution** : fichier `ATTRIBUTIONS.txt` inclus dans les sauvegardes ZIP (VP-18)
+- **RGPD** : aucune donnee personnelle n'est transmise aux APIs taxonomiques. Les coordonnees GPS envoyees a Nominatim et Open-Meteo ne sont pas couplees a une identite utilisateur.
