@@ -62,6 +62,7 @@ interface INatTaxonResult {
     };
     wikipedia_summary?: string;
     wikipedia_url?: string;
+    observations_count?: number;
 }
 
 const normalizeTaxonText = (value?: string): string => {
@@ -128,17 +129,25 @@ const scoreINatTaxonResult = (item: INatTaxonResult, query: string): number[] =>
     const matchedTerm = normalizeTaxonText(item.matched_term);
 
     const exactLatin = normalizedQuery.length > 0 && latin === normalizedQuery ? 1 : 0;
-    const exactCommon = normalizedQuery.length > 0 && (common === normalizedQuery || matchedTerm === normalizedQuery) ? 1 : 0;
-    const startsWith = normalizedQuery.length > 0
-        && [latin, common, matchedTerm].some(value => value.length > 0 && value.startsWith(normalizedQuery))
+    const exactCommonName = normalizedQuery.length > 0 && common === normalizedQuery ? 1 : 0;
+    const exactMatchedTerm = normalizedQuery.length > 0 && matchedTerm === normalizedQuery ? 1 : 0;
+    const startsWithCommon = normalizedQuery.length > 0
+        && [latin, common].some(value => value.length > 0 && value.startsWith(normalizedQuery))
+        ? 1
+        : 0;
+    const startsWithMatched = normalizedQuery.length > 0
+        && matchedTerm.length > 0 && matchedTerm.startsWith(normalizedQuery)
         ? 1
         : 0;
 
     return [
         isSpeciesRank(item.rank) ? 1 : 0,
         exactLatin,
-        exactCommon,
-        startsWith
+        exactCommonName,
+        startsWithCommon,
+        exactMatchedTerm,
+        startsWithMatched,
+        item.observations_count || 0
     ];
 };
 
@@ -318,6 +327,19 @@ interface INatConservationStatusEntry {
 
 interface INatTaxonDetail {
     conservation_statuses?: INatConservationStatusEntry[];
+    wikipedia_summary?: string;
+    wikipedia_url?: string;
+    default_photo?: {
+        medium_url?: string;
+        square_url?: string;
+    };
+}
+
+export interface INatFranceTaxonDetail {
+    status?: Status;
+    wikipediaSummary?: string;
+    wikipediaUrl?: string;
+    defaultPhotoUrl?: string;
 }
 
 const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
@@ -343,24 +365,30 @@ const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
  * Uses place_id=6753 (France) and reads conservation_statuses (plural) array.
  * Returns undefined if no France-specific status is found.
  */
-const fetchINatFranceStatus = async (taxonId: number, signal?: AbortSignal): Promise<Status | undefined> => {
+const fetchINatFranceStatus = async (taxonId: number, signal?: AbortSignal): Promise<INatFranceTaxonDetail> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/${taxonId}?place_id=${INAT_FRANCE_PLACE_ID}`;
         const res = await fetch(url, { signal: withTimeout(signal) });
-        if (!res.ok) return undefined;
+        if (!res.ok) return {};
         const data = await res.json();
         const results: INatTaxonDetail[] = data?.results ?? [];
-        if (results.length === 0) return undefined;
+        if (results.length === 0) return {};
 
-        const statuses = results[0].conservation_statuses ?? [];
+        const detail = results[0];
+        const statuses = detail.conservation_statuses ?? [];
         const frenchEntry = statuses.find(s => s.place?.id === INAT_FRANCE_PLACE_ID);
-        if (frenchEntry?.status) return mapIucnStatusCodeToStatus(frenchEntry.status);
+        const status = frenchEntry?.status ? mapIucnStatusCodeToStatus(frenchEntry.status) : undefined;
 
-        return undefined;
+        return {
+            status,
+            wikipediaSummary: detail.wikipedia_summary,
+            wikipediaUrl: detail.wikipedia_url,
+            defaultPhotoUrl: detail.default_photo?.medium_url ?? detail.default_photo?.square_url
+        };
     } catch (e) {
         if (isAbortError(e)) throw e;
         logger.error('iNaturalist France conservation status error:', e);
-        return undefined;
+        return {};
     }
 };
 
@@ -643,11 +671,11 @@ export const fetchSpeciesInfo = async (
             }
 
             const latinName = inat.name || undefined;
-            const imageUrl = inat.default_photo?.medium_url ?? inat.default_photo?.square_url ?? null;
-            const description = inat.wikipedia_summary
+            let imageUrl = inat.default_photo?.medium_url ?? inat.default_photo?.square_url ?? null;
+            let description = inat.wikipedia_summary
                 ? (() => { const d = stripHtml(inat.wikipedia_summary); return d.length > 300 ? d.substring(0, 300) + '\u2026' : d; })()
                 : '';
-            const sourceUrl = inat.wikipedia_url || '';
+            let sourceUrl = inat.wikipedia_url || '';
             const matchMeta = resolveSpeciesMatchMeta(speciesName, inat);
 
             // Step 2: Enrich with GBIF taxonomy + red list status in parallel (PE-14)
@@ -659,7 +687,7 @@ export const fetchSpeciesInfo = async (
                 // Launch independent API calls in parallel
                 const [gbifResult, franceStatusResult] = await Promise.allSettled([
                     latinName ? matchSpecies(latinName, options.signal) : Promise.resolve(null),
-                    inat.id ? fetchINatFranceStatus(inat.id, options.signal) : Promise.resolve(undefined)
+                    inat.id ? fetchINatFranceStatus(inat.id, options.signal) : Promise.resolve({} as INatFranceTaxonDetail)
                 ]);
 
                 // Process GBIF taxonomy result
@@ -669,10 +697,20 @@ export const fetchSpeciesInfo = async (
                     throw gbifResult.reason;
                 }
 
-                // Process France red list result
+                // Process France red list + enrich description/photo from taxon detail
                 if (franceStatusResult.status === 'fulfilled' && franceStatusResult.value) {
-                    redListStatus = franceStatusResult.value;
-                    redListSource = 'france';
+                    const detail = franceStatusResult.value;
+                    if (detail.status) {
+                        redListStatus = detail.status;
+                        redListSource = 'france';
+                    }
+                    // Autocomplete doesn't include wikipedia_summary — use detail endpoint response
+                    if (!description && detail.wikipediaSummary) {
+                        const d = stripHtml(detail.wikipediaSummary);
+                        description = d.length > 300 ? d.substring(0, 300) + '\u2026' : d;
+                    }
+                    if (!sourceUrl && detail.wikipediaUrl) sourceUrl = detail.wikipediaUrl;
+                    if (!imageUrl && detail.defaultPhotoUrl) imageUrl = detail.defaultPhotoUrl;
                 } else if (franceStatusResult.status === 'rejected' && isAbortError(franceStatusResult.reason)) {
                     throw franceStatusResult.reason;
                 }
