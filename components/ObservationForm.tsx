@@ -85,6 +85,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [formData, setFormData] = useState<ObservationFormData>(() => createEmptyFormData(defaultTaxonomicGroup));
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showMap, setShowMap] = useState(false);
+    const [showAdvancedLocation, setShowAdvancedLocation] = useState(false);
     const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
     const [speciesInfo, setSpeciesInfo] = useState<SpeciesInfo | null>(null);
     const [speciesSuggestions, setSpeciesSuggestions] = useState<SpeciesSuggestion[]>([]);
@@ -747,36 +748,6 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                         </FormSection>
 
                         <FormSection title="Localisation">
-                            <div>
-                                <label htmlFor="location" className={labelClass}>Lieu-dit</label>
-                                <input type="text" id="location" name="location" value={formData.location} onChange={handleChange} className={inputClass} />
-                            </div>
-                            <div>
-                                <label htmlFor="municipality" className={labelClass}>Commune</label>
-                                <input type="text" id="municipality" name="municipality" value={formData.municipality} onChange={handleChange} className={inputClass} />
-                            </div>
-                            <div>
-                                <label htmlFor="department" className={labelClass}>Département</label>
-                                <input type="text" id="department" name="department" value={formData.department} onChange={handleChange} className={inputClass} />
-                            </div>
-                            <div>
-                                <label htmlFor="country" className={labelClass}>Pays</label>
-                                <input type="text" id="country" name="country" value={formData.country} onChange={handleChange} className={inputClass} />
-                            </div>
-                            <div>
-                                <label htmlFor="lat" className={labelClass}>Latitude</label>
-                                <input type="number" step="any" id="lat" name="lat" value={formData.gps.lat ?? ''} onChange={handleChange} className={inputClass} aria-invalid={!!errors.lat} aria-describedby={errors.lat ? 'lat-error' : undefined} />
-                                {errors.lat && <p id="lat-error" role="alert" className={errorClass}>{errors.lat}</p>}
-                            </div>
-                            <div>
-                                <label htmlFor="lon" className={labelClass}>Longitude</label>
-                                <input type="number" step="any" id="lon" name="lon" value={formData.gps.lon ?? ''} onChange={handleChange} className={inputClass} aria-invalid={!!errors.lon} aria-describedby={errors.lon ? 'lon-error' : undefined} />
-                                {errors.lon && <p id="lon-error" role="alert" className={errorClass}>{errors.lon}</p>}
-                            </div>
-                            <div>
-                                <label htmlFor="altitude" className={labelClass}>Altitude (m)</label>
-                                <input type="number" id="altitude" name="altitude" value={formData.altitude ?? ''} onChange={handleChange} className={inputClass} />
-                            </div>
                             <div className="col-span-full">
                                 <button type="button" onClick={() => setShowMap(!showMap)} className={`w-full py-3 px-6 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-[1.02] active:scale-95 shadow-md ${showMap ? 'bg-gray-500 hover:bg-gray-600' : 'bg-nature-green hover:bg-green-600 animate-pulse-once'}`}>
                                     {showMap ? 'Masquer la carte' : <><span aria-hidden="true">📍</span> Localiser sur la carte (recommandé)</>}
@@ -789,6 +760,50 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                     </div>
                                 )}
                             </div>
+                            <div className="col-span-full">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAdvancedLocation(!showAdvancedLocation)}
+                                    className="text-sm font-medium text-nature-green-text hover:text-green-600 transition-colors flex items-center gap-1"
+                                >
+                                    <svg className={`w-4 h-4 transition-transform ${showAdvancedLocation ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+                                    {showAdvancedLocation ? 'Masquer les détails avancés' : 'Afficher les détails avancés'}
+                                </button>
+                            </div>
+                            {showAdvancedLocation && (
+                                <>
+                                    <div>
+                                        <label htmlFor="location" className={labelClass}>Lieu-dit</label>
+                                        <input type="text" id="location" name="location" value={formData.location} onChange={handleChange} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="municipality" className={labelClass}>Commune</label>
+                                        <input type="text" id="municipality" name="municipality" value={formData.municipality} onChange={handleChange} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="department" className={labelClass}>Département</label>
+                                        <input type="text" id="department" name="department" value={formData.department} onChange={handleChange} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="country" className={labelClass}>Pays</label>
+                                        <input type="text" id="country" name="country" value={formData.country} onChange={handleChange} className={inputClass} />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="lat" className={labelClass}>Latitude</label>
+                                        <input type="number" step="any" id="lat" name="lat" value={formData.gps.lat ?? ''} onChange={handleChange} className={inputClass} aria-invalid={!!errors.lat} aria-describedby={errors.lat ? 'lat-error' : undefined} />
+                                        {errors.lat && <p id="lat-error" role="alert" className={errorClass}>{errors.lat}</p>}
+                                    </div>
+                                    <div>
+                                        <label htmlFor="lon" className={labelClass}>Longitude</label>
+                                        <input type="number" step="any" id="lon" name="lon" value={formData.gps.lon ?? ''} onChange={handleChange} className={inputClass} aria-invalid={!!errors.lon} aria-describedby={errors.lon ? 'lon-error' : undefined} />
+                                        {errors.lon && <p id="lon-error" role="alert" className={errorClass}>{errors.lon}</p>}
+                                    </div>
+                                    <div>
+                                        <label htmlFor="altitude" className={labelClass}>Altitude (m)</label>
+                                        <input type="number" id="altitude" name="altitude" value={formData.altitude ?? ''} onChange={handleChange} className={inputClass} />
+                                    </div>
+                                </>
+                            )}
                         </FormSection>
 
                         <FormSection title="Détails">

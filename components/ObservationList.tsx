@@ -11,6 +11,7 @@ import ExportScopeDialog from './ExportScopeDialog';
 import { ObservationExportType, runObservationExport } from '../services/observationExportService';
 import { buildImportPersistencePlan, ImportConflictMode } from '../services/importPolicy';
 import { logger } from '../utils/logger';
+import { useClickOutside } from '../hooks/useClickOutside';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -77,6 +78,9 @@ const ObservationList: React.FC<ObservationListProps> = ({
     const [importConflictMode, setImportConflictMode] = React.useState<ImportConflictMode>('merge');
     const [pendingExportType, setPendingExportType] = React.useState<ObservationExportType | null>(null);
     const [isExporting, setIsExporting] = React.useState(false);
+    const [showMobileExportMenu, setShowMobileExportMenu] = React.useState(false);
+    const mobileExportMenuRef = React.useRef<HTMLDivElement>(null);
+    useClickOutside(mobileExportMenuRef, () => setShowMobileExportMenu(false));
 
     // FAB visibility on scroll
     const [showFab, setShowFab] = useState(false);
@@ -289,7 +293,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             accept=".json,.xlsx,.xls,.zip"
                         />
 
-                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
+                        {/* Desktop : rangée horizontale complète Importer + 5 exports */}
+                        <div className="hidden md:flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
                             <button
                                 onClick={handleImportClick}
                                 disabled={isParsingImport}
@@ -334,6 +339,57 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             >
                                 {isExporting && pendingExportType === 'geojson' ? 'Export...' : 'GeoJSON'}
                             </button>
+                        </div>
+
+                        {/* Mobile : Importer + dropdown Exporter regroupant les 5 formats */}
+                        <div className="flex md:hidden gap-2 pb-0.5">
+                            <button
+                                onClick={handleImportClick}
+                                disabled={isParsingImport}
+                                className="h-8 px-3 rounded-lg text-xs font-medium bg-gray-500 text-white disabled:opacity-60 inline-flex items-center"
+                            >
+                                {isParsingImport ? 'Analyse...' : 'Importer'}
+                            </button>
+                            <div ref={mobileExportMenuRef} className="relative flex-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMobileExportMenu(v => !v)}
+                                    disabled={isExporting}
+                                    aria-expanded={showMobileExportMenu}
+                                    aria-haspopup="menu"
+                                    className="w-full h-8 px-3 rounded-lg text-xs font-medium bg-nature-green text-white disabled:opacity-60 inline-flex items-center justify-between gap-1"
+                                >
+                                    <span>{isExporting ? 'Export en cours...' : 'Exporter'}</span>
+                                    <svg className={`w-3 h-3 transition-transform ${showMobileExportMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                {showMobileExportMenu && (
+                                    <div
+                                        role="menu"
+                                        className="absolute z-40 right-0 mt-1 w-48 bg-white dark:bg-nature-dark-surface rounded-xl shadow-xl ring-1 ring-black/10 dark:ring-white/10 overflow-hidden"
+                                    >
+                                        {([
+                                            { type: 'json' as const, label: 'JSON', hint: 'Sauvegarde brute', color: 'text-blue-600' },
+                                            { type: 'excel' as const, label: 'Excel', hint: 'Tableur (.xlsx)', color: 'text-emerald-600' },
+                                            { type: 'pdf' as const, label: 'PDF', hint: 'Document imprimable', color: 'text-red-600' },
+                                            { type: 'darwincore' as const, label: 'Darwin Core', hint: 'Standard GBIF/TDWG', color: 'text-amber-600' },
+                                            { type: 'geojson' as const, label: 'GeoJSON', hint: 'QGIS / geojson.io', color: 'text-indigo-600' }
+                                        ]).map(item => (
+                                            <button
+                                                key={item.type}
+                                                type="button"
+                                                role="menuitem"
+                                                onClick={() => { setShowMobileExportMenu(false); openExportDialog(item.type); }}
+                                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 flex flex-col border-b border-gray-100 dark:border-white/5 last:border-b-0"
+                                            >
+                                                <span className={`font-semibold ${item.color}`}>{item.label}</span>
+                                                <span className="text-xs text-gray-500 dark:text-gray-400">{item.hint}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Search Bar */}
