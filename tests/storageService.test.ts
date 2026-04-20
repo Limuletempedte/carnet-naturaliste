@@ -3,7 +3,8 @@ import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, Taxono
 
 const authGetUserMock = vi.fn(async () => ({ data: { user: { id: 'user-1' } } }));
 
-const orderMock = vi.fn();
+const rangeMock = vi.fn();
+const orderMock = vi.fn(() => ({ range: rangeMock }));
 const selectEqMock = vi.fn(() => ({ order: orderMock }));
 const selectMock = vi.fn(() => ({ eq: selectEqMock, order: orderMock }));
 
@@ -96,7 +97,9 @@ beforeEach(() => {
     selectEqMock.mockReset();
     selectEqMock.mockReturnValue({ order: orderMock });
     orderMock.mockReset();
-    orderMock.mockResolvedValue({ data: [], error: null });
+    orderMock.mockReturnValue({ range: rangeMock });
+    rangeMock.mockReset();
+    rangeMock.mockResolvedValue({ data: [], error: null });
 
     updateMock.mockReset();
     updateMock.mockReturnValue({ eq: updateEqIdMock });
@@ -169,7 +172,7 @@ beforeEach(() => {
 describe('storageService.getObservations', () => {
     it('returns remote observations and applies user_id filter', async () => {
         vi.stubGlobal('navigator', { onLine: true });
-        orderMock.mockResolvedValue({
+        rangeMock.mockResolvedValue({
             data: [{
                 id: '123e4567-e89b-42d3-a456-426614174000',
                 species_name: 'Mésange',
@@ -216,7 +219,7 @@ describe('storageService.getObservations', () => {
             ...makeObservation('123e4567-e89b-42d3-a456-426614174000'),
             wikipediaImage: 'https://example.com/wiki.jpg'
         }]));
-        orderMock.mockResolvedValue({
+        rangeMock.mockResolvedValue({
             data: null,
             error: { message: 'boom' }
         });
@@ -229,6 +232,59 @@ describe('storageService.getObservations', () => {
         expect(result.source).toBe('cache');
         expect(result.warning).toContain('boom');
         expect(result.observations[0].speciesName).toBe('Mésange');
+    });
+
+    // SI-29: paginate across Supabase's default 1000-row cap. Without this, users
+    // with >1000 observations had an incomplete React state, so re-imports of older
+    // rows looked like new inserts → duplicate-key failures on observations_pkey.
+    it('paginates the remote fetch so >1000 observations are fully loaded', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+
+        const uuid = (n: number) => `11111111-1111-4111-8111-${String(n).padStart(12, '0')}`;
+        const makeRow = (id: string) => ({
+            id,
+            species_name: 'Mésange',
+            latin_name: '',
+            taxonomic_group: 'Oiseaux',
+            date: '2026-03-01',
+            time: '12:00',
+            count: 1,
+            location: '',
+            gps_lat: null,
+            gps_lon: null,
+            municipality: '',
+            department: '',
+            country: 'France',
+            altitude: null,
+            comment: '',
+            status: 'NE',
+            atlas_code: '',
+            protocol: 'Opportuniste',
+            sexe: 'Non renseigné',
+            age: 'Non renseigné',
+            observation_condition: 'Non renseigné',
+            comportement: 'Non renseigné'
+        });
+
+        const firstPage = Array.from({ length: 1000 }, (_, i) => makeRow(uuid(i)));
+        const secondPage = Array.from({ length: 382 }, (_, i) => makeRow(uuid(1000 + i)));
+
+        rangeMock.mockReset();
+        rangeMock
+            .mockResolvedValueOnce({ data: firstPage, error: null })
+            .mockResolvedValueOnce({ data: secondPage, error: null });
+
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        const result = await storageService.getObservations();
+
+        expect(result.source).toBe('remote');
+        expect(result.observations).toHaveLength(1382);
+        // Two pages fetched: [0, 999] then [1000, 1999]
+        expect(rangeMock).toHaveBeenCalledTimes(2);
+        expect(rangeMock).toHaveBeenNthCalledWith(1, 0, 999);
+        expect(rangeMock).toHaveBeenNthCalledWith(2, 1000, 1999);
     });
 });
 
@@ -578,7 +634,7 @@ describe('storageService cache TTL (VP-07)', () => {
         localStorage.setItem(cacheKey + '_ts', String(Date.now()));
 
         vi.stubGlobal('navigator', { onLine: false });
-        orderMock.mockRejectedValue(new Error('offline'));
+        rangeMock.mockRejectedValue(new Error('offline'));
 
         const result = await storageService.getObservations();
         expect(result.observations).toHaveLength(1);
@@ -596,7 +652,7 @@ describe('storageService cache TTL (VP-07)', () => {
         localStorage.setItem(cacheKey + '_ts', String(ninetyOneDaysAgo));
 
         vi.stubGlobal('navigator', { onLine: false });
-        orderMock.mockRejectedValue(new Error('offline'));
+        rangeMock.mockRejectedValue(new Error('offline'));
 
         const result = await storageService.getObservations();
         expect(result.observations).toHaveLength(0);
@@ -711,7 +767,7 @@ describe('storageService corruption detection (SR-09)', () => {
 describe('storageService SR-14 : timestamps serveur exposés', () => {
     it('mapToObservation expose createdAt et updatedAt quand présents dans la row', async () => {
         vi.stubGlobal('navigator', { onLine: true });
-        orderMock.mockResolvedValue({
+        rangeMock.mockResolvedValue({
             data: [{
                 id: '123e4567-e89b-42d3-a456-426614174000',
                 species_name: 'Mésange',
@@ -751,7 +807,7 @@ describe('storageService SR-14 : timestamps serveur exposés', () => {
 
     it('mapToObservation laisse createdAt/updatedAt undefined quand absents', async () => {
         vi.stubGlobal('navigator', { onLine: true });
-        orderMock.mockResolvedValue({
+        rangeMock.mockResolvedValue({
             data: [{
                 id: '123e4567-e89b-42d3-a456-426614174001',
                 species_name: 'Mésange',
@@ -791,7 +847,7 @@ describe('storageService SR-14 : timestamps serveur exposés', () => {
 describe('storageService thème 12 : habitat, phenology, observers (VP-04, VP-05, VP-08)', () => {
     it('mapToObservation expose habitat, phenology et observers quand présents dans la row', async () => {
         vi.stubGlobal('navigator', { onLine: true });
-        orderMock.mockResolvedValue({
+        rangeMock.mockResolvedValue({
             data: [{
                 id: '123e4567-e89b-42d3-a456-426614174010',
                 species_name: 'Mésange bleue',
@@ -833,7 +889,7 @@ describe('storageService thème 12 : habitat, phenology, observers (VP-04, VP-05
 
     it('mapToObservation laisse habitat/phenology/observers undefined quand absents ou vides', async () => {
         vi.stubGlobal('navigator', { onLine: true });
-        orderMock.mockResolvedValue({
+        rangeMock.mockResolvedValue({
             data: [{
                 id: '123e4567-e89b-42d3-a456-426614174011',
                 species_name: 'Mésange',

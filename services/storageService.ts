@@ -545,15 +545,26 @@ export const getObservations = async (): Promise<ObservationLoadResult> => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Utilisateur non authentifié');
 
-        const { data, error } = await supabase
-            .from('observations')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('date', { ascending: false });
+        // SI-29: Supabase PostgREST plafonne une requête non paginée à 1000 lignes
+        // par défaut. Sans pagination, les utilisateurs >1000 obs ont un state
+        // incomplet — cassait la détection de collisions à l'import (#PR).
+        const PAGE_SIZE = 1000;
+        const rows: ObservationRow[] = [];
+        for (let from = 0; ; from += PAGE_SIZE) {
+            const { data, error } = await supabase
+                .from('observations')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('date', { ascending: false })
+                .range(from, from + PAGE_SIZE - 1);
 
-        if (error) throw error;
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            rows.push(...(data as ObservationRow[]));
+            if (data.length < PAGE_SIZE) break;
+        }
 
-        const observations = data.map(mapToObservation);
+        const observations = rows.map(mapToObservation);
         setLocalCache(observations);
         return { observations, source: 'remote' };
     } catch (error: unknown) {
