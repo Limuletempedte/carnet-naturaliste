@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View, TaxonomicGroup, Status } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, OfflineSyncResult } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, OfflineSyncResult, isDuplicateKeyError } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
@@ -478,10 +478,22 @@ const App: React.FC = () => {
                             successfulOps.push(observationToPersist);
                             updatedCount++;
                         } else {
-                            const savedObs = await saveObservation(observationToPersist, { skipCache: true });
-                            const persisted = { ...observationToPersist, id: savedObs.id };
-                            successfulOps.push(persisted);
-                            addedCount++;
+                            try {
+                                const savedObs = await saveObservation(observationToPersist, { skipCache: true });
+                                const persisted = { ...observationToPersist, id: savedObs.id };
+                                successfulOps.push(persisted);
+                                addedCount++;
+                            } catch (insertErr) {
+                                if (!isDuplicateKeyError(insertErr)) throw insertErr;
+                                // SI-30: collision PK globale — l'ID existe déjà en DB sous un autre
+                                // user_id (orphelin d'un ancien compte), RLS l'empêche d'être visible
+                                // côté client. On régénère un UUID et on retente une fois.
+                                const retryObs: Observation = { ...observationToPersist, id: generateUUID() };
+                                const savedRetry = await saveObservation(retryObs, { skipCache: true });
+                                successfulOps.push({ ...retryObs, id: savedRetry.id });
+                                addedCount++;
+                                regeneratedIds++;
+                            }
                         }
                     } catch (importError) {
                         failedCount++;
@@ -538,7 +550,7 @@ const App: React.FC = () => {
                 pushToast('warning', `${importResult.report.errors.length} erreur(s) de validation détectées.`, 7000);
             }
             if (regeneratedIds > 0) {
-                pushToast('info', `${regeneratedIds} ligne(s) ont reçu un nouvel ID (ID source vide ou invalide).`, 7000);
+                pushToast('info', `${regeneratedIds} ligne(s) ont reçu un nouvel ID (source vide/invalide ou conflit avec une observation existante).`, 7000);
             }
 
             refreshOfflineQueueSnapshot();
