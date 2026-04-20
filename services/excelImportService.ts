@@ -229,28 +229,38 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     return;
                 }
 
-                // Extract headers from first row
-                const headerRow = worksheet.getRow(1);
+                // PE-13: ExcelJS's `getRow(r).getCell(c)` per-cell access scales so badly in
+                // the browser that a ~380-row × 29-col file exceeds the 20 s timeout. Using
+                // `getSheetValues()` once returns every cell in a single pass (~1 ms for the
+                // same file) — same data, no blocking parse.
+                // Shape: sheetValues[rowNum][colNum] (1-indexed, [0] is padding).
+                const sheetValues = worksheet.getSheetValues() as Array<Array<unknown> | undefined>;
+
+                const headerCells = sheetValues[1];
                 const headers: string[] = [];
-                headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-                    headers[colNumber] = String(normalizeCellValue(cell.value) ?? '').trim();
-                });
+                if (headerCells) {
+                    for (let col = 1; col < headerCells.length; col++) {
+                        headers[col] = String(normalizeCellValue(headerCells[col]) ?? '').trim();
+                    }
+                }
 
                 if (headers.length === 0) {
                     safeResolve(createBlockingResult('Feuille Excel introuvable ou illisible.', file.name));
                     return;
                 }
 
-                // Convert rows to array of objects (like xlsx sheet_to_json with defval: '')
                 const rawRows: Record<string, unknown>[] = [];
-                for (let rowIdx = 2; rowIdx <= worksheet.rowCount; rowIdx++) {
-                    const row = worksheet.getRow(rowIdx);
+                for (let rowIdx = 2; rowIdx < sheetValues.length; rowIdx++) {
+                    const rowCells = sheetValues[rowIdx];
                     const record: Record<string, unknown> = {};
-                    headers.forEach((header, colIdx) => {
-                        if (header) {
-                            record[header] = normalizeCellValue(row.getCell(colIdx).value);
+                    if (rowCells) {
+                        for (let colIdx = 1; colIdx < headers.length; colIdx++) {
+                            const header = headers[colIdx];
+                            if (header) {
+                                record[header] = normalizeCellValue(rowCells[colIdx]);
+                            }
                         }
-                    });
+                    }
                     rawRows.push(record);
                 }
 
@@ -628,7 +638,11 @@ const parseTime = (value: unknown): string => {
 
     // Handle string time
     const str = String(value).trim();
-    if (/^\d{1,2}:\d{2}$/.test(str)) return str;
+    // HH:MM or HH:MM:SS (seconds dropped — the model stores minutes only)
+    const colonMatch = str.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (colonMatch) {
+        return `${colonMatch[1].padStart(2, '0')}:${colonMatch[2]}`;
+    }
     if (/^\d{1,2}[hH]\d{0,2}$/.test(str)) {
         const parts = str.split(/[hH]/);
         return `${parts[0].padStart(2, '0')}:${(parts[1] || '00').padStart(2, '0')}`;
