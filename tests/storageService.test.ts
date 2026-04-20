@@ -929,3 +929,31 @@ describe('storageService thème 12 : habitat, phenology, observers (VP-04, VP-05
         expect(result.observations[0].observers).toBeUndefined();
     });
 });
+
+describe('storageService.isDuplicateKeyError (SI-30)', () => {
+    it('returns true for Postgres code 23505', async () => {
+        const { isDuplicateKeyError } = await import('../services/storageService');
+        expect(isDuplicateKeyError({ code: '23505', message: 'anything' })).toBe(true);
+    });
+
+    it('returns true for the observations_pkey message without code', async () => {
+        const { isDuplicateKeyError } = await import('../services/storageService');
+        expect(isDuplicateKeyError({
+            message: 'duplicate key value violates unique constraint "observations_pkey"'
+        })).toBe(true);
+    });
+
+    it('returns true when wrapped in an Error instance', async () => {
+        const { isDuplicateKeyError } = await import('../services/storageService');
+        expect(isDuplicateKeyError(new Error('duplicate key value violates unique constraint "observations_pkey"'))).toBe(true);
+    });
+
+    it('returns false for null/undefined/other codes/messages', async () => {
+        const { isDuplicateKeyError } = await import('../services/storageService');
+        expect(isDuplicateKeyError(null)).toBe(false);
+        expect(isDuplicateKeyError(undefined)).toBe(false);
+        expect(isDuplicateKeyError({ code: '42703', message: 'column missing' })).toBe(false);
+        expect(isDuplicateKeyError({ message: 'connection refused' })).toBe(false);
+        expect(isDuplicateKeyError({ message: 'duplicate key on profiles' })).toBe(false);
+    });
+});

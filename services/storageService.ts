@@ -166,6 +166,21 @@ const isMissingColumnError = (error: unknown): boolean =>
     isMissingCountBreakdownColumnError(error) || isMissingWeatherColumnError(error);
 
 /**
+ * SI-30: détecte une violation de clé primaire/unique côté Postgres.
+ * Code 23505 = unique_violation. Arrive typiquement à l'import quand un UUID
+ * exporté pointe vers une ligne qui existe encore en DB sous un autre user_id
+ * (orphelin d'un ancien compte). RLS la cache à la vue SELECT, donc la collision
+ * n'est détectable qu'au moment de l'INSERT — retry avec un nouvel UUID.
+ */
+export const isDuplicateKeyError = (error: unknown): boolean => {
+    if (!error) return false;
+    const err = asSupabaseError(error);
+    if (String(err.code || '').trim() === '23505') return true;
+    const msg = (err.message || '').toLowerCase();
+    return msg.includes('duplicate key') && msg.includes('observations');
+};
+
+/**
  * SR-08: detect transient network / server errors that justify falling back
  * to the offline queue instead of throwing (e.g. timeout, 5xx, service unavailable).
  * Business errors (auth, permissions, missing columns, validation) should still throw.
