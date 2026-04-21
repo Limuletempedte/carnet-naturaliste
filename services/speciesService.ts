@@ -1,4 +1,5 @@
 import { Status, TaxonomicGroup } from '../types';
+import { fetchWithRetry } from '../utils/fetchUtils';
 import { logger } from '../utils/logger';
 
 export interface SpeciesInfo {
@@ -24,6 +25,11 @@ export interface SpeciesSuggestion {
 
 interface FetchSpeciesInfoOptions {
     signal?: AbortSignal;
+    /**
+     * Force le refetch depuis les API externes même si une entrée fraîche est en cache.
+     * Utilisé par le bouton « Rafraîchir espèce » de l'UI.
+     */
+    bypassCache?: boolean;
 }
 
 interface SpeciesAutocompleteOptions {
@@ -33,15 +39,25 @@ interface SpeciesAutocompleteOptions {
 
 interface SpeciesInfoCacheEntry {
     value: SpeciesInfo | null;
+    /** Timestamp au-delà duquel la donnée est "stale" (on retourne le cache ET on rafraîchit en arrière-plan). */
     expiresAt: number;
+    /** Timestamp au-delà duquel le cache est complètement obsolète (on refuse de le servir même en SWR). */
+    staleUntil: number;
 }
 
 const APP_USER_AGENT = 'CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)';
 
-const SPECIES_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Fenêtre "frais" : sous ce TTL, on retourne le cache sans refetch. */
+const SPECIES_INFO_CACHE_TTL_MS = 2 * 60 * 1000;
+/** Fenêtre "stale-while-revalidate" : au-delà du TTL mais sous ce seuil, on retourne le cache ET on refetch en bg. */
+const SPECIES_INFO_CACHE_STALE_MS = 30 * 60 * 1000;
 const MAX_SPECIES_CACHE_SIZE = 200;
 const speciesInfoCache = new Map<string, SpeciesInfoCacheEntry>();
 const speciesInfoInFlightRequests = new Map<string, Promise<SpeciesInfo | null>>();
+
+/** Options de config des appels HTTP aux API d'enrichissement espèce. */
+const DEFAULT_FETCH_OPTIONS = { retries: 2, backoffMs: 300, timeoutMs: 6000 } as const;
+const DEFAULT_HEADERS = { 'User-Agent': APP_USER_AGENT } as const;
 
 // ---------------------------------------------------------------------------
 // iNaturalist API  (primary source — supports French common names)
@@ -78,24 +94,28 @@ const isAbortError = (error: unknown): boolean => {
     return error instanceof DOMException && error.name === 'AbortError';
 };
 
-/** Combine an optional caller signal with a hard timeout. */
-const withTimeout = (signal?: AbortSignal, ms = 10_000): AbortSignal => {
-    const timeoutSignal = AbortSignal.timeout(ms);
-    if (!signal) return timeoutSignal;
-    return AbortSignal.any([signal, timeoutSignal]);
-};
-
 const getSpeciesInfoCacheKey = (value: string): string => normalizeTaxonText(value);
 
-const getCachedSpeciesInfo = (key: string): SpeciesInfo | null | undefined => {
+type CacheLookup =
+    | { status: 'miss' }
+    | { status: 'fresh'; value: SpeciesInfo | null }
+    | { status: 'stale'; value: SpeciesInfo | null };
+
+/**
+ * Récupère une entrée du cache en distinguant fresh/stale/miss.
+ * - fresh : on peut retourner le cache tel quel.
+ * - stale : on retourne le cache au caller, mais on déclenche un refetch en arrière-plan.
+ * - miss : rien en cache ou complètement expiré → fetch normal.
+ */
+const lookupCachedSpeciesInfo = (key: string): CacheLookup => {
     const now = Date.now();
     const entry = speciesInfoCache.get(key);
-    if (!entry) return undefined;
-    if (entry.expiresAt <= now) {
-        speciesInfoCache.delete(key);
-        return undefined;
-    }
-    return entry.value;
+    if (!entry) return { status: 'miss' };
+    if (now < entry.expiresAt) return { status: 'fresh', value: entry.value };
+    if (now < entry.staleUntil) return { status: 'stale', value: entry.value };
+    // Trop vieux : on nettoie.
+    speciesInfoCache.delete(key);
+    return { status: 'miss' };
 };
 
 const setCachedSpeciesInfo = (key: string, value: SpeciesInfo | null): void => {
@@ -104,9 +124,11 @@ const setCachedSpeciesInfo = (key: string, value: SpeciesInfo | null): void => {
         const firstKey = speciesInfoCache.keys().next().value;
         if (firstKey !== undefined) speciesInfoCache.delete(firstKey);
     }
+    const now = Date.now();
     speciesInfoCache.set(key, {
         value,
-        expiresAt: Date.now() + SPECIES_INFO_CACHE_TTL_MS
+        expiresAt: now + SPECIES_INFO_CACHE_TTL_MS,
+        staleUntil: now + SPECIES_INFO_CACHE_STALE_MS
     });
 };
 
@@ -208,7 +230,7 @@ const resolveSpeciesMatchMeta = (
 const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INatTaxonResult | null> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=8&locale=fr`;
-        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return null;
         const data = await res.json();
         const results: INatTaxonResult[] = data?.results ?? [];
@@ -223,7 +245,7 @@ const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INat
 const fetchINatSuggestions = async (query: string, limit: number, signal?: AbortSignal, onWarning?: (msg: string) => void): Promise<INatTaxonResult[]> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=${limit}&locale=fr`;
-        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) {
             onWarning?.('Service iNaturalist temporairement indisponible.');
             return [];
@@ -260,7 +282,7 @@ const fetchWikipediaFr = async (title: string, signal?: AbortSignal): Promise<Wi
     if (!title || title.trim().length < 2) return null;
     try {
         const url = `https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.trim())}`;
-        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return null;
         const data: WikipediaSummary = await res.json();
         // Skip disambiguation pages ("type": "disambiguation") — not useful for species
@@ -311,7 +333,7 @@ export const matchSpecies = async (latinName: string, signal?: AbortSignal): Pro
     if (!latinName || latinName.trim().length < 2) return null;
     try {
         const url = `${GBIF_BASE}/match?name=${encodeURIComponent(latinName.trim())}&verbose=true`;
-        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return null;
         const data: GBIFMatchResult = await res.json();
         if (data.matchType === 'NONE') return null;
@@ -330,7 +352,7 @@ export const suggestSpecies = async (query: string, limit = 5, signal?: AbortSig
     if (!query || query.trim().length < 2) return [];
     try {
         const url = `${GBIF_BASE}/suggest?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
-        const res = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return [];
         return await res.json();
     } catch (e) {
@@ -403,7 +425,7 @@ const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
 const fetchINatFranceStatus = async (taxonId: number, signal?: AbortSignal): Promise<INatFranceTaxonDetail> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/${taxonId}?place_id=${INAT_FRANCE_PLACE_ID}`;
-        const res = await fetch(url, { signal: withTimeout(signal) });
+        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return {};
         const data = await res.json();
         const results: INatTaxonDetail[] = data?.results ?? [];
@@ -432,7 +454,7 @@ export const fetchGbifIucnStatus = async (latinName: string, signal?: AbortSigna
 
     try {
         const url = `${GBIF_V2_SPECIES_MATCH}?scientificName=${encodeURIComponent(latinName.trim())}`;
-        const response = await fetch(url, { signal: withTimeout(signal), headers: { 'User-Agent': APP_USER_AGENT } });
+        const response = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!response.ok) return undefined;
 
         const data: GBIFV2MatchResult = await response.json();
@@ -688,8 +710,26 @@ export const fetchSpeciesInfo = async (
     const cacheKey = getSpeciesInfoCacheKey(speciesName);
     if (!cacheKey || cacheKey.length < 2) return null;
 
-    const cached = getCachedSpeciesInfo(cacheKey);
-    if (cached !== undefined) return cached;
+    if (!options.bypassCache) {
+        const lookup = lookupCachedSpeciesInfo(cacheKey);
+
+        if (lookup.status === 'fresh') {
+            return lookup.value;
+        }
+
+        // SWR : entrée stale (entre TTL et staleUntil) → retour immédiat du cache
+        // et refetch en arrière-plan pour la prochaine requête.
+        if (lookup.status === 'stale') {
+            if (!speciesInfoInFlightRequests.has(cacheKey)) {
+                // Feu-et-oublie : on démarre le refetch sans attendre et sans propager
+                // son résultat à ce caller (il a déjà le cache stale).
+                void fetchSpeciesInfo(speciesName, { bypassCache: true }).catch(() => {
+                    // Erreur silencieuse : le prochain caller retentera.
+                });
+            }
+            return lookup.value;
+        }
+    }
 
     const inFlightRequest = speciesInfoInFlightRequests.get(cacheKey);
     if (inFlightRequest) {
