@@ -367,7 +367,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 {showMobileExportMenu && (
                                     <div
                                         role="menu"
-                                        className="absolute z-40 right-0 mt-1 w-48 bg-white dark:bg-nature-dark-surface rounded-xl shadow-xl ring-1 ring-black/10 dark:ring-white/10 overflow-hidden"
+                                        className="absolute z-50 right-0 mt-1 w-48 bg-white dark:bg-nature-dark-surface rounded-xl shadow-xl ring-1 ring-black/10 dark:ring-white/10 overflow-hidden"
                                     >
                                         {([
                                             { type: 'json' as const, label: 'JSON', hint: 'Sauvegarde brute', color: 'text-blue-600' },
@@ -456,11 +456,12 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     </div>
                 </div>
 
-                {/* Floating Action Button */}
+                {/* Floating Action Button — bottom-28 (112px) laisse ~40px au-dessus de
+                    la BottomNavigation mobile (qui fait ~72px avec pb-safe + pt-2). */}
                 {showFab && (
                     <button
                         onClick={onAdd}
-                        className="fixed bottom-24 right-4 z-40 w-14 h-14 bg-nature-green text-white rounded-full shadow-xl flex items-center justify-center text-3xl hover:scale-110 active:scale-95 transition-all duration-200 animate-fade-in"
+                        className="fixed bottom-28 right-4 z-40 w-14 h-14 bg-nature-green text-white rounded-full shadow-xl flex items-center justify-center text-3xl hover:scale-110 active:scale-95 transition-all duration-200 animate-fade-in"
                         title="Ajouter une observation"
                     >
                         +
