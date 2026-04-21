@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Observation, TaxonomicGroup, Status } from '../types';
 import ObservationRow from './ObservationRow';
 import ObservationCard from './ObservationCard';
@@ -11,7 +12,6 @@ import ExportScopeDialog from './ExportScopeDialog';
 import { ObservationExportType, runObservationExport } from '../services/observationExportService';
 import { buildImportPersistencePlan, ImportConflictMode } from '../services/importPolicy';
 import { logger } from '../utils/logger';
-import { useClickOutside } from '../hooks/useClickOutside';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -79,8 +79,41 @@ const ObservationList: React.FC<ObservationListProps> = ({
     const [pendingExportType, setPendingExportType] = React.useState<ObservationExportType | null>(null);
     const [isExporting, setIsExporting] = React.useState(false);
     const [showMobileExportMenu, setShowMobileExportMenu] = React.useState(false);
+    // Position (top + right) calculée à l'ouverture pour rendre le menu via un Portal
+    // dans document.body. Sans cela, le `backdrop-blur-md` du wrapper toolbar (ligne ~269)
+    // crée un stacking context qui piège le menu derrière les cartes d'observation.
+    const [mobileExportMenuPos, setMobileExportMenuPos] = React.useState<{ top: number; right: number } | null>(null);
+    const exporterButtonRef = React.useRef<HTMLButtonElement>(null);
     const mobileExportMenuRef = React.useRef<HTMLDivElement>(null);
-    useClickOutside(mobileExportMenuRef, () => setShowMobileExportMenu(false));
+
+    // Click-outside custom qui couvre à la fois le bouton Exporter ET le menu rendu dans le portail.
+    React.useEffect(() => {
+        if (!showMobileExportMenu) return;
+        const handlePointerDownOutside = (event: MouseEvent | TouchEvent) => {
+            const target = event.target;
+            if (!(target instanceof Node)) return;
+            if (exporterButtonRef.current?.contains(target)) return;
+            if (mobileExportMenuRef.current?.contains(target)) return;
+            setShowMobileExportMenu(false);
+        };
+        document.addEventListener('mousedown', handlePointerDownOutside);
+        document.addEventListener('touchstart', handlePointerDownOutside);
+        return () => {
+            document.removeEventListener('mousedown', handlePointerDownOutside);
+            document.removeEventListener('touchstart', handlePointerDownOutside);
+        };
+    }, [showMobileExportMenu]);
+
+    const toggleMobileExportMenu = () => {
+        if (!showMobileExportMenu && exporterButtonRef.current) {
+            const rect = exporterButtonRef.current.getBoundingClientRect();
+            setMobileExportMenuPos({
+                top: rect.bottom + 4,
+                right: Math.max(8, window.innerWidth - rect.right),
+            });
+        }
+        setShowMobileExportMenu(v => !v);
+    };
 
     // FAB visibility on scroll
     const [showFab, setShowFab] = useState(false);
@@ -350,10 +383,11 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             >
                                 {isParsingImport ? 'Analyse...' : 'Importer'}
                             </button>
-                            <div ref={mobileExportMenuRef} className="relative flex-1">
+                            <div className="flex-1">
                                 <button
+                                    ref={exporterButtonRef}
                                     type="button"
-                                    onClick={() => setShowMobileExportMenu(v => !v)}
+                                    onClick={toggleMobileExportMenu}
                                     disabled={isExporting}
                                     aria-expanded={showMobileExportMenu}
                                     aria-haspopup="menu"
@@ -364,33 +398,40 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                                     </svg>
                                 </button>
-                                {showMobileExportMenu && (
-                                    <div
-                                        role="menu"
-                                        className="absolute z-40 right-0 mt-1 w-48 bg-white dark:bg-nature-dark-surface rounded-xl shadow-xl ring-1 ring-black/10 dark:ring-white/10 overflow-hidden"
-                                    >
-                                        {([
-                                            { type: 'json' as const, label: 'JSON', hint: 'Sauvegarde brute', color: 'text-blue-600' },
-                                            { type: 'excel' as const, label: 'Excel', hint: 'Tableur (.xlsx)', color: 'text-emerald-600' },
-                                            { type: 'pdf' as const, label: 'PDF', hint: 'Document imprimable', color: 'text-red-600' },
-                                            { type: 'darwincore' as const, label: 'Darwin Core', hint: 'Standard GBIF/TDWG', color: 'text-amber-600' },
-                                            { type: 'geojson' as const, label: 'GeoJSON', hint: 'QGIS / geojson.io', color: 'text-indigo-600' }
-                                        ]).map(item => (
-                                            <button
-                                                key={item.type}
-                                                type="button"
-                                                role="menuitem"
-                                                onClick={() => { setShowMobileExportMenu(false); openExportDialog(item.type); }}
-                                                className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 flex flex-col border-b border-gray-100 dark:border-white/5 last:border-b-0"
-                                            >
-                                                <span className={`font-semibold ${item.color}`}>{item.label}</span>
-                                                <span className="text-xs text-gray-500 dark:text-gray-400">{item.hint}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
                             </div>
                         </div>
+
+                        {/* Dropdown Exporter rendu via React Portal dans document.body :
+                            nécessaire parce que la toolbar parente a `backdrop-blur-md` qui crée
+                            un stacking context, empêchant un z-index local de dépasser les cartes. */}
+                        {showMobileExportMenu && mobileExportMenuPos && createPortal(
+                            <div
+                                ref={mobileExportMenuRef}
+                                role="menu"
+                                className="fixed z-[9999] w-48 bg-white dark:bg-nature-dark-surface rounded-xl shadow-xl ring-1 ring-black/10 dark:ring-white/10 overflow-hidden"
+                                style={{ top: mobileExportMenuPos.top, right: mobileExportMenuPos.right }}
+                            >
+                                {([
+                                    { type: 'json' as const, label: 'JSON', hint: 'Sauvegarde brute', color: 'text-blue-600' },
+                                    { type: 'excel' as const, label: 'Excel', hint: 'Tableur (.xlsx)', color: 'text-emerald-600' },
+                                    { type: 'pdf' as const, label: 'PDF', hint: 'Document imprimable', color: 'text-red-600' },
+                                    { type: 'darwincore' as const, label: 'Darwin Core', hint: 'Standard GBIF/TDWG', color: 'text-amber-600' },
+                                    { type: 'geojson' as const, label: 'GeoJSON', hint: 'QGIS / geojson.io', color: 'text-indigo-600' }
+                                ]).map(item => (
+                                    <button
+                                        key={item.type}
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setShowMobileExportMenu(false); openExportDialog(item.type); }}
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 flex flex-col border-b border-gray-100 dark:border-white/5 last:border-b-0"
+                                    >
+                                        <span className={`font-semibold ${item.color}`}>{item.label}</span>
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">{item.hint}</span>
+                                    </button>
+                                ))}
+                            </div>,
+                            document.body
+                        )}
 
                         {/* Search Bar */}
                         <div className="relative">
@@ -456,11 +497,12 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     </div>
                 </div>
 
-                {/* Floating Action Button */}
+                {/* Floating Action Button — bottom-28 (112px) laisse ~40px au-dessus de
+                    la BottomNavigation mobile (qui fait ~72px avec pb-safe + pt-2). */}
                 {showFab && (
                     <button
                         onClick={onAdd}
-                        className="fixed bottom-24 right-4 z-40 w-14 h-14 bg-nature-green text-white rounded-full shadow-xl flex items-center justify-center text-3xl hover:scale-110 active:scale-95 transition-all duration-200 animate-fade-in"
+                        className="fixed bottom-28 right-4 z-40 w-14 h-14 bg-nature-green text-white rounded-full shadow-xl flex items-center justify-center text-3xl hover:scale-110 active:scale-95 transition-all duration-200 animate-fade-in"
                         title="Ajouter une observation"
                     >
                         +
