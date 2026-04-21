@@ -45,8 +45,6 @@ interface SpeciesInfoCacheEntry {
     staleUntil: number;
 }
 
-const APP_USER_AGENT = 'CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)';
-
 /** Fenêtre "frais" : sous ce TTL, on retourne le cache sans refetch. */
 const SPECIES_INFO_CACHE_TTL_MS = 2 * 60 * 1000;
 /** Fenêtre "stale-while-revalidate" : au-delà du TTL mais sous ce seuil, on retourne le cache ET on refetch en bg. */
@@ -57,7 +55,14 @@ const speciesInfoInFlightRequests = new Map<string, Promise<SpeciesInfo | null>>
 
 /** Options de config des appels HTTP aux API d'enrichissement espèce. */
 const DEFAULT_FETCH_OPTIONS = { retries: 2, backoffMs: 300, timeoutMs: 6000 } as const;
-const DEFAULT_HEADERS = { 'User-Agent': APP_USER_AGENT } as const;
+
+// Note : on n'ajoute PAS d'en-tête User-Agent sur les requêtes côté navigateur.
+// Selon la spec Fetch (https://fetch.spec.whatwg.org/#forbidden-header-name),
+// User-Agent est un « forbidden header » : Chrome l'ignore silencieusement,
+// Firefox déclenche un CORS preflight qui échoue si le serveur ne liste pas
+// explicitement « user-agent » dans Access-Control-Allow-Headers (cas de
+// Wikipedia, GBIF, iNaturalist). Le navigateur ajoute son propre User-Agent,
+// c'est suffisant pour ces API publiques.
 
 // ---------------------------------------------------------------------------
 // iNaturalist API  (primary source — supports French common names)
@@ -230,7 +235,7 @@ const resolveSpeciesMatchMeta = (
 const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INatTaxonResult | null> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=8&locale=fr`;
-        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
+        const res = await fetchWithRetry(url, {}, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return null;
         const data = await res.json();
         const results: INatTaxonResult[] = data?.results ?? [];
@@ -245,7 +250,7 @@ const fetchINatTaxon = async (query: string, signal?: AbortSignal): Promise<INat
 const fetchINatSuggestions = async (query: string, limit: number, signal?: AbortSignal, onWarning?: (msg: string) => void): Promise<INatTaxonResult[]> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/autocomplete?q=${encodeURIComponent(query.trim())}&per_page=${limit}&locale=fr`;
-        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
+        const res = await fetchWithRetry(url, {}, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) {
             onWarning?.('Service iNaturalist temporairement indisponible.');
             return [];
@@ -282,7 +287,7 @@ const fetchWikipediaFr = async (title: string, signal?: AbortSignal): Promise<Wi
     if (!title || title.trim().length < 2) return null;
     try {
         const url = `https://fr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.trim())}`;
-        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
+        const res = await fetchWithRetry(url, {}, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return null;
         const data: WikipediaSummary = await res.json();
         // Skip disambiguation pages ("type": "disambiguation") — not useful for species
@@ -333,7 +338,7 @@ export const matchSpecies = async (latinName: string, signal?: AbortSignal): Pro
     if (!latinName || latinName.trim().length < 2) return null;
     try {
         const url = `${GBIF_BASE}/match?name=${encodeURIComponent(latinName.trim())}&verbose=true`;
-        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
+        const res = await fetchWithRetry(url, {}, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return null;
         const data: GBIFMatchResult = await res.json();
         if (data.matchType === 'NONE') return null;
@@ -352,7 +357,7 @@ export const suggestSpecies = async (query: string, limit = 5, signal?: AbortSig
     if (!query || query.trim().length < 2) return [];
     try {
         const url = `${GBIF_BASE}/suggest?q=${encodeURIComponent(query.trim())}&limit=${limit}`;
-        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
+        const res = await fetchWithRetry(url, {}, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return [];
         return await res.json();
     } catch (e) {
@@ -425,7 +430,7 @@ const mapIucnStatusCodeToStatus = (code?: string): Status | undefined => {
 const fetchINatFranceStatus = async (taxonId: number, signal?: AbortSignal): Promise<INatFranceTaxonDetail> => {
     try {
         const url = `https://api.inaturalist.org/v1/taxa/${taxonId}?place_id=${INAT_FRANCE_PLACE_ID}`;
-        const res = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
+        const res = await fetchWithRetry(url, {}, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!res.ok) return {};
         const data = await res.json();
         const results: INatTaxonDetail[] = data?.results ?? [];
@@ -454,7 +459,7 @@ export const fetchGbifIucnStatus = async (latinName: string, signal?: AbortSigna
 
     try {
         const url = `${GBIF_V2_SPECIES_MATCH}?scientificName=${encodeURIComponent(latinName.trim())}`;
-        const response = await fetchWithRetry(url, { headers: DEFAULT_HEADERS }, { ...DEFAULT_FETCH_OPTIONS, signal });
+        const response = await fetchWithRetry(url, {}, { ...DEFAULT_FETCH_OPTIONS, signal });
         if (!response.ok) return undefined;
 
         const data: GBIFV2MatchResult = await response.json();
