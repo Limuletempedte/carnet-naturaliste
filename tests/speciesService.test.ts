@@ -635,4 +635,59 @@ describe('fetchSpeciesInfo', () => {
         expect(info).toBeNull();
         expect(console.error).not.toHaveBeenCalled();
     });
+
+    it('défaut à Status.NE quand aucune API ne retourne de statut liste rouge', async () => {
+        // Espèce trouvée sur iNat + GBIF taxonomy, mais aucune des deux sources
+        // de liste rouge ne retourne d'info (ni France via iNat, ni IUCN via GBIF).
+        // Le défaut doit être NE (Non évaluée), pas LC ni undefined.
+        fetchMock
+            // 1. iNat autocomplete → espèce trouvée
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        {
+                            id: 99999,
+                            name: 'Raruspecis obscura',
+                            rank: 'species',
+                            preferred_common_name: 'Espèce rare obscure'
+                        }
+                    ]
+                })
+            } as Response)
+            // 2. GBIF matchSpecies → taxonomy OK mais pas de red list
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    matchType: 'EXACT',
+                    class: 'Insecta',
+                    order: 'Coleoptera',
+                    family: 'Curculionidae',
+                    kingdom: 'Animalia'
+                })
+            } as Response)
+            // 3. iNat France status → pas d'entrée pour place_id=6753
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({
+                    results: [
+                        { conservation_statuses: [] }
+                    ]
+                })
+            } as Response)
+            // 4. Wikipedia FR → 404 (pas d'article)
+            .mockResolvedValueOnce({ ok: false } as Response)
+            // 5. GBIF IUCN fallback → pas d'entrée IUCN
+            .mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ additionalStatus: [] })
+            } as Response);
+
+        const info = await fetchSpeciesInfo('Raruspecis obscura');
+
+        expect(info).not.toBeNull();
+        expect(info?.redListStatus).toBe('NE');
+        // redListSource reste undefined pour signaler que c'est un défaut, pas une donnée sourcée
+        expect(info?.redListSource).toBeUndefined();
+    });
 });

@@ -193,16 +193,24 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
             tileLayerRef.current = L.tileLayer(tileUrl, {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
                 subdomains: 'abcd',
-                maxZoom: 20
+                maxZoom: 20,
+                detectRetina: true
             }).addTo(mapRef.current);
         } else {
+            // Placeholder {r} = "@2x" sur HiDPI pour OSM et OpenTopoMap (supportés),
+            // omis pour ArcGIS (pas de tuiles 2x) — detectRetina compense via chargement
+            // de tuiles voisines en zoom supérieur.
             const configs = {
-                osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 19 },
+                osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}{r}.png', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 19 },
                 satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri', maxZoom: 18 },
-                topo: { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>', maxZoom: 17 }
+                topo: { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}{r}.png', attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>', maxZoom: 17 }
             };
             const config = configs[activeLayer];
-            tileLayerRef.current = L.tileLayer(config.url, { attribution: config.attribution, maxZoom: config.maxZoom }).addTo(mapRef.current);
+            tileLayerRef.current = L.tileLayer(config.url, {
+                attribution: config.attribution,
+                maxZoom: config.maxZoom,
+                detectRetina: true
+            }).addTo(mapRef.current);
         }
     }, [isDarkMode, activeLayer]);
 
