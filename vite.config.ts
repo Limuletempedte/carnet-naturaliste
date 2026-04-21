@@ -154,6 +154,24 @@ export default defineConfig(({ mode }) => {
       // CO-13: cible navigateurs explicite alignee sur le .browserslistrc.
       // Minimum effectif: Chrome 92, Firefox 95, Safari 15.2, Edge 92.
       target: ['es2020', 'chrome92', 'firefox95', 'safari15.2', 'edge92'],
+      // PE-30: Exclut les chunks vendeur lourds du modulepreload automatique de Vite.
+      // Ces chunks sont destinés à être chargés uniquement quand l'utilisateur
+      // déclenche l'action correspondante (export Excel/PDF, backup ZIP).
+      // Les précharger au boot fait gaspiller la bande passante pour les utilisateurs
+      // qui n'exporteront jamais. Les autres chunks (vendor-core, vendor-leaflet…)
+      // restent préchargés normalement pour accélérer leur premier usage.
+      modulePreload: {
+        resolveDependencies: (_filename, deps) => {
+          const HEAVY_ON_DEMAND_CHUNKS = [
+            'vendor-exceljs',
+            'vendor-jspdf',
+            'vendor-html2canvas',
+            'vendor-jszip',
+            'vendor-file-saver'
+          ];
+          return deps.filter(dep => !HEAVY_ON_DEMAND_CHUNKS.some(chunk => dep.includes(chunk)));
+        }
+      },
       rollupOptions: {
         output: {
           manualChunks(id) {
