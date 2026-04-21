@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
 import { fetchSpeciesInfo, SpeciesInfo, SpeciesSuggestion, suggestSpeciesAutocomplete, mapINatIconicToTaxonomicGroup } from '../services/speciesService';
@@ -282,6 +282,38 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             clearTimeout(timeoutId);
         };
     }, [fieldTouched.latinName, fieldTouched.status, fieldTouched.taxonomicGroup, lookupKey, normalizedLookupKey]);
+
+    /**
+     * Force un refetch des infos espèce en court-circuitant le cache.
+     * On met à jour le panneau latéral uniquement — on NE RÉAPPLIQUE PAS
+     * automatiquement les champs (taxonomicGroup, status) car l'utilisateur
+     * a peut-être édité manuellement entre temps. Le toast annonce le résultat.
+     */
+    const handleRefreshSpeciesInfo = useCallback(async () => {
+        if (lookupKey.trim().length <= 2) return;
+        const requestId = latestSpeciesRequestRef.current + 1;
+        latestSpeciesRequestRef.current = requestId;
+        setIsFetchingInfo(true);
+        try {
+            const info = await fetchSpeciesInfo(lookupKey, { bypassCache: true });
+            if (requestId !== latestSpeciesRequestRef.current) return;
+            setSpeciesInfo(info);
+            if (info) {
+                const statusHint = info.redListStatus ? ` — Statut : ${info.redListStatus}` : '';
+                onToast('success', `Infos espèce rafraîchies${statusHint}`);
+            } else {
+                onToast('warning', 'Aucune information trouvée pour cette espèce');
+            }
+        } catch (e) {
+            if (requestId !== latestSpeciesRequestRef.current) return;
+            logger.error('Refresh species info error:', e);
+            onToast('error', 'Impossible de rafraîchir les infos espèce');
+        } finally {
+            if (requestId === latestSpeciesRequestRef.current) {
+                setIsFetchingInfo(false);
+            }
+        }
+    }, [lookupKey, onToast]);
 
     // Track blob URLs for revocation
     useEffect(() => {
@@ -974,7 +1006,24 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                     {/* Sidebar for Species Info */}
                     <div className="lg:col-span-1">
                         <div className="bg-white/80 dark:bg-nature-dark-surface/80 p-6 rounded-3xl shadow-ios border border-white/20 dark:border-white/5 sticky top-6 backdrop-blur-xl">
-                            <h3 className="text-xl font-bold text-nature-dark dark:text-white mb-4 pb-2 border-b border-gray-100 dark:border-white/5">Informations Espèce</h3>
+                            <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100 dark:border-white/5">
+                                <h3 className="text-xl font-bold text-nature-dark dark:text-white">Informations Espèce</h3>
+                                {lookupKey.trim().length > 2 && (
+                                    <button
+                                        type="button"
+                                        onClick={handleRefreshSpeciesInfo}
+                                        disabled={isFetchingInfo}
+                                        className="text-xs font-medium text-nature-green-text hover:text-green-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                                        title="Forcer un rafraîchissement depuis iNaturalist / GBIF / Wikipedia (ignore le cache local)"
+                                        aria-label="Rafraîchir les informations de l'espèce"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className={`w-4 h-4 ${isFetchingInfo ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                        <span>Rafraîchir</span>
+                                    </button>
+                                )}
+                            </div>
                             {speciesInfo ? (
                                 <div className="space-y-4 animate-fadeIn">
                                     {speciesInfo.imageUrl && isSafeImageUrl(speciesInfo.imageUrl) && (

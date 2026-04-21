@@ -71,8 +71,12 @@ describe('suggestSpeciesAutocomplete', () => {
     });
 
     it('falls back to GBIF when iNaturalist request fails', async () => {
+        // fetchWithRetry retente 2 fois avant d'abandonner : on doit donc rejeter
+        // 3 fois (tentative initiale + 2 retries) avant que le fallback GBIF s'active.
         fetchMock
             .mockRejectedValueOnce(new Error('iNat unreachable'))
+            .mockRejectedValueOnce(new Error('iNat unreachable (retry 1)'))
+            .mockRejectedValueOnce(new Error('iNat unreachable (retry 2)'))
             .mockResolvedValueOnce({
                 ok: true,
                 json: async () => ([
@@ -85,7 +89,8 @@ describe('suggestSpeciesAutocomplete', () => {
 
         const suggestions = await suggestSpeciesAutocomplete('Parus', 5);
 
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        // 3 tentatives iNat (échouent) + 1 GBIF (succès) = 4 appels
+        expect(fetchMock).toHaveBeenCalledTimes(4);
         expect(suggestions[0]).toMatchObject({
             displayName: 'Parus major',
             source: 'gbif'
@@ -538,6 +543,57 @@ describe('fetchSpeciesInfo', () => {
 
         const info = await fetchSpeciesInfo('Buthus occitanus');
         expect(info?.taxonomicGroup).toBe('Scorpions');
+    });
+
+    it('bypassCache: true force le refetch même si une entrée fraîche est en cache', async () => {
+        // Dispatcher par URL : chaque endpoint retourne toujours la même shape,
+        // peu importe combien de fois on l'appelle. Plus fiable que la queue FIFO
+        // qui se désynchronise quand fetchSpeciesInfo enchaîne plus d'appels que prévu.
+        fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.includes('api.inaturalist.org/v1/taxa/autocomplete')) {
+                return {
+                    ok: true,
+                    json: async () => ({
+                        results: [{
+                            id: 42,
+                            name: 'Vulpes vulpes',
+                            rank: 'species',
+                            preferred_common_name: 'Renard roux'
+                        }]
+                    })
+                } as Response;
+            }
+            if (url.includes('api.gbif.org/v1/species/match')) {
+                return {
+                    ok: true,
+                    json: async () => ({ matchType: 'EXACT', class: 'Mammalia', kingdom: 'Animalia' })
+                } as Response;
+            }
+            if (url.includes('api.inaturalist.org/v1/taxa/42')) {
+                return {
+                    ok: true,
+                    json: async () => ({ results: [{ conservation_statuses: [] }] })
+                } as Response;
+            }
+            // Tout le reste (Wikipedia, GBIF v2 IUCN) → 404 silencieux, traité comme absence.
+            return { ok: false, status: 404, json: async () => ({}) } as Response;
+        });
+
+        const first = await fetchSpeciesInfo('Vulpes vulpes');
+        const callsAfterFirst = fetchMock.mock.calls.length;
+        expect(first).not.toBeNull();
+        expect(callsAfterFirst).toBeGreaterThanOrEqual(3);
+
+        // Sans bypassCache, le 2e appel doit retourner le cache (aucun fetch supplémentaire)
+        const cached = await fetchSpeciesInfo('Vulpes vulpes');
+        expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
+        expect(cached).toEqual(first);
+
+        // Avec bypassCache, le 3e appel doit re-fetcher (compteur strictement supérieur)
+        const refreshed = await fetchSpeciesInfo('Vulpes vulpes', { bypassCache: true });
+        expect(fetchMock.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+        expect(refreshed).not.toBeNull();
     });
 
     it('uses cache for repeated normalized queries', async () => {
