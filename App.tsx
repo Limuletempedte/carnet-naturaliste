@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View, TaxonomicGroup, Status } from './types';
 import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, OfflineSyncResult, isDuplicateKeyError } from './services/storageService';
@@ -141,6 +141,18 @@ const App: React.FC = () => {
 
     const removeToast = useCallback((id: string) => {
         setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
+
+    // Bascule de vue via navigation (barre du bas mobile ou onglets desktop) :
+    // marque la mise à jour comme "transition" React pour que la bascule entre
+    // vues lazy reste fluide (pas de flash du fallback Suspense quand possible,
+    // React garde l'ancienne vue visible jusqu'à ce que la nouvelle soit prête).
+    // NE PAS utiliser pour les changements de vue programmatiques post-action
+    // (ex. retour à la liste après sauvegarde) : ceux-là doivent être immédiats.
+    const handleViewChange = useCallback((nextView: View) => {
+        startTransition(() => {
+            setView(nextView);
+        });
     }, []);
 
     const pushToast = useCallback((type: ToastType, message: string, durationMs = 4500) => {
@@ -906,9 +918,16 @@ const App: React.FC = () => {
             ? 'Connexion partielle: affichage du cache ou synchronisation incomplète'
             : 'Connecté au serveur';
 
+    // Fallback Suspense léger : avec startTransition sur handleViewChange, React 19
+    // garde l'ancienne vue visible tant que la nouvelle n'est pas prête. Ce fallback
+    // n'apparaît qu'au tout premier chargement d'un bundle lazy (chunk pas encore en cache).
     const lazyFallback = (
-        <div className={`flex items-center justify-center py-12 ${isMobileView ? 'pb-20' : ''}`}>
-            <p>Chargement de la vue...</p>
+        <div className={`flex items-center justify-center py-12 ${isMobileView ? 'pb-20' : ''}`} role="status" aria-live="polite">
+            <svg className="w-5 h-5 animate-spin text-nature-green mr-2" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Chargement de la vue…</p>
         </div>
     );
 
@@ -1176,7 +1195,7 @@ const App: React.FC = () => {
                                     key={tab.id}
                                     role="tab"
                                     aria-selected={view === tab.id}
-                                    onClick={() => setView(tab.id)}
+                                    onClick={() => handleViewChange(tab.id)}
                                     className={`
                                         px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 whitespace-nowrap
                                         ${view === tab.id
@@ -1194,7 +1213,7 @@ const App: React.FC = () => {
 
                 {/* Bottom Navigation - Mobile Only */}
                 {isMobileView && view !== View.FORM && (
-                    <BottomNavigation currentView={view} onViewChange={setView} />
+                    <BottomNavigation currentView={view} onViewChange={handleViewChange} />
                 )}
 
                 <ErrorBoundary fallbackLabel="cette vue" onReset={() => setView(View.LIST)}>
@@ -1330,13 +1349,13 @@ const App: React.FC = () => {
 
                 {/* Legal footer links */}
                 <footer className="text-center text-xs text-gray-400 dark:text-gray-500 py-4 space-x-2">
-                    <button onClick={() => setView(View.HELP)} className="hover:text-nature-green transition-colors">Aide</button>
+                    <button onClick={() => handleViewChange(View.HELP)} className="hover:text-nature-green transition-colors">Aide</button>
                     <span>|</span>
-                    <button onClick={() => setView(View.PRIVACY)} className="hover:text-nature-green transition-colors">Politique de confidentialite</button>
+                    <button onClick={() => handleViewChange(View.PRIVACY)} className="hover:text-nature-green transition-colors">Politique de confidentialite</button>
                     <span>|</span>
-                    <button onClick={() => setView(View.TERMS)} className="hover:text-nature-green transition-colors">CGU</button>
+                    <button onClick={() => handleViewChange(View.TERMS)} className="hover:text-nature-green transition-colors">CGU</button>
                     <span>|</span>
-                    <button onClick={() => setView(View.LEGAL_NOTICES)} className="hover:text-nature-green transition-colors">Mentions legales</button>
+                    <button onClick={() => handleViewChange(View.LEGAL_NOTICES)} className="hover:text-nature-green transition-colors">Mentions legales</button>
                 </footer>
             </main>
             <StorageConsentBanner />
