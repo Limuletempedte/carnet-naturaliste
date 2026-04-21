@@ -792,6 +792,13 @@ export const fetchSpeciesInfo = async (
                 }
             }
 
+            // Défaut : « Non évaluée » (NE) si aucune API n'a trouvé un statut.
+            // Évite de présenter "LC" (Préoccupation mineure) comme fallback trompeur.
+            // redListSource reste undefined pour signaler que c'est un défaut, pas une donnée sourcée.
+            if (!redListStatus) {
+                redListStatus = Status.NE;
+            }
+
             // Fallback: use iNaturalist iconic_taxon_name if GBIF didn't yield a group
             if (!taxonomicGroup && inat.iconic_taxon_name) {
                 taxonomicGroup = mapINatIconicToTaxonomicGroup(inat.iconic_taxon_name);

@@ -364,6 +364,10 @@ const App: React.FC = () => {
             message: `Supprimer ${ids.length} observations ?\n\n${preview}\n\nCette action est irréversible.`,
             onConfirm: async () => {
                 setIsBulkDeleting(true);
+                // Toast persistant de progression : le modal se ferme immédiatement
+                // (cf. ConfirmationDialog), l'utilisateur a besoin d'un feedback pendant
+                // que les N suppressions tournent.
+                const progressToastId = pushToast('info', `⏳ Suppression de ${ids.length} observation(s)…`, 0);
                 try {
                     const results = await Promise.allSettled(ids.map(id => deleteObservation(id)));
                     const successIds: string[] = [];
@@ -381,6 +385,10 @@ const App: React.FC = () => {
                     setObservations(prev => prev.filter(obs => !idsSet.has(obs.id)));
                     refreshOfflineQueueSnapshot();
 
+                    removeToast(progressToastId);
+                    if (successIds.length > 0 && failedIds.length === 0) {
+                        pushToast('success', `${successIds.length} observation(s) supprimée(s).`);
+                    }
                     if (failedIds.length > 0) {
                         const failedNames = failedIds.map(fid => {
                             const obs = observations.find(o => o.id === fid);
@@ -392,6 +400,7 @@ const App: React.FC = () => {
                         pushToast('warning', `${failedIds.length} suppression(s) échouée(s) : ${preview}`);
                     }
                 } catch (e) {
+                    removeToast(progressToastId);
                     setError("Erreur lors de la suppression multiple.");
                     logger.error(e);
                 } finally {

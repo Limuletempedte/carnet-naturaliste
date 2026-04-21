@@ -34,13 +34,14 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({ isOpen, onClose
                         Annuler
                     </button>
                     <button
-                        onClick={async () => {
-                            try {
-                                await onConfirm();
-                            } catch {
-                                // Error is handled by the caller
-                            }
+                        onClick={() => {
+                            // Fermer le modal immédiatement pour que l'utilisateur
+                            // voie le feedback de progression (toast, spinner, etc.)
+                            // même si onConfirm() est long (ex. suppression en masse).
                             onClose();
+                            Promise.resolve(onConfirm()).catch(() => {
+                                // Erreur gérée par l'appelant
+                            });
                         }}
                         className={primaryButtonClass}>
                         Confirmer
