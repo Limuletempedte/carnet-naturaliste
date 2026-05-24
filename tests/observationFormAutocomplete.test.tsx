@@ -235,4 +235,242 @@ describe('ObservationForm species autocomplete', () => {
         expect(savedObservation.wikipediaImage).toBe('https://img.example/existing.jpg');
         expect(savedObservation.taxonomicGroup).toBe(TaxonomicGroup.MAMMAL);
     });
+
+    // Garde-fou: appliquer une suggestion ne doit PAS relancer une requête de
+    // suggestions pour le nom appliqué (mécanisme skipNextSuggestionsFetchRef).
+    it('does not refetch suggestions for the name applied from a suggestion', async () => {
+        suggestSpeciesAutocompleteMock.mockResolvedValue([
+            { displayName: 'Mesange bleue', latinName: 'Cyanistes caeruleus', source: 'inat' }
+        ]);
+
+        const user = userEvent.setup();
+        render(
+            <ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={null} onToast={vi.fn()} />
+        );
+
+        const speciesInput = screen.getByLabelText(/Nom de l'espèce/i) as HTMLInputElement;
+        await user.type(speciesInput, 'Mes');
+        expect(await screen.findByText('Mesange bleue')).toBeTruthy();
+        await user.keyboard('{ArrowDown}{Enter}');
+
+        await waitFor(() => {
+            expect(speciesInput.value).toBe('Mesange bleue');
+        });
+
+        const refetchedAppliedName = suggestSpeciesAutocompleteMock.mock.calls.some(
+            ([query]) => typeof query === 'string' && query.toLowerCase().startsWith('mesange')
+        );
+        expect(refetchedAppliedName).toBe(false);
+    });
+
+    // Garde-fou: un clic en dehors de la zone de saisie ferme les suggestions
+    // (jusqu'ici seul Escape était couvert).
+    it('closes suggestions when clicking outside the species input', async () => {
+        suggestSpeciesAutocompleteMock.mockResolvedValue([
+            { displayName: 'Mesange noire', latinName: 'Periparus ater', source: 'inat' }
+        ]);
+
+        const user = userEvent.setup();
+        render(
+            <ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={null} onToast={vi.fn()} />
+        );
+
+        const speciesInput = screen.getByLabelText(/Nom de l'espèce/i);
+        await user.type(speciesInput, 'Mes');
+        expect(await screen.findByText('Mesange noire')).toBeTruthy();
+
+        await user.click(screen.getByLabelText(/Nom latin/i));
+
+        await waitFor(() => {
+            expect(screen.queryByText('Mesange noire')).toBeNull();
+        });
+    });
+});
+
+describe('ObservationForm species enrichment', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        Object.defineProperty(window, 'IntersectionObserver', {
+            writable: true,
+            value: MockIntersectionObserver
+        });
+        // Pas de dropdown de suggestions dans ces tests : on isole l'enrichissement.
+        suggestSpeciesAutocompleteMock.mockResolvedValue([]);
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    // Garde-fou: l'enrichissement auto-applique nom latin / groupe / statut
+    // tant que les champs n'ont pas été édités manuellement.
+    it('auto-applies latin name, taxonomic group and status from species info', async () => {
+        fetchSpeciesInfoMock.mockResolvedValue({
+            description: 'Le renard roux est un mammifère.',
+            imageUrl: null,
+            sourceUrl: 'https://fr.wikipedia.org/wiki/Renard_roux',
+            latinName: 'Vulpes vulpes',
+            taxonomicGroup: TaxonomicGroup.MAMMAL,
+            redListStatus: Status.LC,
+            redListSource: 'france',
+            matchedBy: 'common',
+            confidence: 'high'
+        });
+
+        const onSave = vi.fn(async (_observation: Observation) => { });
+        const user = userEvent.setup();
+        render(
+            <ObservationForm onSave={onSave} onCancel={vi.fn()} initialData={null} onToast={vi.fn()} />
+        );
+
+        const speciesInput = screen.getByLabelText(/Nom de l'espèce/i);
+        const latinInput = screen.getByLabelText(/Nom latin/i) as HTMLInputElement;
+
+        await user.type(speciesInput, 'Renard roux');
+
+        await waitFor(() => {
+            expect(latinInput.value).toBe('Vulpes vulpes');
+        }, { timeout: 3000 });
+        // L'auto-remplissage du nom latin change le lookupKey : groupe et statut
+        // sont donc appliqués au cycle d'enrichissement suivant. On attend que le
+        // groupe taxonomique soit bien passé à « Mammifères » avant de sauvegarder.
+        await waitFor(() => {
+            expect(
+                screen.getByRole('radio', { name: 'Mammifères' }).getAttribute('aria-checked')
+            ).toBe('true');
+        }, { timeout: 4000 });
+
+        await user.click(screen.getByRole('button', { name: /Sauvegarder/i }));
+
+        await waitFor(() => {
+            expect(onSave).toHaveBeenCalledTimes(1);
+        });
+
+        const saved = onSave.mock.calls[0][0];
+        expect(saved.latinName).toBe('Vulpes vulpes');
+        expect(saved.taxonomicGroup).toBe(TaxonomicGroup.MAMMAL);
+        expect(saved.status).toBe(Status.LC);
+    });
+
+    // Garde-fou: un nom latin saisi à la main ne doit pas être écrasé par
+    // l'enrichissement (respect du flag fieldTouched.latinName).
+    it('does not overwrite a manually edited latin name during enrichment', async () => {
+        fetchSpeciesInfoMock.mockResolvedValue({
+            description: 'desc-enrichi',
+            imageUrl: null,
+            sourceUrl: '',
+            latinName: 'Vulpes vulpes',
+            taxonomicGroup: TaxonomicGroup.MAMMAL,
+            matchedBy: 'latin',
+            confidence: 'high'
+        });
+
+        const onSave = vi.fn(async (_observation: Observation) => { });
+        const user = userEvent.setup();
+        render(
+            <ObservationForm onSave={onSave} onCancel={vi.fn()} initialData={null} onToast={vi.fn()} />
+        );
+
+        const speciesInput = screen.getByLabelText(/Nom de l'espèce/i);
+        const latinInput = screen.getByLabelText(/Nom latin/i) as HTMLInputElement;
+
+        await user.type(speciesInput, 'Renard');
+        await user.type(latinInput, 'Mon latin perso'); // marque latinName comme "touché"
+
+        // Attend que l'enrichissement ait résolu ET appliqué (le panneau affiche la description).
+        expect(await screen.findByText('desc-enrichi')).toBeTruthy();
+
+        await user.click(screen.getByRole('button', { name: /Sauvegarder/i }));
+
+        await waitFor(() => {
+            expect(onSave).toHaveBeenCalledTimes(1);
+        });
+
+        const saved = onSave.mock.calls[0][0];
+        expect(saved.latinName).toBe('Mon latin perso'); // non écrasé
+        expect(saved.taxonomicGroup).toBe(TaxonomicGroup.MAMMAL); // l'enrichissement a bien tourné
+    });
+
+    // Garde-fou: une réponse d'enrichissement obsolète (espèce changée entre temps)
+    // ne doit pas être appliquée (mécanisme latestSpeciesRequestRef + abort).
+    it('ignores a stale species info response when the species changed', async () => {
+        // Pas de latinName ici : on garde le lookupKey stable (sinon l'auto-remplissage
+        // du latin vide puis recharge speciesInfo, ce qui parasiterait l'assertion).
+        const firstInfo = {
+            description: 'INFO PREMIERE', imageUrl: null, sourceUrl: '',
+            taxonomicGroup: TaxonomicGroup.BIRD,
+            matchedBy: 'common', confidence: 'high'
+        };
+        const secondInfo = {
+            description: 'INFO SECONDE', imageUrl: null, sourceUrl: '',
+            taxonomicGroup: TaxonomicGroup.MAMMAL,
+            matchedBy: 'common', confidence: 'high'
+        };
+        let resolveFirst: () => void = () => { };
+        fetchSpeciesInfoMock.mockImplementation((name: string) => {
+            if (name.toLowerCase().includes('premiere')) {
+                return new Promise(resolve => { resolveFirst = () => resolve(firstInfo); });
+            }
+            return Promise.resolve(secondInfo);
+        });
+
+        const user = userEvent.setup();
+        render(
+            <ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={null} onToast={vi.fn()} />
+        );
+
+        const speciesInput = screen.getByLabelText(/Nom de l'espèce/i);
+
+        await user.type(speciesInput, 'Premiere');
+        await waitFor(() => {
+            expect(fetchSpeciesInfoMock).toHaveBeenCalled(); // 1re requête en vol (non résolue)
+        }, { timeout: 3000 });
+
+        await user.clear(speciesInput);
+        await user.type(speciesInput, 'Seconde');
+        expect(await screen.findByText('INFO SECONDE')).toBeTruthy(); // 2e requête résolue et appliquée
+
+        // On résout maintenant la 1re requête (obsolète) : elle doit être ignorée.
+        resolveFirst();
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        expect(screen.queryByText('INFO PREMIERE')).toBeNull();
+        expect(screen.getByText('INFO SECONDE')).toBeTruthy();
+    });
+
+    // Garde-fou: le bouton "Rafraîchir" force un refetch sans cache et notifie
+    // le résultat (handleRefreshSpeciesInfo, bypassCache).
+    it('refreshes species info bypassing cache and toasts the result', async () => {
+        fetchSpeciesInfoMock.mockResolvedValue({
+            description: 'desc',
+            imageUrl: null,
+            sourceUrl: '',
+            latinName: 'Vulpes vulpes',
+            taxonomicGroup: TaxonomicGroup.MAMMAL,
+            redListStatus: Status.VU,
+            redListSource: 'france',
+            matchedBy: 'common',
+            confidence: 'high'
+        });
+
+        const onToast = vi.fn();
+        const user = userEvent.setup();
+        render(
+            <ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={makeObservation()} onToast={onToast} />
+        );
+
+        const refreshBtn = await screen.findByRole('button', { name: /Rafraîchir les informations/i });
+        fetchSpeciesInfoMock.mockClear();
+        await user.click(refreshBtn);
+
+        await waitFor(() => {
+            expect(fetchSpeciesInfoMock).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ bypassCache: true })
+            );
+        });
+        await waitFor(() => {
+            expect(onToast).toHaveBeenCalledWith('success', expect.stringContaining('rafraîchies'));
+        });
+    });
 });
