@@ -378,7 +378,8 @@ describe('ObservationForm species enrichment', () => {
         await user.type(latinInput, 'Mon latin perso'); // marque latinName comme "touché"
 
         // Attend que l'enrichissement ait résolu ET appliqué (le panneau affiche la description).
-        expect(await screen.findByText('desc-enrichi')).toBeTruthy();
+        // Timeout explicite : le debounce d'enrichissement est de 1 s, au-delà du défaut de findByText.
+        expect(await screen.findByText('desc-enrichi', undefined, { timeout: 3000 })).toBeTruthy();
 
         await user.click(screen.getByRole('button', { name: /Sauvegarder/i }));
 

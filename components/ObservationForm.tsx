@@ -1,7 +1,6 @@
-import React, { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
-import { fetchSpeciesInfo, SpeciesInfo, SpeciesSuggestion, suggestSpeciesAutocomplete, mapINatIconicToTaxonomicGroup } from '../services/speciesService';
 import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
 import { buildObservationFromForm, ObservationFormData, validateObservationForm } from '../services/observationFormService';
@@ -9,9 +8,9 @@ import { uploadPhoto } from '../services/storageService';
 import { isSafeImageUrl } from '../utils/urlUtils';
 import { generateUUID } from '../utils/uuidUtils';
 import { logger } from '../utils/logger';
-import { useClickOutside } from '../hooks/useClickOutside';
-import { getObservationLookupKey, normalizeLookupKey, createEmptyFormData, mapObservationToFormData } from '../utils/observationFormHelpers';
+import { createEmptyFormData, mapObservationToFormData } from '../utils/observationFormHelpers';
 import { useObserverTags } from '../hooks/useObserverTags';
+import { useSpeciesLookup } from '../hooks/useSpeciesLookup';
 import { ToastType } from './ToastContainer';
 import FieldTooltip from './FieldTooltip';
 import FormSection from './FormSection';
@@ -32,22 +31,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [showMap, setShowMap] = useState(false);
     const [showAdvancedLocation, setShowAdvancedLocation] = useState(false);
     const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
-    const [speciesInfo, setSpeciesInfo] = useState<SpeciesInfo | null>(null);
-    const [speciesSuggestions, setSpeciesSuggestions] = useState<SpeciesSuggestion[]>([]);
-    const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
-    const [isFetchingInfo, setIsFetchingInfo] = useState(false);
     const [photoFile, setPhotoFile] = useState<Blob | null>(null);
     const { observerInput, setObserverInput, addObservers, removeObserver } = useObserverTags(setFormData);
 
     const [isUploading, setIsUploading] = useState(false);
-    const latestSpeciesRequestRef = useRef(0);
-    const lastAutoImageLookupKeyRef = useRef('');
-    const lastAutoImageUrlRef = useRef('');
     const bottomButtonsRef = useRef<HTMLDivElement>(null);
-    const speciesInputWrapperRef = useRef<HTMLDivElement>(null);
-    const skipNextSuggestionsFetchRef = useRef(false);
     const blobUrlsRef = useRef<Set<string>>(new Set());
     const [showStickyBar, setShowStickyBar] = useState(false);
     const [fieldTouched, setFieldTouched] = useState<{ latinName: boolean; taxonomicGroup: boolean; status: boolean }>({
@@ -55,16 +43,34 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         taxonomicGroup: false,
         status: false
     });
-    const lookupKey = getObservationLookupKey(formData.speciesName, formData.latinName);
-    const normalizedLookupKey = normalizeLookupKey(lookupKey);
+
+    // Logique espèce (autocomplétion + enrichissement) extraite dans un hook dédié.
+    const {
+        speciesInfo,
+        speciesSuggestions,
+        isFetchingSuggestions,
+        isFetchingInfo,
+        showSuggestions,
+        setShowSuggestions,
+        activeSuggestionIndex,
+        setActiveSuggestionIndex,
+        speciesInputWrapperRef,
+        lookupKey,
+        applySpeciesAutocompleteSuggestion,
+        handleRefreshSpeciesInfo,
+    } = useSpeciesLookup({
+        speciesName: formData.speciesName,
+        latinName: formData.latinName,
+        setFormData,
+        fieldTouched,
+        initialData,
+        onToast,
+    });
 
     useEffect(() => {
         if (initialData) {
             setFormData(mapObservationToFormData(initialData));
             setPhotoFile(null);
-            setSpeciesSuggestions([]);
-            setShowSuggestions(false);
-            setActiveSuggestionIndex(-1);
             setFieldTouched({
                 latinName: !!initialData.latinName,
                 taxonomicGroup: initialData.taxonomicGroup !== defaultTaxonomicGroup,
@@ -74,8 +80,6 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             setFormData(createEmptyFormData(defaultTaxonomicGroup));
             setFieldTouched({ latinName: false, taxonomicGroup: false, status: false });
         }
-        lastAutoImageLookupKeyRef.current = '';
-        lastAutoImageUrlRef.current = '';
     }, [defaultTaxonomicGroup, initialData]);
 
     // IntersectionObserver: show sticky bar when bottom buttons are out of view
@@ -89,176 +93,6 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         observer.observe(el);
         return () => observer.disconnect();
     }, []);
-
-    // Debounce species autocomplete suggestions (French-first via iNaturalist).
-    useEffect(() => {
-        let cancelled = false;
-        const abortController = new AbortController();
-        const query = formData.speciesName.trim();
-
-        if (skipNextSuggestionsFetchRef.current) {
-            skipNextSuggestionsFetchRef.current = false;
-            return;
-        }
-
-        if (query.length < 2) {
-            setSpeciesSuggestions([]);
-            setShowSuggestions(false);
-            setActiveSuggestionIndex(-1);
-            setIsFetchingSuggestions(false);
-            return;
-        }
-
-        setIsFetchingSuggestions(true);
-        const timeoutId = window.setTimeout(async () => {
-            const suggestions = await suggestSpeciesAutocomplete(query, 5, { signal: abortController.signal });
-            if (cancelled) return;
-
-            setSpeciesSuggestions(suggestions);
-            setShowSuggestions(suggestions.length > 0);
-            setActiveSuggestionIndex(suggestions.length > 0 ? 0 : -1);
-            setIsFetchingSuggestions(false);
-        }, 300);
-
-        return () => {
-            cancelled = true;
-            abortController.abort();
-            clearTimeout(timeoutId);
-        };
-    }, [formData.speciesName]);
-
-    // Close autocomplete when clicking/tapping outside the species input area.
-    useClickOutside(speciesInputWrapperRef, () => {
-        setShowSuggestions(false);
-        setActiveSuggestionIndex(-1);
-    });
-
-    useEffect(() => {
-        // Invalidate stale async species enrichment when identity changes.
-        latestSpeciesRequestRef.current += 1;
-        setSpeciesInfo(null);
-        setFormData(prev => {
-            const shouldClearAutoImage = (
-                !prev.photo
-                && !!lastAutoImageLookupKeyRef.current
-                && !!lastAutoImageUrlRef.current
-                && lastAutoImageLookupKeyRef.current !== normalizedLookupKey
-                && prev.wikipediaImage === lastAutoImageUrlRef.current
-            );
-            if (!shouldClearAutoImage) return prev;
-            return { ...prev, wikipediaImage: undefined };
-        });
-    }, [normalizedLookupKey]);
-
-    // Debounce fetching species info
-    useEffect(() => {
-        let cancelled = false;
-        const abortController = new AbortController();
-        const lookupForRequest = lookupKey;
-        const normalizedLookupForRequest = normalizedLookupKey;
-        const fetchInfo = async () => {
-            if (lookupForRequest.length > 2) {
-                const requestId = latestSpeciesRequestRef.current + 1;
-                latestSpeciesRequestRef.current = requestId;
-                setIsFetchingInfo(true);
-                try {
-                    const info = await fetchSpeciesInfo(lookupForRequest, { signal: abortController.signal });
-                    if (cancelled || requestId !== latestSpeciesRequestRef.current) {
-                        return;
-                    }
-                    setSpeciesInfo(info);
-
-                    // Only pre-fill the latin name once when the field is still blank.
-                    if (info?.latinName && !fieldTouched.latinName) {
-                        setFormData(prev => ({
-                            ...prev,
-                            latinName: prev.latinName || info.latinName || ''
-                        }));
-                    }
-
-                    // Auto-apply taxonomic group and wikipedia image
-                    if (info) {
-                        setFormData(prev => {
-                            const currentLookup = normalizeLookupKey(getObservationLookupKey(prev.speciesName, prev.latinName));
-                            if (currentLookup !== normalizedLookupForRequest) {
-                                return prev;
-                            }
-
-                            const next = { ...prev };
-                            let hasChanges = false;
-
-                            if (!prev.photo && info.imageUrl) {
-                                if (prev.wikipediaImage !== info.imageUrl) {
-                                    next.wikipediaImage = info.imageUrl;
-                                    hasChanges = true;
-                                }
-                                lastAutoImageLookupKeyRef.current = normalizedLookupForRequest;
-                                lastAutoImageUrlRef.current = info.imageUrl;
-                            }
-
-                            if (!fieldTouched.taxonomicGroup && info.taxonomicGroup && prev.taxonomicGroup !== info.taxonomicGroup) {
-                                next.taxonomicGroup = info.taxonomicGroup;
-                                hasChanges = true;
-                            }
-
-                            if (!fieldTouched.status && info.redListStatus && prev.status !== info.redListStatus) {
-                                next.status = info.redListStatus;
-                                hasChanges = true;
-                            }
-
-                            return hasChanges ? next : prev;
-                        });
-                    }
-                } finally {
-                    if (!cancelled && requestId === latestSpeciesRequestRef.current) {
-                        setIsFetchingInfo(false);
-                    }
-                }
-            } else {
-                setSpeciesInfo(null);
-                setIsFetchingInfo(false);
-            }
-        };
-
-        const timeoutId = setTimeout(fetchInfo, 1000);
-        return () => {
-            cancelled = true;
-            abortController.abort();
-            clearTimeout(timeoutId);
-        };
-    }, [fieldTouched.latinName, fieldTouched.status, fieldTouched.taxonomicGroup, lookupKey, normalizedLookupKey]);
-
-    /**
-     * Force un refetch des infos espèce en court-circuitant le cache.
-     * On met à jour le panneau latéral uniquement — on NE RÉAPPLIQUE PAS
-     * automatiquement les champs (taxonomicGroup, status) car l'utilisateur
-     * a peut-être édité manuellement entre temps. Le toast annonce le résultat.
-     */
-    const handleRefreshSpeciesInfo = useCallback(async () => {
-        if (lookupKey.trim().length <= 2) return;
-        const requestId = latestSpeciesRequestRef.current + 1;
-        latestSpeciesRequestRef.current = requestId;
-        setIsFetchingInfo(true);
-        try {
-            const info = await fetchSpeciesInfo(lookupKey, { bypassCache: true });
-            if (requestId !== latestSpeciesRequestRef.current) return;
-            setSpeciesInfo(info);
-            if (info) {
-                const statusHint = info.redListStatus ? ` — Statut : ${info.redListStatus}` : '';
-                onToast('success', `Infos espèce rafraîchies${statusHint}`);
-            } else {
-                onToast('warning', 'Aucune information trouvée pour cette espèce');
-            }
-        } catch (e) {
-            if (requestId !== latestSpeciesRequestRef.current) return;
-            logger.error('Refresh species info error:', e);
-            onToast('error', 'Impossible de rafraîchir les infos espèce');
-        } finally {
-            if (requestId === latestSpeciesRequestRef.current) {
-                setIsFetchingInfo(false);
-            }
-        }
-    }, [lookupKey, onToast]);
 
     // Track blob URLs for revocation
     useEffect(() => {
@@ -355,44 +189,6 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             }
 
             return prev;
-        });
-    };
-
-    const applySpeciesAutocompleteSuggestion = (suggestion: SpeciesSuggestion) => {
-        skipNextSuggestionsFetchRef.current = true;
-        setShowSuggestions(false);
-        setSpeciesSuggestions([]);
-        setActiveSuggestionIndex(-1);
-
-        // Immediately map iconic taxon name to taxonomic group
-        const suggestedGroup = suggestion.iconicTaxonName
-            ? mapINatIconicToTaxonomicGroup(suggestion.iconicTaxonName)
-            : undefined;
-
-        setFormData(prev => {
-            const next = {
-                ...prev,
-                speciesName: suggestion.displayName,
-                latinName: !fieldTouched.latinName ? (suggestion.latinName || prev.latinName || '') : prev.latinName,
-                taxonomicGroup: !fieldTouched.taxonomicGroup && suggestedGroup
-                    ? suggestedGroup
-                    : prev.taxonomicGroup,
-            };
-
-            if (!prev.photo) {
-                next.wikipediaImage = suggestion.imageUrl || undefined;
-            }
-
-            const normalizedNextLookup = normalizeLookupKey(getObservationLookupKey(next.speciesName, next.latinName));
-            if (!prev.photo && suggestion.imageUrl) {
-                lastAutoImageLookupKeyRef.current = normalizedNextLookup;
-                lastAutoImageUrlRef.current = suggestion.imageUrl;
-            } else if (!prev.photo && !suggestion.imageUrl) {
-                lastAutoImageLookupKeyRef.current = '';
-                lastAutoImageUrlRef.current = '';
-            }
-
-            return next;
         });
     };
 
