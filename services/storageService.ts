@@ -2,8 +2,18 @@ import { supabase } from '../supabaseClient';
 import { Observation } from '../types';
 import { sanitizeCachedMediaValue, sanitizeCachedMediaValueWithTracking } from './storageCacheUtils';
 import { OfflineAction, OfflineQueueItem, isTempId, mapQueueItemIds, reduceQueue } from './storageQueueUtils';
-import { isUuid, generateUUID } from '../utils/uuidUtils';
+import { generateUUID } from '../utils/uuidUtils';
 import { logger } from '../utils/logger';
+import type {
+    ObservationLoadResult,
+    SkippedSyncItem,
+    OfflineSyncResult,
+    ProcessOfflineQueueOptions,
+    PersistenceOptions,
+    ObservationRow,
+    SupabaseLikeError,
+} from './storage/storageTypes';
+import { mapToObservation, mapToRow } from './storage/storageMappers';
 
 const LEGACY_QUEUE_KEY = 'offline_sync_queue';
 const LEGACY_LOCAL_CACHE_KEY = 'local_observations_cache';
@@ -13,33 +23,9 @@ const STORAGE_NAMESPACE_ERROR = "Storage namespace absent. Réessayez après aut
 const LOCAL_CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const LOCAL_CACHE_TS_SUFFIX = '_ts';
 
-export interface ObservationLoadResult {
-    observations: Observation[];
-    source: 'remote' | 'cache';
-    warning?: string;
-}
-
-export interface SkippedSyncItem {
-    id: string;
-    action: string;
-    reason: string;
-}
-
-export interface OfflineSyncResult {
-    processed: number;
-    failed: number;
-    failureReasons: string[];
-    skippedItems: SkippedSyncItem[];
-}
-
-export interface ProcessOfflineQueueOptions {
-    itemIds?: string[];
-    onProgress?: (current: number, total: number) => void;
-}
-
-interface PersistenceOptions {
-    skipCache?: boolean;
-}
+// Types déplacés dans ./storage/storageTypes — ré-export de l'API publique
+// (les imports existants depuis './storageService' restent inchangés).
+export type { ObservationLoadResult, SkippedSyncItem, OfflineSyncResult, ProcessOfflineQueueOptions };
 
 let storageNamespace: string | null = null;
 let processingQueue: Promise<OfflineSyncResult> | null = null;
@@ -103,13 +89,6 @@ const assertMutationAffectedRows = (count: number | null, action: 'update' | 'de
 };
 
 const COUNT_BREAKDOWN_COLUMNS = ['male_count', 'female_count', 'unidentified_count'] as const;
-
-type SupabaseLikeError = {
-    message?: string;
-    code?: string;
-    details?: string;
-    hint?: string;
-};
 
 const asSupabaseError = (error: unknown): SupabaseLikeError => {
     if (error && typeof error === 'object') return error as SupabaseLikeError;
@@ -236,121 +215,8 @@ const stripMissingColumns = (row: Record<string, unknown>, error: unknown): Reco
     return result;
 };
 
-interface ObservationRow {
-    id: string;
-    species_name: string;
-    latin_name: string;
-    taxonomic_group: Observation['taxonomicGroup'];
-    date: string;
-    time: string;
-    count: number;
-    male_count?: number | null;
-    female_count?: number | null;
-    unidentified_count?: number | null;
-    location: string;
-    gps_lat: number;
-    gps_lon: number;
-    municipality: string;
-    department: string;
-    country: string;
-    altitude: number;
-    comment: string;
-    status: Observation['status'];
-    atlas_code: Observation['atlasCode'];
-    protocol: Observation['protocol'];
-    sexe: Observation['sexe'];
-    age: Observation['age'];
-    observation_condition: Observation['observationCondition'];
-    comportement: Observation['comportement'];
-    weather_condition?: string | null;
-    photo_url?: string | null;
-    wikipedia_image?: string | null;
-    sound_url?: string | null;
-    habitat?: string | null;
-    phenology?: string | null;
-    observers?: string[] | null;
-    created_at?: string | null;
-    updated_at?: string | null;
-}
-
-const mapToObservation = (row: ObservationRow): Observation => ({
-    id: row.id,
-    speciesName: row.species_name,
-    latinName: row.latin_name,
-    taxonomicGroup: row.taxonomic_group,
-    date: row.date,
-    time: row.time,
-    count: row.count,
-    maleCount: row.male_count ?? undefined,
-    femaleCount: row.female_count ?? undefined,
-    unidentifiedCount: row.unidentified_count ?? undefined,
-    location: row.location,
-    gps: { lat: row.gps_lat, lon: row.gps_lon },
-    municipality: row.municipality,
-    department: row.department,
-    country: row.country,
-    altitude: row.altitude,
-    comment: row.comment,
-    status: row.status,
-    atlasCode: row.atlas_code,
-    protocol: row.protocol,
-    sexe: row.sexe,
-    age: row.age,
-    observationCondition: row.observation_condition,
-    comportement: row.comportement,
-    weather: (row.weather_condition || 'Non renseigné') as Observation['weather'],
-    photo: row.photo_url ?? undefined,
-    wikipediaImage: row.wikipedia_image ?? undefined,
-    sound: row.sound_url ?? undefined,
-    createdAt: row.created_at ?? undefined,
-    updatedAt: row.updated_at ?? undefined,
-    habitat: (row.habitat ?? undefined) as Observation['habitat'],
-    phenology: (row.phenology ?? undefined) as Observation['phenology'],
-    observers: row.observers && row.observers.length > 0 ? row.observers : undefined,
-});
-
-const mapToRow = (obs: Observation, userId: string): Record<string, unknown> => {
-    const row: Record<string, unknown> = {
-        user_id: userId,
-        species_name: obs.speciesName,
-        latin_name: obs.latinName,
-        taxonomic_group: obs.taxonomicGroup,
-        date: obs.date,
-        time: obs.time,
-        count: obs.count,
-        male_count: obs.maleCount ?? null,
-        female_count: obs.femaleCount ?? null,
-        unidentified_count: obs.unidentifiedCount ?? null,
-        location: obs.location,
-        gps_lat: obs.gps.lat,
-        gps_lon: obs.gps.lon,
-        municipality: obs.municipality,
-        department: obs.department,
-        country: obs.country,
-        altitude: obs.altitude,
-        comment: obs.comment,
-        status: obs.status,
-        atlas_code: obs.atlasCode,
-        protocol: obs.protocol,
-        sexe: obs.sexe,
-        age: obs.age,
-        observation_condition: obs.observationCondition,
-        comportement: obs.comportement,
-        weather_condition: obs.weather || 'Non renseigné',
-        photo_url: obs.photo,
-        wikipedia_image: obs.wikipediaImage,
-        sound_url: obs.sound,
-        habitat: obs.habitat ?? null,
-        phenology: obs.phenology ?? null,
-        observers: obs.observers && obs.observers.length > 0 ? obs.observers : null
-    };
-
-    if (isUuid(obs.id)) {
-        row.id = obs.id;
-    }
-
-    return row;
-};
+// ObservationRow, mapToObservation et mapToRow déplacés dans
+// ./storage/storageTypes et ./storage/storageMappers (importés ci-dessus).
 
 const parseJson = <T,>(raw: string | null, fallback: T, onCorrupt?: (err: unknown) => void): T => {
     if (!raw) return fallback;
