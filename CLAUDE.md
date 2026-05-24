@@ -48,5 +48,5 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 
 ## Tests
 - Framework : Vitest + Testing Library React
-- 22 fichiers de tests couvrant composants, services et utils
+- 37 fichiers de tests (240 tests) couvrant composants, services et utils
 - Lancer `npm run test:run` pour valider les changements

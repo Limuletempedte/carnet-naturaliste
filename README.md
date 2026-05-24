@@ -33,4 +33,6 @@ Configurer `.env.local`:
 ## Base de données
 
 - Schéma initial : `supabase_schema.sql`
-- Migration phase 2 (index/contraintes/trigger `updated_at`) : `supabase_migration_phase2.sql`
+- Migrations versionnées : dossier `supabase/migrations/` (appliquées via Supabase).
+  Exemple — la phase 2 (index/contraintes/trigger `updated_at`) correspond à
+  `supabase/migrations/20240201000000_phase2_indexes_constraints.sql`.
