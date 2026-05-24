@@ -326,7 +326,7 @@ const App: React.FC = () => {
         loadData();
 
         return () => { mounted = false; };
-    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, user]);
+    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, user, pushToast]);
 
     const handleAddObservation = useCallback(() => {
         setEditingObservation(null);

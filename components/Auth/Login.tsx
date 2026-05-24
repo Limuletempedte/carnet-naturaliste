@@ -1,6 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { supabase } from '../../supabaseClient';
-import { PrivacyPolicy, TermsOfService, MentionsLegales } from '../LegalPages';
+
+// Chargement différé des pages légales (cohérent avec App.tsx) — évite que cet
+// import statique n'annule le code-splitting lazy de LegalPages au niveau de l'app.
+const PrivacyPolicy = lazy(() => import('../LegalPages').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = lazy(() => import('../LegalPages').then(m => ({ default: m.TermsOfService })));
+const MentionsLegales = lazy(() => import('../LegalPages').then(m => ({ default: m.MentionsLegales })));
+
+const LegalFallback: React.FC = () => (
+    <div className="p-8 text-center text-gray-500 dark:text-gray-400">Chargement…</div>
+);
 
 const mapSupabaseAuthError = (message: string): string => {
     const lower = message.toLowerCase();
@@ -82,9 +91,9 @@ const Login: React.FC = () => {
         }
     };
 
-    if (legalView === 'privacy') return <div className="min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface"><PrivacyPolicy onBack={() => setLegalView('login')} /></div>;
-    if (legalView === 'terms') return <div className="min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface"><TermsOfService onBack={() => setLegalView('login')} /></div>;
-    if (legalView === 'legal') return <div className="min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface"><MentionsLegales onBack={() => setLegalView('login')} /></div>;
+    if (legalView === 'privacy') return <div className="min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface"><Suspense fallback={<LegalFallback />}><PrivacyPolicy onBack={() => setLegalView('login')} /></Suspense></div>;
+    if (legalView === 'terms') return <div className="min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface"><Suspense fallback={<LegalFallback />}><TermsOfService onBack={() => setLegalView('login')} /></Suspense></div>;
+    if (legalView === 'legal') return <div className="min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface"><Suspense fallback={<LegalFallback />}><MentionsLegales onBack={() => setLegalView('login')} /></Suspense></div>;
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">

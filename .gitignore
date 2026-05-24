@@ -37,3 +37,16 @@ implementation_plan.md.resolved
 # Supabase CLI runtime state (config.toml, migrations/, functions/ ARE tracked)
 supabase/.branches/
 supabase/.temp/
+
+# Maquettes/prototypes locaux à la racine (non versionnés) — ancrés à la racine
+# pour ne pas ignorer les PNG légitimes de public/ ou dist/
+/boot*.png
+/gallery*.png
+/cockpit.png
+/arsenal.png
+/current-hero.png
+/fire-launch.png
+/mission-sim.png
+
+# Artefacts Playwright MCP locaux
+.playwright-mcp/
