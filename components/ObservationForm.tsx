@@ -6,14 +6,15 @@ import { fetchAltitude } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
 import { buildObservationFromForm, ObservationFormData, validateObservationForm } from '../services/observationFormService';
 import { uploadPhoto } from '../services/storageService';
-import { dateToIsoLocal } from '../utils/dateUtils';
-import { normalizeSearchText } from '../utils/textUtils';
 import { isSafeImageUrl } from '../utils/urlUtils';
 import { generateUUID } from '../utils/uuidUtils';
 import { logger } from '../utils/logger';
 import { useClickOutside } from '../hooks/useClickOutside';
+import { getObservationLookupKey, normalizeLookupKey, createEmptyFormData, mapObservationToFormData } from '../utils/observationFormHelpers';
+import { useObserverTags } from '../hooks/useObserverTags';
 import { ToastType } from './ToastContainer';
 import FieldTooltip from './FieldTooltip';
+import FormSection from './FormSection';
 
 const MapInput = lazy(() => import('./MapInput'));
 
@@ -23,62 +24,6 @@ interface ObservationFormProps {
     initialData: Observation | null;
     onToast: (type: ToastType, message: string, durationMs?: number) => void;
 }
-
-const FormSection: React.FC<{ title: string, children: React.ReactNode }> = ({ title, children }) => (
-    <div className="bg-white/80 dark:bg-nature-dark-surface/80 p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-serif font-bold text-nature-dark dark:text-white mb-4 border-b-2 border-nature-green/30 pb-2">{title}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {children}
-        </div>
-    </div>
-);
-
-const getObservationLookupKey = (speciesName: string, latinName: string): string => {
-    return latinName.trim() || speciesName.trim();
-};
-
-const normalizeLookupKey = (value: string): string => normalizeSearchText(value || '');
-
-const createEmptyFormData = (defaultTaxonomicGroup: TaxonomicGroup): ObservationFormData => ({
-    speciesName: '',
-    latinName: '',
-    taxonomicGroup: defaultTaxonomicGroup,
-    date: dateToIsoLocal(new Date()),
-    time: new Date().toTimeString().substring(0, 5),
-    count: 1,
-    maleCount: '',
-    femaleCount: '',
-    unidentifiedCount: '',
-    location: '',
-    gps: { lat: null, lon: null },
-    municipality: '',
-    department: '',
-    country: 'France',
-    altitude: null,
-    comment: '',
-    status: Status.NE,
-    atlasCode: '',
-    protocol: Protocol.OPPORTUNIST,
-    sexe: Sexe.UNKNOWN,
-    age: Age.UNKNOWN,
-    observationCondition: ObservationCondition.UNKNOWN,
-    comportement: Comportement.UNKNOWN,
-    weather: WeatherCondition.UNKNOWN,
-    photo: undefined,
-    sound: undefined,
-    wikipediaImage: undefined,
-    habitat: Habitat.UNKNOWN,
-    phenology: Phenology.UNKNOWN,
-    observers: undefined,
-});
-
-const mapObservationToFormData = (observation: Observation): ObservationFormData => ({
-    ...observation,
-    count: observation.count,
-    maleCount: observation.maleCount ?? '',
-    femaleCount: observation.femaleCount ?? '',
-    unidentifiedCount: observation.unidentifiedCount ?? '',
-});
 
 const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, onToast }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
@@ -94,7 +39,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
     const [isFetchingInfo, setIsFetchingInfo] = useState(false);
     const [photoFile, setPhotoFile] = useState<Blob | null>(null);
-    const [observerInput, setObserverInput] = useState('');
+    const { observerInput, setObserverInput, addObservers, removeObserver } = useObserverTags(setFormData);
 
     const [isUploading, setIsUploading] = useState(false);
     const latestSpeciesRequestRef = useRef(0);
@@ -386,30 +331,6 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             }
             setFormData(prev => ({ ...prev, [name]: value }));
         }
-    };
-
-    const addObservers = (raw: string) => {
-        const tokens = raw
-            .split(/[,;]+/)
-            .map(s => s.trim())
-            .filter(Boolean);
-        if (tokens.length === 0) return;
-        setFormData(prev => {
-            const existing = prev.observers ?? [];
-            const merged = [...existing];
-            tokens.forEach(t => {
-                if (!merged.includes(t)) merged.push(t);
-            });
-            return { ...prev, observers: merged };
-        });
-        setObserverInput('');
-    };
-
-    const removeObserver = (name: string) => {
-        setFormData(prev => {
-            const next = (prev.observers ?? []).filter(n => n !== name);
-            return { ...prev, observers: next.length > 0 ? next : undefined };
-        });
     };
 
     const handleCountBlur = (fieldName: 'count' | 'maleCount' | 'femaleCount' | 'unidentifiedCount') => {
