@@ -41,6 +41,11 @@ Extraction des parties **sans état** uniquement :
 2. **Cœur stateful de storageService** (namespace, file d'attente, CRUD, `processOfflineQueue`) : volontairement gardé groupé. L'état mutable au niveau module (`storageNamespace`, `processingQueue`) est partagé entre namespace/cache/sync ; le découper imposerait des accesseurs et augmenterait le risque sur la synchro hors-ligne.
 3. **11 `any` dans `tests/storageService.test.ts`** : casts de mocks légitimes (règle en `warn`), laissés tels quels.
 
+## Clôture (2026-05-24)
+- **Fusionné dans `main`** en fast-forward — 4 commits : `8d1c48b` (Lot A), `51f579e` (Lot B), `5e715f2` (Lot C), `1369ddc` (RECAP), + le BACKLOG.
+- Poussé sur `origin/main` ; branche de travail `chore/qualite-mai-2026` supprimée après fusion.
+- **Suite à faire** : voir [`BACKLOG.md`](./BACKLOG.md) (même dossier). La source maître reste `docs/audits/v1/00-sommaire.md`.
+
 ## Notes pour l'agent suivant
-- Tout est sur la branche `chore/qualite-mai-2026` (3 commits), prête à PR/merge.
-- Pour aller plus loin sur la maintenabilité : viser le constat n°1 (hook espèce) avec une couverture de tests renforcée avant extraction.
+- Priorité maintenabilité : constat n°1 du BACKLOG (hook autocomplétion/enrichissement espèce) avec une couverture de tests renforcée **avant** extraction.
+- L'état mutable de `storageService` (namespace, file d'attente) n'a volontairement pas été découpé — voir BACKLOG n°2.
