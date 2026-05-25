@@ -33,11 +33,3 @@ jobs:
           # Valeurs factices — nécessaires pour la config Vite/Supabase pendant le build
           VITE_SUPABASE_URL: https://example.supabase.co
           VITE_SUPABASE_ANON_KEY: dummy-anon-key-for-ci-build
-
-      - name: Upload dist artifacts
-        if: github.event_name == 'push' && matrix.node-version == '22.x'
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-          retention-days: 7
