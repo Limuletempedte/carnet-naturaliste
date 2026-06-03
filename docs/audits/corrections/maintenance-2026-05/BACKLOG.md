@@ -28,3 +28,6 @@
 - [x] `git push` des commits du lot mai 2026 — ✅ fait (`origin/main` à jour).
 - [x] Suppression de la branche `chore/qualite-mai-2026` après fusion — ✅ fait.
 - [x] Fusionner puis supprimer la branche `chore/doc-et-hook-espece` (suite, cf. `RECAP-suite.md`) — ✅ fait (fusion fast-forward dans `main`, branche supprimée).
+- [x] **CI** : retrait de l'upload de l'artifact `dist/` qui remplissait le stockage GitHub Actions — ✅ fait (commit `f857944` ; Vercel build de son côté).
+- [x] Fusionner puis supprimer la branche `refactor/app-handlers-et-storage-helpers` (lot 2, cf. [`../maintenance-2026-06/RECAP.md`](../maintenance-2026-06/RECAP.md)) — ✅ fait (fusion fast-forward dans `main`, branche supprimée).
+- [ ] **Action utilisateur (hors repo)** : définir un **budget Actions GitHub à 0 $** (Settings → Billing → Budgets) comme filet anti-facturation, et purger les anciens artifacts `dist` si encore présents.
