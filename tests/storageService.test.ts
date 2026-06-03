@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 
-const authGetUserMock = vi.fn(async () => ({ data: { user: { id: 'user-1' } } }));
+const authGetUserMock = vi.fn<() => Promise<{ data: { user: { id: string } | null } }>>(
+    async () => ({ data: { user: { id: 'user-1' } } })
+);
 
 const rangeMock = vi.fn();
 const orderMock = vi.fn(() => ({ range: rangeMock }));
@@ -314,7 +316,7 @@ describe('storageService security filters', () => {
 
     it('throws when online mutation is attempted without authenticated user', async () => {
         vi.stubGlobal('navigator', { onLine: true });
-        authGetUserMock.mockResolvedValue({ data: { user: null } } as any);
+        authGetUserMock.mockResolvedValue({ data: { user: null } });
 
         const storageService = await import('../services/storageService');
         storageService.setStorageNamespace('user-1');
@@ -400,8 +402,8 @@ describe('storageService legacy schema fallback', () => {
         await storageService.saveObservation(makeObservation('123e4567-e89b-42d3-a456-426614174000'));
 
         expect(insertMock).toHaveBeenCalledTimes(2);
-        const firstCall = insertMock.mock.calls.at(0) as any[] | undefined;
-        const fallbackCall = insertMock.mock.calls.at(1) as any[] | undefined;
+        const firstCall = insertMock.mock.calls.at(0) as unknown[] | undefined;
+        const fallbackCall = insertMock.mock.calls.at(1) as unknown[] | undefined;
         const firstRow = firstCall?.[0];
         const fallbackRow = fallbackCall?.[0];
 
@@ -428,8 +430,8 @@ describe('storageService legacy schema fallback', () => {
         await storageService.updateObservation(makeObservation('123e4567-e89b-42d3-a456-426614174000'));
 
         expect(updateMock).toHaveBeenCalledTimes(2);
-        const firstCall = updateMock.mock.calls.at(0) as any[] | undefined;
-        const fallbackCall = updateMock.mock.calls.at(1) as any[] | undefined;
+        const firstCall = updateMock.mock.calls.at(0) as unknown[] | undefined;
+        const fallbackCall = updateMock.mock.calls.at(1) as unknown[] | undefined;
         const firstRow = firstCall?.[0];
         const fallbackRow = fallbackCall?.[0];
 
@@ -515,8 +517,8 @@ describe('storageService legacy schema fallback', () => {
         expect(result.failed).toBe(0);
 
         expect(insertMock).toHaveBeenCalledTimes(2);
-        const firstInsertCall = insertMock.mock.calls.at(0) as any[] | undefined;
-        const fallbackInsertCall = insertMock.mock.calls.at(1) as any[] | undefined;
+        const firstInsertCall = insertMock.mock.calls.at(0) as unknown[] | undefined;
+        const fallbackInsertCall = insertMock.mock.calls.at(1) as unknown[] | undefined;
         const firstInsertRow = firstInsertCall?.[0];
         const fallbackInsertRow = fallbackInsertCall?.[0];
         expect(firstInsertRow).toHaveProperty('male_count');
@@ -525,8 +527,8 @@ describe('storageService legacy schema fallback', () => {
         expect(fallbackInsertRow).not.toHaveProperty('unidentified_count');
 
         expect(updateMock).toHaveBeenCalledTimes(2);
-        const firstUpdateCall = updateMock.mock.calls.at(0) as any[] | undefined;
-        const fallbackUpdateCall = updateMock.mock.calls.at(1) as any[] | undefined;
+        const firstUpdateCall = updateMock.mock.calls.at(0) as unknown[] | undefined;
+        const fallbackUpdateCall = updateMock.mock.calls.at(1) as unknown[] | undefined;
         const firstUpdateRow = firstUpdateCall?.[0];
         const fallbackUpdateRow = fallbackUpdateCall?.[0];
         expect(firstUpdateRow).toHaveProperty('male_count');
@@ -577,12 +579,12 @@ describe('storageService.bulkUpsertObservationsInCache', () => {
         ]);
 
         const rawCache = localStorage.getItem(cacheKey);
-        const parsed = JSON.parse(rawCache || '[]');
+        const parsed = JSON.parse(rawCache || '[]') as Array<{ id: string; speciesName: string }>;
 
         expect(setItemSpy).toHaveBeenCalledTimes(2); // cache data + cache timestamp
         expect(parsed).toHaveLength(2);
-        expect(parsed.find((o: any) => o.id === 'obs1')?.speciesName).toBe('Updated A');
-        expect(parsed.find((o: any) => o.id === 'obs2')?.speciesName).toBe('Mésange');
+        expect(parsed.find(o => o.id === 'obs1')?.speciesName).toBe('Updated A');
+        expect(parsed.find(o => o.id === 'obs2')?.speciesName).toBe('Mésange');
 
         setItemSpy.mockRestore();
     });
