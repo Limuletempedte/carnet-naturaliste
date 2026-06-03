@@ -17,8 +17,8 @@
 
 ## 🟢 Propreté / documentation (rapide)
 - [x] **Dérives de doc** — ✅ fait (cf. [`RECAP-suite.md`](./RECAP-suite.md)) : `README.md` renvoie désormais vers `supabase/migrations/` ; `CLAUDE.md`/`AGENTS.md` indiquent « 37 fichiers de tests (246 tests) ».
-- [ ] **11 `any` dans `tests/storageService.test.ts`** : typer proprement les mocks (optionnel, casts légitimes).
-- [ ] Vérifier la cohérence `README` ↔ scripts/commandes réels.
+- [x] **11 `any` dans `tests/storageService.test.ts`** — ✅ fait (juin 2026) : mocks typés (`unknown[]`, retour `auth.getUser` typé, `JSON.parse` typé) → **0 warning ESLint**.
+- [x] Vérifier la cohérence `README` ↔ scripts/commandes réels — ✅ vérifié : les 6 commandes du README correspondent à `package.json`, aucune divergence.
 
 ## 🔵 Produit / fonctionnel / conformité
 - [ ] Reprendre `docs/audits/v1/00-sommaire.md` thème par thème (fonctionnel, UI/UX, sécurité, vie privée/RGPD, accessibilité, compatibilité…) : c'est la liste de référence complète, avec sévérités et recommandations. Prioriser les constats non encore traités (cf. les `RECAP.md` par thème pour l'état d'avancement).
@@ -26,4 +26,4 @@
 ## 🧹 Housekeeping immédiat (administratif)
 - [x] `git push` des commits du lot mai 2026 — ✅ fait (`origin/main` à jour).
 - [x] Suppression de la branche `chore/qualite-mai-2026` après fusion — ✅ fait.
-- [ ] Fusionner puis supprimer la branche `chore/doc-et-hook-espece` (suite, cf. `RECAP-suite.md`).
+- [x] Fusionner puis supprimer la branche `chore/doc-et-hook-espece` (suite, cf. `RECAP-suite.md`) — ✅ fait (fusion fast-forward dans `main`, branche supprimée).
