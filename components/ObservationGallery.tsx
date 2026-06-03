@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
@@ -11,11 +11,24 @@ interface ObservationGalleryProps {
 }
 
 const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ observations, onEdit, isMobileView = false }) => {
+    // FO-50 : images dont le chargement a échoué (404, lien cassé) → on bascule
+    // sur le placeholder plutôt que d'afficher l'icône d'image brisée du navigateur.
+    const [failedImageIds, setFailedImageIds] = useState<Set<string>>(new Set());
+    const markImageFailed = (id: string) => {
+        setFailedImageIds(prev => {
+            if (prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.add(id);
+            return next;
+        });
+    };
+
     return (
         <div className={`grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-8 animate-fadeIn ${isMobileView ? 'pb-24' : ''}`}>
             {observations.map(obs => {
                 const rawImageSrc = obs.photo || obs.wikipediaImage;
-                const imageSrc = rawImageSrc && isSafeImageUrl(rawImageSrc) ? rawImageSrc : undefined;
+                const safeImageSrc = rawImageSrc && isSafeImageUrl(rawImageSrc) ? rawImageSrc : undefined;
+                const imageSrc = safeImageSrc && !failedImageIds.has(obs.id) ? safeImageSrc : undefined;
                 const logo = TAXON_LOGOS[obs.taxonomicGroup as keyof typeof TAXON_LOGOS];
 
                 return (
@@ -34,6 +47,7 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
                                     src={imageSrc}
                                     alt={obs.speciesName}
                                     loading="lazy"
+                                    onError={() => markImageFailed(obs.id)}
                                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                                 />
                             ) : (
