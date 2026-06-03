@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, OfflineSyncResult, isDuplicateKeyError } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, isDuplicateKeyError } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
@@ -14,6 +14,7 @@ import { buildImportPersistencePlan, ImportConflictMode } from './services/impor
 import { isUuid, generateUUID } from './utils/uuidUtils';
 import { useObservationFilters } from './hooks/useObservationFilters';
 import { useFilterControls } from './hooks/useFilterControls';
+import { useSyncQueue } from './hooks/useSyncQueue';
 import { selectStartupEnrichmentCandidates } from './services/startupEnrichmentUtils';
 import SyncCenterDialog from './components/SyncCenterDialog';
 import AdvancedFilterDialog from './components/AdvancedFilterDialog';
@@ -79,9 +80,6 @@ const App: React.FC = () => {
     const [statsExportDialogState, setStatsExportDialogState] = useState<StatsExportDialogState>(() => createDefaultStatsExportDialogState());
     const statsRootRef = useRef<HTMLDivElement | null>(null);
     const [isSyncCenterOpen, setIsSyncCenterOpen] = useState(false);
-    const [lastSyncResult, setLastSyncResult] = useState<OfflineSyncResult | null>(null);
-    const [isSyncingQueue, setIsSyncingQueue] = useState(false);
-    const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
     const [isDarkMode, setIsDarkMode] = useState(() => safeGet('darkMode') === 'true');
@@ -137,6 +135,21 @@ const App: React.FC = () => {
         applyFilterPreset,
         deleteFilterPreset,
     } = useFilterControls({ onToast: pushToast });
+
+    // Synchronisation manuelle de la file hors-ligne (centre de synchro) extraite
+    // dans un hook dédié. La logique de stockage reste dans storageService.
+    const {
+        lastSyncResult,
+        isSyncingQueue,
+        syncProgress,
+        resyncAll,
+        retryQueueItem,
+    } = useSyncQueue({
+        refreshOfflineQueueSnapshot,
+        setObservations,
+        setConnectionStatus,
+        onToast: pushToast,
+    });
 
     useEffect(() => {
         if (isDarkMode) {
@@ -590,47 +603,6 @@ const App: React.FC = () => {
         setIsSyncCenterOpen(true);
     };
 
-    const runQueueSync = async (itemIds?: string[]) => {
-        setIsSyncingQueue(true);
-        setSyncProgress(null);
-        try {
-            const syncResult = await processOfflineQueue({
-                ...(itemIds && itemIds.length > 0 ? { itemIds } : {}),
-                onProgress: (current, total) => setSyncProgress({ current, total })
-            });
-            setLastSyncResult(syncResult);
-            refreshOfflineQueueSnapshot();
-
-            if (navigator.onLine) {
-                const loadResult = await getObservations();
-                setObservations(loadResult.observations);
-            }
-
-            if (syncResult.failed > 0) {
-                setConnectionStatus('degraded');
-                const queueSnapshot = getOfflineQueueSnapshot();
-                const remaining = queueSnapshot.length;
-                pushToast('warning', `Sync partielle : ${syncResult.failed}/${syncResult.processed} échec(s).${remaining > 0 ? ` ${remaining} action(s) encore en file.` : ''}`, 7000);
-            } else {
-                if (navigator.onLine) setConnectionStatus('online');
-                pushToast('success', `${syncResult.processed} action(s) synchronisée(s).`, 5000);
-            }
-        } catch (syncError) {
-            const message = syncError instanceof Error ? syncError.message : String(syncError);
-            pushToast('error', `Synchronisation impossible: ${message}`, 7000);
-        } finally {
-            setIsSyncingQueue(false);
-            setSyncProgress(null);
-        }
-    };
-
-    const handleResyncAll = async () => {
-        await runQueueSync();
-    };
-
-    const handleRetryQueueItem = async (itemId: string) => {
-        await runQueueSync([itemId]);
-    };
 
     const handleExportStats = async () => {
         setIsStatsExportDialogOpen(true);
@@ -1012,8 +984,8 @@ const App: React.FC = () => {
                 isSyncing={isSyncingQueue}
                 syncProgress={syncProgress}
                 onClose={() => setIsSyncCenterOpen(false)}
-                onResyncAll={() => void handleResyncAll()}
-                onRetryItem={(itemId) => void handleRetryQueueItem(itemId)}
+                onResyncAll={() => void resyncAll()}
+                onRetryItem={(itemId) => void retryQueueItem(itemId)}
             />
             <AdvancedFilterDialog
                 isOpen={isAdvancedFilterOpen}
