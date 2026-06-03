@@ -7,8 +7,8 @@
 ## 🟠 Maintenabilité / refactorisation (reportées du lot mai 2026)
 - [x] **Hook autocomplétion + enrichissement espèce** (`components/ObservationForm.tsx`) — ✅ fait (cf. [`RECAP-suite.md`](./RECAP-suite.md)) : logique extraite dans `hooks/useSpeciesLookup.ts` (hook unique car refs partagées), après renfort des tests (240 → 246).
 - [ ] **Cœur stateful de `services/storageService.ts`** : découper namespace / file d'attente / cache / CRUD / `processOfflineQueue` en modules, en centralisant l'état mutable (`storageNamespace`, `processingQueue`) derrière des accesseurs. Très prudent — c'est la synchro hors-ligne.
-- [ ] **`App.tsx`** (~1257 l., QT-01) : poursuivre le découpage (extraire des vues, regrouper l'état des filtres/dialogues via `useReducer` ou un contexte).
-- [ ] **`components/ObservationList.tsx`** (~754 l.) et **`services/speciesService.ts`** (~775 l., QT-05) : surveiller la croissance, découper au besoin.
+- [~] **`App.tsx`** (QT-01) : découpage **entamé** (juin 2026, cf. [`../maintenance-2026-06/RECAP.md`](../maintenance-2026-06/RECAP.md)) — `useFilterControls` (filtres + presets) et `useSyncQueue` (synchro file hors-ligne) extraits + testés, 1371 → 1236 l. **Reste** : extraire `handleImportRequest` (~142 l.) et `handleBulkDeleteRequest` (~55 l.) en hooks (`useImportObservations` / `useBulkDelete`), et envisager d'extraire des vues.
+- [ ] **`components/ObservationList.tsx`** (~797 l.) et **`services/speciesService.ts`** (~886 l., QT-05) : surveiller la croissance, découper au besoin.
 
 ## 🟡 Performance (constats d'audit reportés)
 - [ ] **Virtualisation des listes** (PE-01) : si un utilisateur a beaucoup d'observations, virtualiser la liste (ex. `react-virtuoso`). Nécessite une nouvelle dépendance.
@@ -22,6 +22,7 @@
 
 ## 🔵 Produit / fonctionnel / conformité
 - [ ] Reprendre `docs/audits/v1/00-sommaire.md` thème par thème (fonctionnel, UI/UX, sécurité, vie privée/RGPD, accessibilité, compatibilité…) : c'est la liste de référence complète, avec sévérités et recommandations. Prioriser les constats non encore traités (cf. les `RECAP.md` par thème pour l'état d'avancement).
+- [~] **Quick wins audit (lot juin 2026)** — corrigés : FO-26 (géoloc NaN), FO-33 (doublon tri), FO-49 (listes sync bornées), FO-50 (image cassée). Déjà OK/non-problématiques après vérification : FO-07, FO-25, FO-27, FO-37, FO-43 (déjà corrigés) ; FO-20, FO-21, FO-32 (déjà couverts). Reste de la longue traîne FO-* à reprendre au besoin.
 
 ## 🧹 Housekeeping immédiat (administratif)
 - [x] `git push` des commits du lot mai 2026 — ✅ fait (`origin/main` à jour).
