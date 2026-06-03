@@ -1,21 +1,19 @@
 import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, isDuplicateKeyError } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, getOfflineQueueSnapshot } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
 import { fetchSpeciesInfo } from './services/speciesService';
-import { ImportResult } from './services/excelImportService';
 import FilterBar from './components/FilterBar';
 import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
-import { compareIsoDate } from './utils/dateUtils';
-import { buildImportPersistencePlan, ImportConflictMode } from './services/importPolicy';
-import { isUuid, generateUUID } from './utils/uuidUtils';
+import { generateUUID } from './utils/uuidUtils';
 import { useObservationFilters } from './hooks/useObservationFilters';
 import { useFilterControls } from './hooks/useFilterControls';
 import { useSyncQueue } from './hooks/useSyncQueue';
 import { useBulkDelete } from './hooks/useBulkDelete';
+import { useImportObservations } from './hooks/useImportObservations';
 import { selectStartupEnrichmentCandidates } from './services/startupEnrichmentUtils';
 import SyncCenterDialog from './components/SyncCenterDialog';
 import AdvancedFilterDialog from './components/AdvancedFilterDialog';
@@ -70,7 +68,6 @@ const App: React.FC = () => {
     const [confirmation, setConfirmation] = useState<{ title: string; message: string; onConfirm: () => void; } | null>(null);
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
-    const [isImporting, setIsImporting] = useState(false);
     const [isCreatingBackup, setIsCreatingBackup] = useState(false);
     const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -149,6 +146,26 @@ const App: React.FC = () => {
         setObservations,
         setConnectionStatus,
         onToast: pushToast,
+    });
+
+    // Import (Excel/JSON) et suppression en masse extraits en hooks dédiés.
+    const { isImporting, handleImportRequest } = useImportObservations({
+        observations,
+        setObservations,
+        setView,
+        setError,
+        onToast: pushToast,
+        removeToast,
+        refreshOfflineQueueSnapshot,
+    });
+    const { isBulkDeleting, handleBulkDeleteRequest } = useBulkDelete({
+        observations,
+        setObservations,
+        setConfirmation,
+        setError,
+        onToast: pushToast,
+        removeToast,
+        refreshOfflineQueueSnapshot,
     });
 
     useEffect(() => {
@@ -346,16 +363,6 @@ const App: React.FC = () => {
         });
     }, [observations, isImporting, refreshOfflineQueueSnapshot]);
 
-    const { isBulkDeleting, handleBulkDeleteRequest } = useBulkDelete({
-        observations,
-        setObservations,
-        setConfirmation,
-        setError,
-        onToast: pushToast,
-        removeToast,
-        refreshOfflineQueueSnapshot,
-    });
-
     const handleSaveObservation = async (observation: Observation) => {
         if (isImporting) throw new Error('Un import est en cours. Veuillez patienter.');
         try {
@@ -380,149 +387,6 @@ const App: React.FC = () => {
         }
     };
 
-    const handleImportRequest = async (
-        importResult: ImportResult,
-        options: { conflictMode: ImportConflictMode } = { conflictMode: 'merge' }
-    ): Promise<void> => {
-        let importToastId: string | null = null;
-        try {
-            if (importResult.report.blockingErrors.length > 0) {
-                throw new Error(`Le fichier contient ${importResult.report.blockingErrors.length} erreur(s) bloquante(s).`);
-            }
-
-            setIsImporting(true);
-            importToastId = pushToast('info', "⏳ Import en cours...", 0);
-
-            const mergedById = new Map(observations.map(obs => [obs.id, obs] as [string, Observation]));
-            const failureReasons = new Map<string, number>();
-            let addedCount = 0;
-            let updatedCount = 0;
-            let failedCount = 0;
-            let regeneratedIds = 0;
-
-            const captureFailure = (reason: string) => {
-                failureReasons.set(reason, (failureReasons.get(reason) || 0) + 1);
-            };
-
-            const toErrorMessage = (error: unknown): string => {
-                if (error instanceof Error && error.message) return error.message;
-                return String(error);
-            };
-
-            const importPlan = buildImportPersistencePlan(importResult.observations, observations, {
-                conflictMode: options.conflictMode
-            });
-            const successfulOps: Observation[] = [];
-
-            const IMPORT_CONCURRENCY = 5;
-            let nextIndex = 0;
-
-            const worker = async () => {
-                while (nextIndex < importPlan.length) {
-                    const i = nextIndex++;
-                    const planned = importPlan[i];
-                    const observationToPersist = planned.observation;
-
-                    if (planned.regeneratedId && !isUuid(planned.originalId)) {
-                        regeneratedIds++;
-                    }
-
-                    try {
-                        if (planned.mode === 'update') {
-                            await updateObservation(observationToPersist, { skipCache: true });
-                            successfulOps.push(observationToPersist);
-                            updatedCount++;
-                        } else {
-                            try {
-                                const savedObs = await saveObservation(observationToPersist, { skipCache: true });
-                                const persisted = { ...observationToPersist, id: savedObs.id };
-                                successfulOps.push(persisted);
-                                addedCount++;
-                            } catch (insertErr) {
-                                if (!isDuplicateKeyError(insertErr)) throw insertErr;
-                                // SI-30: collision PK globale — l'ID existe déjà en DB sous un autre
-                                // user_id (orphelin d'un ancien compte), RLS l'empêche d'être visible
-                                // côté client. On régénère un UUID et on retente une fois.
-                                const retryObs: Observation = { ...observationToPersist, id: generateUUID() };
-                                const savedRetry = await saveObservation(retryObs, { skipCache: true });
-                                successfulOps.push({ ...retryObs, id: savedRetry.id });
-                                addedCount++;
-                                regeneratedIds++;
-                            }
-                        }
-                    } catch (importError) {
-                        failedCount++;
-                        captureFailure(toErrorMessage(importError));
-                    }
-                }
-            };
-
-            // Exécution en batch concurrent
-            await Promise.all(Array.from({ length: IMPORT_CONCURRENCY }, worker));
-
-            const successCount = addedCount + updatedCount;
-            const failureSummary = Array.from(failureReasons.entries())
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 3)
-                .map(([reason, count]) => `${count}× ${reason}`)
-                .join(' ; ');
-
-            if (successCount === 0) {
-                throw new Error(failureSummary
-                    ? `Aucune ligne n'a pu être importée. Échecs: ${failureSummary}`
-                    : "Aucune ligne n'a pu être importée.");
-            }
-
-            // Cohérence Cache <-> React State
-            // 1. Mise à jour de l'état React d'abord (source de vérité UI)
-            for (const obs of successfulOps) {
-                mergedById.set(obs.id, obs);
-            }
-            const mergedObservations = Array.from(mergedById.values()).sort((a, b) => compareIsoDate(b.date, a.date));
-            setObservations(mergedObservations);
-
-            // 2. Mise à jour du cache local (si échoue, re-sync au prochain load)
-            bulkUpsertObservationsInCache(successfulOps);
-
-            // UI Reset
-            setView(View.LIST);
-            setError(null);
-
-            pushToast(
-                failedCount > 0 ? 'warning' : 'success',
-                `Import terminé: ${addedCount} ajoutée(s), ${updatedCount} mise(s) à jour, ${failedCount} échec(s).`,
-                failedCount > 0 ? 8000 : 5000
-            );
-
-            if (failedCount > 0 && failureSummary) {
-                pushToast('error', `⚠️ Échecs : ${failureSummary}`, 10000);
-            }
-
-            if (importResult.report.warnings.length > 0) {
-                pushToast('warning', `Import avec ${importResult.report.warnings.length} warning(s).`, 7000);
-            }
-            if (importResult.report.errors.length > 0) {
-                pushToast('warning', `${importResult.report.errors.length} erreur(s) de validation détectées.`, 7000);
-            }
-            if (regeneratedIds > 0) {
-                pushToast('info', `${regeneratedIds} ligne(s) ont reçu un nouvel ID (source vide/invalide ou conflit avec une observation existante).`, 7000);
-            }
-
-            refreshOfflineQueueSnapshot();
-
-        } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            setError(`Erreur lors de l'importation : ${errorMessage}`);
-            pushToast('error', `Échec de l'import: ${errorMessage}`);
-            logger.error(e);
-            throw e;
-        } finally {
-            if (importToastId) {
-                removeToast(importToastId);
-            }
-            setIsImporting(false);
-        }
-    };
     const handleCancel = useCallback(() => {
         setView(View.LIST);
         setEditingObservation(null);
