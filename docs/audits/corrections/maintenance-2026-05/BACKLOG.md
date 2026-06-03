@@ -6,8 +6,8 @@
 
 ## 🟠 Maintenabilité / refactorisation (reportées du lot mai 2026)
 - [x] **Hook autocomplétion + enrichissement espèce** (`components/ObservationForm.tsx`) — ✅ fait (cf. [`RECAP-suite.md`](./RECAP-suite.md)) : logique extraite dans `hooks/useSpeciesLookup.ts` (hook unique car refs partagées), après renfort des tests (240 → 246).
-- [ ] **Cœur stateful de `services/storageService.ts`** : découper namespace / file d'attente / cache / CRUD / `processOfflineQueue` en modules, en centralisant l'état mutable (`storageNamespace`, `processingQueue`) derrière des accesseurs. Très prudent — c'est la synchro hors-ligne.
-- [~] **`App.tsx`** (QT-01) : découpage **entamé** (juin 2026, cf. [`../maintenance-2026-06/RECAP.md`](../maintenance-2026-06/RECAP.md)) — `useFilterControls` (filtres + presets) et `useSyncQueue` (synchro file hors-ligne) extraits + testés, 1371 → 1236 l. **Reste** : extraire `handleImportRequest` (~142 l.) et `handleBulkDeleteRequest` (~55 l.) en hooks (`useImportObservations` / `useBulkDelete`), et envisager d'extraire des vues.
+- [~] **`services/storageService.ts`** : helpers PURS extraits (juin 2026, lot 2) dans `services/storage/*` (954 → 701 l.). **Cœur stateful NON découpé volontairement** (namespace / file d'attente / cache / CRUD / `processOfflineQueue`) : dépend de l'état mutable `storageNamespace` (28+ fonctions) + mutex `processingQueue` + détection SI-14 ; ré-architecture à ROI négatif en prod. À ne rouvrir que sur réelle nécessité.
+- [x] **`App.tsx`** (QT-01) — ✅ découpage **terminé** (juin 2026, cf. [`../maintenance-2026-06/RECAP.md`](../maintenance-2026-06/RECAP.md)) : `useFilterControls`, `useSyncQueue`, `useImportObservations`, `useBulkDelete` extraits + testés. 1371 → 1053 l. (−318). Reste optionnel : extraire des vues si le fichier regrandit.
 - [ ] **`components/ObservationList.tsx`** (~797 l.) et **`services/speciesService.ts`** (~886 l., QT-05) : surveiller la croissance, découper au besoin.
 
 ## 🟡 Performance (constats d'audit reportés)

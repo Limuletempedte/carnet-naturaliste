@@ -33,7 +33,39 @@ Méthode « tests d'abord » : hook créé + couvert, puis branchement d'`App` (
 - **`hooks/useSyncQueue.ts`** (+ `tests/useSyncQueue.test.tsx`, 4 tests) : orchestration de la synchro manuelle de la file hors-ligne (succès / partielle → `degraded` / erreur). La logique de stockage reste dans `services/storageService`.
 
 ## Reste à faire (BACKLOG)
-- 🟠 `App.tsx` : extraire `handleImportRequest` (~142 l.) et `handleBulkDeleteRequest` (~55 l.) en hooks ; envisager d'extraire des vues.
 - 🟠 Cœur stateful de `storageService` (synchro hors-ligne) — toujours volontairement non découpé.
 - 🟡 Virtualisation / IndexedDB / export Excel allégé — à rouvrir si le volume de données grandit.
 - 🔵 Longue traîne FO-* restante — à reprendre au besoin (source maître : `docs/audits/v1/00-sommaire.md`).
+
+---
+
+## Lot 2 (juin 2026) — handlers App + helpers storageService
+
+- **Branche** : `refactor/app-handlers-et-storage-helpers` · **Statut** : ✅ TERMINÉ — 0 régression.
+- **Gate** : `npm run check` vert à chaque commit (lint **0 warning**).
+- **Revue adversariale** (2 agents : correctness + défaillances silencieuses) : extraction *byte-for-byte*, aucune régression, gestion d'erreur préservée.
+
+### Métriques avant / après (lot 2)
+| Indicateur | Avant | Après |
+|---|---|---|
+| Tests | 257 ✅ | **278 ✅** (+21, aucune régression) |
+| `App.tsx` | 1236 l. | **1053 l.** (−183 ; −318 depuis le début) |
+| `services/storageService.ts` | 954 l. | **701 l.** (−253) |
+
+### Lot A — fin du découpage d'`App.tsx` (test d'abord)
+- `hooks/useBulkDelete.ts` (+3 tests) : suppression en masse (`Promise.allSettled`, succès/échecs partiels).
+- `hooks/useImportObservations.ts` (+4 tests) : import Excel/JSON (plan de persistance, concurrence 5, retry UUID SI-30, merge cache+state, toasts).
+- `App.tsx` consomme les hooks ; les 4 hooks de handlers (filtres, sync, import, suppression) sont regroupés en tête. JSX inchangé.
+
+### Lot B — helpers purs de `storageService` (barrel, risque nul)
+- Nouveaux modules `services/storage/` : `storageHelpers` (utils purs), `storagePredicates` (erreurs réseau/DB), `storageSchema` (dérive de schéma SR-13), `storageMedia` (upload photo/son).
+- `storageService` reste le point d'entrée et **ré-exporte** l'API publique (`isDuplicateKeyError`, `uploadPhoto`, `uploadSound`) → importeurs inchangés.
+- Garde-fou : `tests/storageService.test.ts` (32) passe **inchangé** ; +14 tests directs sur les helpers (`tests/storageHelpers.test.ts`).
+- **Non découpé volontairement** : le cœur stateful (CRUD/cache/queue/`processOfflineQueue`) — dépend de `storageNamespace` (28+ fonctions) + mutex `processingQueue` + détection SI-14 ; ré-architecture à ROI négatif en prod.
+
+### Reportés (avec critère de déclenchement)
+- 🟠 Cœur stateful de `storageService` : seulement si une vraie nécessité apparaît (très prudent).
+- 🟡 PE-01 virtualisation : si un utilisateur dépasse ~2000 observations visibles.
+- 🟡 PE-18 IndexedDB : si des événements `storage-quota-exceeded` remontent en prod.
+- ❌ PE-16 Web Worker Excel : rejeté (parsing déjà <1 ms).
+- 🔵 Longue traîne FO-* : au besoin (source maître `docs/audits/v1/00-sommaire.md`).
