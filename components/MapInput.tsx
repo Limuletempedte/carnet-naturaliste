@@ -288,6 +288,11 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
         watchIdRef.current = navigator.geolocation.watchPosition(
             (position) => {
                 const { latitude, longitude, accuracy: acc } = position.coords;
+                // FO-26 : ignorer les positions invalides (NaN/Infinity) pour ne pas
+                // déplacer la carte/le marqueur vers des coordonnées aberrantes.
+                if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                    return;
+                }
                 setAccuracy(Math.round(acc));
 
                 if (!mapRef.current) return;
