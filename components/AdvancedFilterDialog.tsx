@@ -159,7 +159,8 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
                         <div className="space-y-2">
                             <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">Critère secondaire</label>
                             <select value={state.secondarySortKey} onChange={(e) => updateState({ secondarySortKey: e.target.value as SortKey })} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white">
-                                {SORT_OPTIONS.map(option => <option key={`secondary-${option.value || 'none'}`} value={option.value}>{option.label}</option>)}
+                                {/* FO-33 : empêcher de choisir la même clé que le critère tertiaire (sauf « aucun »). */}
+                                {SORT_OPTIONS.map(option => <option key={`secondary-${option.value || 'none'}`} value={option.value} disabled={option.value !== '' && option.value === state.tertiarySortKey}>{option.label}</option>)}
                             </select>
                             <select value={state.secondarySortDirection} onChange={(e) => updateState({ secondarySortDirection: e.target.value as SortDirection })} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white">
                                 <option value="ascending">Ascendant</option>
@@ -169,7 +170,8 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
                         <div className="space-y-2">
                             <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">Critère tertiaire</label>
                             <select value={state.tertiarySortKey} onChange={(e) => updateState({ tertiarySortKey: e.target.value as SortKey })} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white">
-                                {SORT_OPTIONS.map(option => <option key={`tertiary-${option.value || 'none'}`} value={option.value}>{option.label}</option>)}
+                                {/* FO-33 : empêcher de choisir la même clé que le critère secondaire (sauf « aucun »). */}
+                                {SORT_OPTIONS.map(option => <option key={`tertiary-${option.value || 'none'}`} value={option.value} disabled={option.value !== '' && option.value === state.secondarySortKey}>{option.label}</option>)}
                             </select>
                             <select value={state.tertiarySortDirection} onChange={(e) => updateState({ tertiarySortDirection: e.target.value as SortDirection })} className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-sm dark:text-white">
                                 <option value="ascending">Ascendant</option>

@@ -127,7 +127,7 @@ const SyncCenterDialog: React.FC<SyncCenterDialogProps> = ({
                 {lastResult && lastResult.failureReasons.length > 0 && (
                     <div className="mb-5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 p-3">
                         <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-2">Erreurs détaillées (dernier batch)</p>
-                        <ul className="space-y-1">
+                        <ul className="space-y-1 max-h-40 overflow-y-auto">
                             {Object.entries(lastResult.failureReasons.reduce<Record<string, number>>((acc, reason) => {
                                 acc[reason] = (acc[reason] || 0) + 1;
                                 return acc;
@@ -143,7 +143,7 @@ const SyncCenterDialog: React.FC<SyncCenterDialogProps> = ({
                 {lastResult && lastResult.skippedItems.length > 0 && (
                     <div className="mb-5 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 p-3">
                         <p className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">Items ignorés — ID temporaire sans correspondance ({lastResult.skippedItems.length})</p>
-                        <ul className="space-y-1">
+                        <ul className="space-y-1 max-h-40 overflow-y-auto">
                             {lastResult.skippedItems.map((item: SkippedSyncItem) => (
                                 <li key={item.id} className="text-xs text-blue-800 dark:text-blue-200">
                                     <span className="font-semibold">{actionLabel[item.action as OfflineQueueItem['action']] || item.action}</span> {item.id.slice(0, 12)}… — {item.reason}
