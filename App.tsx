@@ -1,6 +1,6 @@
-import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
-import { Observation, View, TaxonomicGroup, Status } from './types';
+import { Observation, View } from './types';
 import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, bulkUpsertObservationsInCache, getOfflineQueueSnapshot, OfflineSyncResult, isDuplicateKeyError } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
@@ -12,10 +12,11 @@ import ToastContainer, { ToastItem, ToastType } from './components/ToastContaine
 import { compareIsoDate } from './utils/dateUtils';
 import { buildImportPersistencePlan, ImportConflictMode } from './services/importPolicy';
 import { isUuid, generateUUID } from './utils/uuidUtils';
-import { SortCriterion, useObservationFilters } from './hooks/useObservationFilters';
+import { useObservationFilters } from './hooks/useObservationFilters';
+import { useFilterControls } from './hooks/useFilterControls';
 import { selectStartupEnrichmentCandidates } from './services/startupEnrichmentUtils';
 import SyncCenterDialog from './components/SyncCenterDialog';
-import AdvancedFilterDialog, { AdvancedFilterDialogState, FilterPreset } from './components/AdvancedFilterDialog';
+import AdvancedFilterDialog from './components/AdvancedFilterDialog';
 import StatsExportDialog, { StatsExportDialogState } from './components/StatsExportDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import StorageConsentBanner from './components/StorageConsentBanner';
@@ -43,38 +44,11 @@ const LegalNotices = lazy(() => import('./components/LegalPages').then(m => ({ d
 const HelpPage = lazy(() => import('./components/HelpPage'));
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
 
-const FILTER_PRESETS_STORAGE_KEY = 'observation-filter-presets-v1';
-
-const createDefaultAdvancedFilterState = (): AdvancedFilterDialogState => ({
-    geoMode: 'none',
-    radiusCenterLat: '',
-    radiusCenterLon: '',
-    radiusKm: '',
-    bboxMinLat: '',
-    bboxMaxLat: '',
-    bboxMinLon: '',
-    bboxMaxLon: '',
-    secondarySortKey: '',
-    secondarySortDirection: 'ascending',
-    tertiarySortKey: '',
-    tertiarySortDirection: 'ascending'
-});
-
 const createDefaultStatsExportDialogState = (): StatsExportDialogState => ({
     startDate: '',
     endDate: '',
     includeVisualAssets: true
 });
-
-interface StoredFilterPreset extends FilterPreset {
-    searchTerm: string;
-    yearFilter: string;
-    taxonomicGroupFilter: TaxonomicGroup | 'all';
-    statusFilter: Status | 'all';
-    startDateFilter: string;
-    endDateFilter: string;
-    advancedFilters: AdvancedFilterDialogState;
-}
 
 const ENRICHMENT_BATCH_LIMIT = 10;
 const ENRICHMENT_CONCURRENCY = 3;
@@ -85,12 +59,6 @@ const App: React.FC = () => {
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
     const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [yearFilter, setYearFilter] = useState<string>('all');
-    const [taxonomicGroupFilter, setTaxonomicGroupFilter] = useState<TaxonomicGroup | 'all'>('all');
-    const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
-    const [startDateFilter, setStartDateFilter] = useState<string>('');
-    const [endDateFilter, setEndDateFilter] = useState<string>('');
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // SR-12 : bandeau d'erreurs critiques persistant (pas d'auto-dismiss)
@@ -115,21 +83,6 @@ const App: React.FC = () => {
     const [isSyncingQueue, setIsSyncingQueue] = useState(false);
     const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
-    const [advancedFilterState, setAdvancedFilterState] = useState<AdvancedFilterDialogState>(() => createDefaultAdvancedFilterState());
-    const [filterPresets, setFilterPresets] = useState<StoredFilterPreset[]>(() => {
-        const raw = safeGet(FILTER_PRESETS_STORAGE_KEY);
-        if (!raw) return [];
-        try {
-            const parsed = JSON.parse(raw) as StoredFilterPreset[];
-            return Array.isArray(parsed) ? parsed : [];
-        } catch (err) {
-            logger.error('Presets de filtres corrompus dans localStorage, réinitialisation.', err);
-            window.setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('storage-corruption-detected', { detail: { scope: 'presets' } }));
-            }, 0);
-            return [];
-        }
-    });
 
     const [isDarkMode, setIsDarkMode] = useState(() => safeGet('darkMode') === 'true');
     const closeDeleteAccountDialog = useCallback(() => { setIsDeleteAccountOpen(false); setDeleteConfirmText(''); }, []);
@@ -166,9 +119,24 @@ const App: React.FC = () => {
         return id;
     }, []);
 
-    useEffect(() => {
-        try { safeSet(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(filterPresets)); } catch { /* non-critical */ }
-    }, [filterPresets]);
+    // Filtres + presets extraits dans un hook dédié (les setters gardent les
+    // noms de useState pour être branchés tels quels dans le JSX).
+    const {
+        searchTerm, setSearchTerm,
+        yearFilter, setYearFilter,
+        taxonomicGroupFilter, setTaxonomicGroupFilter,
+        statusFilter, setStatusFilter,
+        startDateFilter, setStartDateFilter,
+        endDateFilter, setEndDateFilter,
+        advancedFilterState, setAdvancedFilterState,
+        filterPresets,
+        filters,
+        additionalSorts,
+        resetAdvancedFilters,
+        saveFilterPreset,
+        applyFilterPreset,
+        deleteFilterPreset,
+    } = useFilterControls({ onToast: pushToast });
 
     useEffect(() => {
         if (isDarkMode) {
@@ -763,84 +731,9 @@ const App: React.FC = () => {
         }
     };
 
-    const additionalSorts = useMemo(() => {
-        const sorts: SortCriterion[] = [];
-        if (advancedFilterState.secondarySortKey) {
-            sorts.push({
-                key: advancedFilterState.secondarySortKey,
-                direction: advancedFilterState.secondarySortDirection
-            });
-        }
-        if (advancedFilterState.tertiarySortKey) {
-            sorts.push({
-                key: advancedFilterState.tertiarySortKey,
-                direction: advancedFilterState.tertiarySortDirection
-            });
-        }
-        return sorts;
-    }, [
-        advancedFilterState.secondarySortDirection,
-        advancedFilterState.secondarySortKey,
-        advancedFilterState.tertiarySortDirection,
-        advancedFilterState.tertiarySortKey
-    ]);
-
-    const handleResetAdvancedFilters = () => {
-        setAdvancedFilterState(createDefaultAdvancedFilterState());
-    };
-
-    const handleSaveFilterPreset = (name: string) => {
-        const newPreset: StoredFilterPreset = {
-            id: generateUUID(),
-            name,
-            createdAt: new Date().toISOString(),
-            searchTerm,
-            yearFilter,
-            taxonomicGroupFilter,
-            statusFilter,
-            startDateFilter,
-            endDateFilter,
-            advancedFilters: { ...advancedFilterState }
-        };
-        setFilterPresets(prev => [newPreset, ...prev]);
-        pushToast('success', `Preset sauvegardé: ${name}`, 4000);
-    };
-
-    const handleApplyFilterPreset = (presetId: string) => {
-        const preset = filterPresets.find(item => item.id === presetId);
-        if (!preset) return;
-        setSearchTerm(preset.searchTerm);
-        setYearFilter(preset.yearFilter);
-        setTaxonomicGroupFilter(preset.taxonomicGroupFilter);
-        setStatusFilter(preset.statusFilter);
-        setStartDateFilter(preset.startDateFilter);
-        setEndDateFilter(preset.endDateFilter);
-        setAdvancedFilterState({ ...preset.advancedFilters });
-        pushToast('info', `Preset appliqué: ${preset.name}`, 4000);
-    };
-
-    const handleDeleteFilterPreset = (presetId: string) => {
-        setFilterPresets(prev => prev.filter(item => item.id !== presetId));
-    };
-
     const { sortConfig, requestSort, sortedAndFilteredObservations, availableYears } = useObservationFilters(
         observations,
-        {
-            searchTerm,
-            yearFilter,
-            taxonomicGroupFilter,
-            statusFilter,
-            startDateFilter,
-            endDateFilter,
-            geoMode: advancedFilterState.geoMode,
-            radiusCenterLat: advancedFilterState.radiusCenterLat,
-            radiusCenterLon: advancedFilterState.radiusCenterLon,
-            radiusKm: advancedFilterState.radiusKm,
-            bboxMinLat: advancedFilterState.bboxMinLat,
-            bboxMaxLat: advancedFilterState.bboxMaxLat,
-            bboxMinLon: advancedFilterState.bboxMinLon,
-            bboxMaxLon: advancedFilterState.bboxMaxLon
-        },
+        filters,
         additionalSorts
     );
 
@@ -1128,10 +1021,10 @@ const App: React.FC = () => {
                 presets={filterPresets}
                 onClose={() => setIsAdvancedFilterOpen(false)}
                 onStateChange={setAdvancedFilterState}
-                onReset={handleResetAdvancedFilters}
-                onSavePreset={handleSaveFilterPreset}
-                onApplyPreset={handleApplyFilterPreset}
-                onDeletePreset={handleDeleteFilterPreset}
+                onReset={resetAdvancedFilters}
+                onSavePreset={saveFilterPreset}
+                onApplyPreset={applyFilterPreset}
+                onDeletePreset={deleteFilterPreset}
             />
             <StatsExportDialog
                 isOpen={isStatsExportDialogOpen}
