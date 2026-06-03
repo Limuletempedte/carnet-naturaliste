@@ -14,6 +14,10 @@ import type {
     SupabaseLikeError,
 } from './storage/storageTypes';
 import { mapToObservation, mapToRow } from './storage/storageMappers';
+import { extractStoragePath, dataUrlToBlob, scopedKey, assertOnlineUserId, asSupabaseError, parseJson } from './storage/storageHelpers';
+import { isRecoverableNetworkError, notifyRecoverableError } from './storage/storagePredicates';
+import { isMissingColumnError, withColumnFallback } from './storage/storageSchema';
+import { uploadPhoto, uploadSound } from './storage/storageMedia';
 
 const LEGACY_QUEUE_KEY = 'offline_sync_queue';
 const LEGACY_LOCAL_CACHE_KEY = 'local_observations_cache';
@@ -26,40 +30,16 @@ const LOCAL_CACHE_TS_SUFFIX = '_ts';
 // Types déplacés dans ./storage/storageTypes — ré-export de l'API publique
 // (les imports existants depuis './storageService' restent inchangés).
 export type { ObservationLoadResult, SkippedSyncItem, OfflineSyncResult, ProcessOfflineQueueOptions };
+// Fonctions publiques extraites dans ./storage/* — ré-export pour ne pas
+// modifier les importeurs (App.tsx, hooks, ObservationForm).
+export { isDuplicateKeyError } from './storage/storagePredicates';
+export { uploadPhoto, uploadSound };
 
 let storageNamespace: string | null = null;
 let processingQueue: Promise<OfflineSyncResult> | null = null;
 
-const UPLOAD_TIMEOUT_MS = 30_000;
 const REAUTH_CHECK_INTERVAL = 5;
 
-const extractStoragePath = (publicUrl: string | null, userId: string): string | null => {
-    if (!publicUrl || !publicUrl.includes('/storage/v1/object/public/photos/')) return null;
-    const marker = '/storage/v1/object/public/photos/';
-    const idx = publicUrl.indexOf(marker);
-    if (idx === -1) return null;
-    const path = publicUrl.substring(idx + marker.length);
-    return path.startsWith(userId + '/') ? path : null;
-};
-
-const dataUrlToBlob = (dataUrl: string): Blob => {
-    const [header, base64] = dataUrl.split(',');
-    const mime = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
-    const bytes = atob(base64);
-    const arr = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-    return new Blob([arr], { type: mime });
-};
-
-const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const timeout = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(`${label} : délai dépassé (${ms / 1000}s)`)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
-};
-
-const scopedKey = (keyPrefix: string, userId: string): string => `${keyPrefix}:${userId}`;
 const getQueueScopedKey = (userId: string): string => scopedKey(QUEUE_KEY_PREFIX, userId);
 const getCacheScopedKey = (userId: string): string => scopedKey(LOCAL_CACHE_KEY_PREFIX, userId);
 
@@ -70,161 +50,9 @@ const ensureStorageNamespace = (): string => {
     return storageNamespace;
 };
 
-const ONLINE_AUTH_ERROR = 'User not authenticated';
-
-const assertOnlineUserId = (userId?: string): string => {
-    if (!navigator.onLine) {
-        return userId || 'offline-user';
-    }
-    if (!userId) {
-        throw new Error(ONLINE_AUTH_ERROR);
-    }
-    return userId;
-};
-
 const assertMutationAffectedRows = (count: number | null, action: 'update' | 'delete'): void => {
     if ((count ?? 0) < 1) {
         throw new Error(`Impossible de ${action === 'update' ? 'mettre à jour' : 'supprimer'}: observation introuvable ou accès refusé.`);
-    }
-};
-
-const COUNT_BREAKDOWN_COLUMNS = ['male_count', 'female_count', 'unidentified_count'] as const;
-
-const asSupabaseError = (error: unknown): SupabaseLikeError => {
-    if (error && typeof error === 'object') return error as SupabaseLikeError;
-    return {};
-};
-
-const stripCountBreakdownColumns = (row: Record<string, unknown>): Record<string, unknown> => {
-    const next = { ...row };
-    for (const key of COUNT_BREAKDOWN_COLUMNS) {
-        delete next[key];
-    }
-    return next;
-};
-
-const isMissingCountBreakdownColumnError = (error: unknown): boolean => {
-    const err = asSupabaseError(error);
-    const combined = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`.toLowerCase();
-    const code = String(err.code || '').toUpperCase();
-    const mentionsCountColumn = COUNT_BREAKDOWN_COLUMNS.some(column => combined.includes(column));
-    if (!mentionsCountColumn) return false;
-
-    return (
-        code === '42703' // undefined_column
-        || code === 'PGRST204' // column missing in schema cache
-        || combined.includes('does not exist')
-        || combined.includes('schema cache')
-        || combined.includes('could not find')
-    );
-};
-
-const WEATHER_COLUMN = 'weather_condition';
-
-const stripWeatherColumn = (row: Record<string, unknown>): Record<string, unknown> => {
-    const next = { ...row };
-    delete next[WEATHER_COLUMN];
-    return next;
-};
-
-const isMissingWeatherColumnError = (error: unknown): boolean => {
-    const err = asSupabaseError(error);
-    const combined = `${err.message || ''} ${err.details || ''} ${err.hint || ''}`.toLowerCase();
-    const code = String(err.code || '').toUpperCase();
-    if (!combined.includes(WEATHER_COLUMN)) return false;
-    return (
-        code === '42703'
-        || code === 'PGRST204'
-        || combined.includes('does not exist')
-        || combined.includes('schema cache')
-        || combined.includes('could not find')
-    );
-};
-
-const isMissingColumnError = (error: unknown): boolean =>
-    isMissingCountBreakdownColumnError(error) || isMissingWeatherColumnError(error);
-
-/**
- * SI-30: détecte une violation de clé primaire/unique côté Postgres.
- * Code 23505 = unique_violation. Arrive typiquement à l'import quand un UUID
- * exporté pointe vers une ligne qui existe encore en DB sous un autre user_id
- * (orphelin d'un ancien compte). RLS la cache à la vue SELECT, donc la collision
- * n'est détectable qu'au moment de l'INSERT — retry avec un nouvel UUID.
- */
-export const isDuplicateKeyError = (error: unknown): boolean => {
-    if (!error) return false;
-    const err = asSupabaseError(error);
-    if (String(err.code || '').trim() === '23505') return true;
-    const msg = (err.message || '').toLowerCase();
-    return msg.includes('duplicate key') && msg.includes('observations');
-};
-
-/**
- * SR-08: detect transient network / server errors that justify falling back
- * to the offline queue instead of throwing (e.g. timeout, 5xx, service unavailable).
- * Business errors (auth, permissions, missing columns, validation) should still throw.
- */
-const isRecoverableNetworkError = (error: unknown): boolean => {
-    if (!error) return false;
-    if (error instanceof DOMException && error.name === 'AbortError') return true;
-    if (error instanceof TypeError) {
-        const msg = error.message.toLowerCase();
-        if (msg.includes('fetch') || msg.includes('network') || msg.includes('failed to fetch')) return true;
-    }
-    const err = asSupabaseError(error);
-    const code = String(err.code || '').toUpperCase();
-    // PostgREST / Supabase-specific transient codes
-    if (code === 'PGRST301' || code === 'PGRST002' || code === '57P03') return true;
-    const maybeStatus = (error as { status?: number }).status;
-    if (typeof maybeStatus === 'number' && maybeStatus >= 500 && maybeStatus < 600) return true;
-    const msg = (err.message || '').toLowerCase();
-    if (msg.includes('timeout') || msg.includes('délai dépassé') || msg.includes('service unavailable')) return true;
-    if (msg.includes('network') || msg.includes('fetch failed') || msg.includes('connect')) return true;
-    return false;
-};
-
-const notifyRecoverableError = (action: 'sauvegarde' | 'mise à jour' | 'suppression') => {
-    window.dispatchEvent(new CustomEvent('supabase-recoverable-error', { detail: { action } }));
-};
-
-/**
- * Run a Supabase-like operation and retry once with the row stripped of columns
- * that the server complains are missing (PostgREST code 42703 / PGRST204).
- * Preserves the legacy fallback behaviour used when a migration is pending.
- */
-async function withColumnFallback<R extends { error: SupabaseLikeError | null }>(
-    row: Record<string, unknown>,
-    operation: (effectiveRow: Record<string, unknown>) => PromiseLike<R>
-): Promise<R> {
-    const first = await operation(row);
-    if (first.error && isMissingColumnError(first.error)) {
-        const strippedRow = stripMissingColumns(row, first.error);
-        const strippedColumns = Object.keys(row).filter(k => !(k in strippedRow));
-        // SR-13: schema drift visible — retry sans les colonnes manquantes
-        logger.warn('[storageService] Migration de schéma manquante — retry sans colonnes:', strippedColumns.join(', '));
-        window.dispatchEvent(new CustomEvent('schema-drift-detected', { detail: { columns: strippedColumns } }));
-        return await operation(strippedRow);
-    }
-    return first;
-}
-
-const stripMissingColumns = (row: Record<string, unknown>, error: unknown): Record<string, unknown> => {
-    let result = row;
-    if (isMissingCountBreakdownColumnError(error)) result = stripCountBreakdownColumns(result);
-    if (isMissingWeatherColumnError(error)) result = stripWeatherColumn(result);
-    return result;
-};
-
-// ObservationRow, mapToObservation et mapToRow déplacés dans
-// ./storage/storageTypes et ./storage/storageMappers (importés ci-dessus).
-
-const parseJson = <T,>(raw: string | null, fallback: T, onCorrupt?: (err: unknown) => void): T => {
-    if (!raw) return fallback;
-    try {
-        return JSON.parse(raw) as T;
-    } catch (err) {
-        onCorrupt?.(err);
-        return fallback;
     }
 };
 
@@ -649,87 +477,6 @@ export const deleteObservation = async (id: string): Promise<void> => {
 
 
 
-export const uploadPhoto = async (file: Blob): Promise<string> => {
-    if (!navigator.onLine) {
-        throw new Error("Impossible d'envoyer une photo en mode hors-ligne. Veuillez réessayer une fois connecté.");
-    }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const fileName = `${user.id}/photos/${Date.now()}-${generateUUID()}.jpg`;
-    const { error: uploadError } = await withTimeout(
-        supabase.storage
-            .from('photos')
-            .upload(fileName, file, {
-                contentType: 'image/jpeg',
-                upsert: false
-            }),
-        UPLOAD_TIMEOUT_MS,
-        'Upload photo'
-    );
-
-    if (uploadError) {
-        logger.error('Error uploading photo:', uploadError);
-        throw new Error(uploadError.message);
-    }
-
-    const { data: { publicUrl } } = supabase.storage
-        .from('photos')
-        .getPublicUrl(fileName);
-
-    if (!publicUrl) {
-        throw new Error('URL publique de la photo non disponible.');
-    }
-
-    return publicUrl;
-};
-
-const ALLOWED_AUDIO_TYPES = new Set([
-    'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/mp4', 'audio/x-m4a',
-]);
-
-export const uploadSound = async (file: Blob): Promise<string> => {
-    if (!navigator.onLine) {
-        throw new Error("Impossible d'envoyer un son en mode hors-ligne. Veuillez réessayer une fois connecté.");
-    }
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const contentType = file.type || 'audio/mpeg';
-    if (!ALLOWED_AUDIO_TYPES.has(contentType)) {
-        throw new Error(`Type audio non autorisé (${contentType}). Formats acceptés : MP3, OGG, WAV, WebM, M4A.`);
-    }
-    const extension = contentType.split('/')[1]?.split(';')[0] || 'mp3';
-    const fileName = `${user.id}/sounds/${Date.now()}-${generateUUID()}.${extension}`;
-
-    const { error: uploadError } = await withTimeout(
-        supabase.storage
-            .from('photos')
-            .upload(fileName, file, {
-                contentType,
-                upsert: false
-            }),
-        UPLOAD_TIMEOUT_MS,
-        'Upload son'
-    );
-
-    if (uploadError) {
-        logger.error('Error uploading sound:', uploadError);
-        throw new Error(uploadError.message);
-    }
-
-    const { data: { publicUrl } } = supabase.storage
-        .from('photos')
-        .getPublicUrl(fileName);
-
-    if (!publicUrl) {
-        throw new Error('URL publique du son non disponible.');
-    }
-
-    return publicUrl;
-};
 
 export const processOfflineQueue = async (options: ProcessOfflineQueueOptions = {}): Promise<OfflineSyncResult> => {
     // SI-02: Mutex — concurrent calls coalesce to the same execution
