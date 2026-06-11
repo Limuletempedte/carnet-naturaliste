@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, getOfflineQueueSnapshot } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, getOfflineQueueSnapshot, setObservationWikipediaImage } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
@@ -276,8 +276,6 @@ const App: React.FC = () => {
                 const obsWithMissingImages = startupSelection.candidates;
 
                 if (obsWithMissingImages.length > 0) {
-                    const updatedObs = [...loadResult.observations];
-                    let hasUpdates = false;
                     let nextIndex = 0;
 
                     const worker = async () => {
@@ -288,25 +286,21 @@ const App: React.FC = () => {
 
                             try {
                                 const info = await fetchSpeciesInfo(obs.latinName.trim());
-                                if (!mounted || !info) continue;
+                                if (!mounted || !info?.imageUrl) continue;
+                                const wikipediaImage = info.imageUrl;
 
-                                const index = updatedObs.findIndex(o => o.id === obs.id);
-                                if (index === -1) continue;
+                                // H9 : ne persister QUE le champ image (pas la ligne entière)
+                                // pour ne pas écraser une édition concurrente de l'utilisateur.
+                                await setObservationWikipediaImage(obs.id, wikipediaImage);
+                                if (!mounted) continue;
 
-                                const nextObservation = {
-                                    ...updatedObs[index],
-                                    wikipediaImage: info.imageUrl || updatedObs[index].wikipediaImage
-                                };
-
-                                const changed = (
-                                    nextObservation.wikipediaImage !== updatedObs[index].wikipediaImage
-                                );
-
-                                if (!changed) continue;
-
-                                updatedObs[index] = nextObservation;
-                                hasUpdates = true;
-                                await updateObservation(nextObservation);
+                                // Mise à jour fonctionnelle ciblée : ne touche que cette
+                                // observation et seulement si elle n'a pas reçu d'image
+                                // entre-temps — préserve ajouts / suppressions / éditions
+                                // faits par l'utilisateur pendant l'enrichissement.
+                                setObservations(prev => prev.map(o =>
+                                    o.id === obs.id && !o.wikipediaImage ? { ...o, wikipediaImage } : o
+                                ));
                             } catch (err) {
                                 logger.error(`Failed to fetch info for ${obs.latinName}`, err);
                             }
@@ -317,10 +311,6 @@ const App: React.FC = () => {
                     await Promise.all(
                         Array.from({ length: Math.min(ENRICHMENT_CONCURRENCY, obsWithMissingImages.length) }, () => worker())
                     );
-
-                    if (hasUpdates && mounted) {
-                        setObservations(updatedObs);
-                    }
                 }
             } catch (e: unknown) {
                 if (!mounted) return;

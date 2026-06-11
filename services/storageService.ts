@@ -442,6 +442,41 @@ export const updateObservation = async (
     }
 };
 
+/**
+ * Audit v2 (H9) : met à jour UNIQUEMENT la colonne `wikipedia_image` d'une
+ * observation. Utilisé par l'enrichissement automatique au démarrage, qui ne
+ * doit pas réécrire la ligne entière (sinon une édition concurrente de
+ * l'utilisateur serait écrasée en base). Online uniquement, best-effort : les
+ * erreurs sont journalisées, pas propagées (l'enrichissement n'est pas critique).
+ */
+export const setObservationWikipediaImage = async (id: string, wikipediaImage: string): Promise<void> => {
+    ensureStorageNamespace();
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    if (!userId) return;
+
+    const { error } = await supabase
+        .from('observations')
+        .update({ wikipedia_image: wikipediaImage })
+        .eq('id', id)
+        .eq('user_id', userId);
+
+    if (error) {
+        logger.warn('[storageService] Enrichissement image non persisté:', error);
+        return;
+    }
+
+    // Met à jour le seul champ image dans le cache, sans toucher aux autres
+    // champs (qui ont pu être modifiés par l'utilisateur entre-temps).
+    const cache = getLocalCache();
+    const index = cache.findIndex(obs => obs.id === id);
+    if (index !== -1) {
+        const next = [...cache];
+        next[index] = { ...next[index], wikipediaImage };
+        setLocalCache(next);
+    }
+};
+
 export const deleteObservation = async (id: string): Promise<void> => {
     ensureStorageNamespace();
 

@@ -205,6 +205,26 @@ describe('storageService.applyPendingQueueToObservations (H8)', () => {
     });
 });
 
+describe('storageService.setObservationWikipediaImage (H9)', () => {
+    it('met à jour le seul champ image dans le cache sans écraser les autres champs', async () => {
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        // L'utilisateur a édité le commentaire pendant l'enrichissement : il doit survivre.
+        const cached = { ...makeObservation('aaaaaaaa-e89b-42d3-a456-426614174000'), comment: 'édition utilisateur' };
+        localStorage.setItem('local_observations_cache:user-1', JSON.stringify([cached]));
+
+        updateMock.mockReturnValue({ eq: updateEqIdMock });
+        updateEqIdMock.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+
+        await storageService.setObservationWikipediaImage(cached.id, 'https://example.com/new-image.jpg');
+
+        const after = JSON.parse(localStorage.getItem('local_observations_cache:user-1') || '[]');
+        expect(after[0].wikipediaImage).toBe('https://example.com/new-image.jpg');
+        expect(after[0].comment).toBe('édition utilisateur');
+    });
+});
+
 describe('storageService.getObservations', () => {
     it('returns remote observations and applies user_id filter', async () => {
         vi.stubGlobal('navigator', { onLine: true });
