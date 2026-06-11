@@ -1,6 +1,6 @@
 # Notes sur les licences des dependances
 
-Dernière mise à jour : 2026-04-17 (Thème 10, QT-18/QT-19).
+Dernière mise à jour : 2026-06-11 (audit v2, lot C — réparation de `licenses:check`).
 
 ## Objectif
 
@@ -42,6 +42,21 @@ La majorité des dépendances sont sous licences permissives (MIT, Apache-2.0, B
 - **Recommandation Thème 10** : conserver pour l'instant (API stable, aucune régression observée). Surveiller les alternatives (`downloadjs`, ou l'API native `<a download>` + `URL.createObjectURL`) si une faille était découverte.
 - **Usage** : `services/backupService.ts`, `services/observationExportService.ts`.
 
+#### `buffers@0.1.1` (transitif via `exceljs` → `unzipper` → `binary`)
+- **Licence** : champ `license` absent du package.json (2013) → classé « Custom » par license-checker. Le code source historique (substack/node-bufferlist) est MIT/X11.
+- **Décision (audit v2, lot C)** : exclu explicitement du check via `--excludePackages "buffers@0.1.1"`. À réévaluer si exceljs change sa chaîne de dépendances.
+
+#### `glob@11` — BlueOak-1.0.0 (transitif via `vite-plugin-pwa` → `workbox-build`)
+- **Licence** : Blue Oak Model License 1.0.0 — licence **permissive** moderne (équivalent MIT), OK commercial.
+- **Décision (audit v2, lot C)** : ajoutée à l'allowlist du script `licenses:check`.
+
+#### Paquet racine
+- `carnet-naturaliste` est `private: true` sans champ `license` → exclu du check via `--excludePrivatePackages` (c'est notre propre code, pas une dépendance).
+
+#### Résidu npm audit accepté : `uuid@8.3.2` (transitif via `exceljs`)
+- 2 vulnérabilités modérées restantes après `npm audit fix` (lot C) : pas de correctif dans la plage de versions d'exceljs, et le « fix » proposé par npm est un downgrade d'exceljs vers 3.x (refusé).
+- **Analyse** : le bug d'uuid concerne `v3/v5/v6` avec un buffer fourni ; exceljs utilise `v4()` sans buffer → non exploitable dans notre usage. Accepté, à réévaluer si exceljs publie une nouvelle version.
+
 #### Polices embarquées (`public/fonts/*`)
 - Aucune police tierce embarquée à date (uniquement polices système + CSS). Si on ajoute une police (Google Fonts en asset local, par ex.), il faudra documenter sa licence (OFL, Apache-2.0, etc.) dans ce fichier.
 
@@ -56,10 +71,10 @@ npx license-checker --production --summary
 Pour détecter automatiquement les licences non-conformes (GPL, LGPL, AGPL, SSPL) :
 
 ```bash
-npx license-checker --production --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC-BY-4.0;CC0-1.0;0BSD;Unlicense"
+npm run licenses:check
 ```
 
-Si une licence non whitelist apparaît, le script échoue (code ≠ 0) et doit être investigué.
+(La liste autorisée de référence est celle du script `licenses:check` de `package.json` — y compris BlueOak-1.0.0 et les exclusions documentées ci-dessus.) Si une licence hors liste apparaît, le script échoue (code ≠ 0) et doit être investigué.
 
 ## Prochaines étapes suggérées (hors thème 10)
 

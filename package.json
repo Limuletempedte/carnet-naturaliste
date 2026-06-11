@@ -17,7 +17,7 @@
     "dev:test": "vite --mode test",
     "prepare": "husky",
     "licenses": "license-checker --production --summary",
-    "licenses:check": "license-checker --production --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC-BY-4.0;CC0-1.0;0BSD;Unlicense;Python-2.0;MPL-2.0\""
+    "licenses:check": "license-checker --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC-BY-4.0;CC0-1.0;0BSD;Unlicense;Python-2.0;MPL-2.0;BlueOak-1.0.0\" --excludePackages \"buffers@0.1.1\""
   },
   "lint-staged": {
     "*.{ts,tsx}": [
@@ -26,13 +26,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
-    "@types/file-saver": "^2.0.7",
-    "@types/leaflet.markercluster": "^1.5.6",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
+    "leaflet": "^1.9.4",
     "leaflet.markercluster": "^1.5.3",
     "react": "^19.1.0",
     "react-calendar": "^6.0.0",
@@ -43,6 +42,9 @@
   "devDependencies": {
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
+    "@types/file-saver": "^2.0.7",
+    "@types/leaflet": "^1.9.21",
+    "@types/leaflet.markercluster": "^1.5.6",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -58,7 +60,7 @@
     "jsdom": "^26.1.0",
     "license-checker": "^25.0.1",
     "lint-staged": "^15.2.10",
-    "postcss": "^8.4.35",
+    "postcss": "^8.5.10",
     "supabase": "^2.92.1",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.7.2",
@@ -66,7 +68,7 @@
     "vitest": "^3.2.4"
   },
   "overrides": {
-    "@rollup/plugin-terser": "1.0.0",
+    "@rollup/plugin-terser": "^1.0.0",
     "serialize-javascript": ">=7.0.5"
   }
 }
