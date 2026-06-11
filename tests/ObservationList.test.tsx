@@ -80,3 +80,44 @@ describe('ObservationList taxonomic filter', () => {
         expect(otherButton.getAttribute('aria-pressed')).toBe('true');
     });
 });
+
+describe('ObservationList export en vue mobile', () => {
+    // Régression audit v2 (C2) : ExportScopeDialog n'était rendu que dans la
+    // branche desktop — choisir un format d'export sur mobile ne faisait rien.
+    it('ouvre le dialogue de périmètre après choix d\'un format dans le menu Exporter', () => {
+        render(
+            <ObservationList
+                observations={[]}
+                allObservations={[]}
+                onAdd={vi.fn()}
+                onEdit={vi.fn()}
+                onDelete={vi.fn()}
+                onBulkDelete={vi.fn()}
+                onImport={vi.fn(async () => { })}
+                onToast={vi.fn()}
+                searchTerm=""
+                onSearchChange={vi.fn()}
+                yearFilter="all"
+                onYearChange={vi.fn()}
+                startDateFilter=""
+                onStartDateChange={vi.fn()}
+                endDateFilter=""
+                onEndDateChange={vi.fn()}
+                taxonomicGroupFilter="all"
+                onTaxonomicGroupChange={vi.fn()}
+                statusFilter="all"
+                onStatusChange={vi.fn()}
+                availableYears={[]}
+                sortConfig={{ key: '', direction: 'ascending' }}
+                requestSort={vi.fn()}
+                isMobileView={true}
+                isImporting={false}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: 'Exporter' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: /^JSON/ }));
+
+        expect(screen.getByText("Choisir le périmètre d'export")).toBeTruthy();
+    });
+});
