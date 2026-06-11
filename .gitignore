@@ -27,6 +27,7 @@ coverage
 # Local AI / MCP tooling (do not commit secrets)
 .mcp.json
 .claude/
+.codex/
 tmp_claude_*
 test_output.txt
 implementation_plan.md.resolved
