@@ -15,8 +15,14 @@ import type { OfflineQueueItem } from '../services/storageQueueUtils';
 export function useOfflineQueue(user: User | null | undefined) {
     const [offlineQueueItems, setOfflineQueueItems] = useState<OfflineQueueItem[]>([]);
 
+    // Audit v2 (H6) : dépendre de l'identité STABLE `user.id`, pas de l'objet
+    // `user`. Supabase émet un nouvel objet user/session à chaque
+    // TOKEN_REFRESHED (~1×/h) ; dépendre de l'objet recréait ce callback à
+    // chaque refresh, ce qui relançait l'effet de chargement d'App et
+    // démontait l'UI (formulaire en cours de saisie compris).
+    const userId = user?.id;
     const refreshOfflineQueueSnapshot = useCallback(() => {
-        if (!user) {
+        if (!userId) {
             setOfflineQueueItems([]);
             return;
         }
@@ -25,7 +31,7 @@ export function useOfflineQueue(user: User | null | undefined) {
         } catch {
             setOfflineQueueItems([]);
         }
-    }, [user]);
+    }, [userId]);
 
     useEffect(() => {
         refreshOfflineQueueSnapshot();

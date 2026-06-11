@@ -55,6 +55,10 @@ const ENRICHMENT_CONCURRENCY = 3;
 
 const App: React.FC = () => {
     const { user, loading: authLoading, isOffline } = useAuth();
+    // Identité stable de l'utilisateur (cf. H6) : l'objet `user` change de
+    // référence à chaque rafraîchissement de token, pas son id.
+    const userId = user?.id;
+    const hasLoadedOnceRef = useRef(false);
     const { offlineQueueItems, refreshOfflineQueueSnapshot } = useOfflineQueue(user);
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
@@ -209,14 +213,20 @@ const App: React.FC = () => {
     useEffect(() => {
         // supabaseConfigError is a module-level constant (never changes at runtime),
         // so it does not need to be in the dependency array.
-        if (authLoading || !user || supabaseConfigError) {
+        // Audit v2 (H6) : on dépend de `userId` (identité stable) et NON de l'objet
+        // `user`, recréé à chaque TOKEN_REFRESHED (~1×/h) — sinon l'app se
+        // rechargeait entièrement toutes les heures, effaçant la saisie en cours.
+        if (authLoading || !userId || supabaseConfigError) {
             return;
         }
 
         let mounted = true;
 
         const loadData = async () => {
-            setIsLoading(true);
+            // N'afficher l'écran plein « Chargement… » qu'au tout premier chargement.
+            // Sur un re-run (bascule online/offline), garder l'UI montée pour ne pas
+            // perdre l'état (formulaire, position de défilement).
+            if (!hasLoadedOnceRef.current) setIsLoading(true);
             try {
                 // Try to sync if online (PE-15: skip if queue empty to avoid unnecessary auth call)
                 const pendingQueue = getOfflineQueueSnapshot();
@@ -251,6 +261,7 @@ const App: React.FC = () => {
                     pushToast('warning', `Affichage du cache local: ${loadResult.warning}`, 7000);
                 }
                 setIsLoading(false);
+                hasLoadedOnceRef.current = true;
                 refreshOfflineQueueSnapshot();
 
                 // Auto-fetch missing images for existing observations
@@ -318,13 +329,14 @@ const App: React.FC = () => {
                 setError(`Erreur connexion: ${errorMsg}.`);
                 logger.error(e);
                 setIsLoading(false);
+                hasLoadedOnceRef.current = true;
                 refreshOfflineQueueSnapshot();
             }
         };
         loadData();
 
         return () => { mounted = false; };
-    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, user, pushToast]);
+    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, userId, pushToast]);
 
     const handleAddObservation = useCallback(() => {
         setEditingObservation(null);
