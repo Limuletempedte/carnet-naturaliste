@@ -521,6 +521,16 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     onCancel={handleCancelPreview}
                     onConfirm={handleConfirmPreview}
                 />
+                <ExportScopeDialog
+                    isOpen={pendingExportType !== null}
+                    filteredCount={observations.length}
+                    totalCount={allObservations.length}
+                    selectedCount={selectedIds.size}
+                    onCancel={() => setPendingExportType(null)}
+                    onSelectFiltered={() => void runExport('filtered')}
+                    onSelectAll={() => void runExport('all')}
+                    onSelectSelected={() => void runExport('selected')}
+                />
             </>
         );
     }

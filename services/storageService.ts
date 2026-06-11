@@ -242,6 +242,36 @@ export const bulkUpsertObservationsInCache = (newObservations: Observation[]): v
     setLocalCache(Array.from(mergedById.values()));
 };
 
+/**
+ * Audit v2 (H8) : réconcilie une liste d'observations issue du serveur avec la
+ * file d'attente hors-ligne. Les actions non synchronisées (créations/éditions
+ * en attente ou en échec, suppressions en attente) sont appliquées sur la liste
+ * serveur pour que l'utilisateur ne « perde » jamais de vue ses saisies
+ * hors-ligne — y compris après une synchronisation partielle, où `getObservations`
+ * écrasait sinon la ré-injection SI-12 avec les seules données serveur.
+ */
+export const applyPendingQueueToObservations = (observations: Observation[]): Observation[] => {
+    let queue: OfflineQueueItem[];
+    try {
+        queue = getOfflineQueueSnapshot();
+    } catch {
+        return observations;
+    }
+    if (queue.length === 0) return observations;
+
+    const byId = new Map(observations.map(obs => [obs.id, obs] as [string, Observation]));
+    for (const item of queue) {
+        if (item.action === 'DELETE') {
+            const id = (item.payload as { id: string }).id;
+            if (id) byId.delete(id);
+        } else {
+            const obs = item.payload as Observation;
+            if (obs?.id) byId.set(obs.id, obs);
+        }
+    }
+    return Array.from(byId.values());
+};
+
 export const getObservations = async (): Promise<ObservationLoadResult> => {
     ensureStorageNamespace();
     const cached = getLocalCache();
@@ -273,7 +303,9 @@ export const getObservations = async (): Promise<ObservationLoadResult> => {
             if (data.length < PAGE_SIZE) break;
         }
 
-        const observations = rows.map(mapToObservation);
+        // H8 : réconcilier avec la file hors-ligne avant de remplacer le cache,
+        // pour ne pas faire disparaître les observations en attente/en échec.
+        const observations = applyPendingQueueToObservations(rows.map(mapToObservation));
         setLocalCache(observations);
         return { observations, source: 'remote' };
     } catch (error: unknown) {
@@ -407,6 +439,41 @@ export const updateObservation = async (
 
     if (!options.skipCache) {
         upsertObservationInCache(observation);
+    }
+};
+
+/**
+ * Audit v2 (H9) : met à jour UNIQUEMENT la colonne `wikipedia_image` d'une
+ * observation. Utilisé par l'enrichissement automatique au démarrage, qui ne
+ * doit pas réécrire la ligne entière (sinon une édition concurrente de
+ * l'utilisateur serait écrasée en base). Online uniquement, best-effort : les
+ * erreurs sont journalisées, pas propagées (l'enrichissement n'est pas critique).
+ */
+export const setObservationWikipediaImage = async (id: string, wikipediaImage: string): Promise<void> => {
+    ensureStorageNamespace();
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    if (!userId) return;
+
+    const { error } = await supabase
+        .from('observations')
+        .update({ wikipedia_image: wikipediaImage })
+        .eq('id', id)
+        .eq('user_id', userId);
+
+    if (error) {
+        logger.warn('[storageService] Enrichissement image non persisté:', error);
+        return;
+    }
+
+    // Met à jour le seul champ image dans le cache, sans toucher aux autres
+    // champs (qui ont pu être modifiés par l'utilisateur entre-temps).
+    const cache = getLocalCache();
+    const index = cache.findIndex(obs => obs.id === id);
+    if (index !== -1) {
+        const next = [...cache];
+        next[index] = { ...next[index], wikipediaImage };
+        setLocalCache(next);
     }
 };
 

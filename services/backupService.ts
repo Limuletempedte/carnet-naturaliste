@@ -1,7 +1,7 @@
 import { Observation } from '../types';
 import { dateToIsoLocal } from '../utils/dateUtils';
 import { escapeCsvCell } from '../utils/csvUtils';
-import { isSensitiveSpecies, obfuscateCoordinate } from '../utils/gpsPrivacy';
+import { isSensitiveSpecies } from '../utils/gpsPrivacy';
 import { logger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetchUtils';
 import { parseJsonImport } from './jsonImportValidation';
@@ -163,15 +163,16 @@ export const createBackup = async (
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
 
-    // 0. Obfuscate GPS for sensitive species (VP-11)
-    const safeObservations = observations.map(obs => {
-        if (!isSensitiveSpecies(obs.status)) return obs;
-        return { ...obs, gps: { lat: obfuscateCoordinate(obs.gps.lat), lon: obfuscateCoordinate(obs.gps.lon) } };
-    });
-    const hasSensitive = safeObservations.some((obs, i) => obs !== observations[i]);
+    // Audit v2 (H2/RGPD-03) : la sauvegarde est FIDÈLE — coordonnées exactes.
+    // data.json est la source de restauration : l'obfuscation VP-11 (~11 km) y
+    // détruirait définitivement la précision des espèces sensibles au moment de
+    // la restauration en mode merge. C'est aussi l'export de portabilité du
+    // titulaire (art. 20 RGPD), qui doit restituer SES données exactes.
+    // L'obfuscation reste appliquée aux exports DESTINÉS AU PARTAGE
+    // (Excel/PDF/GeoJSON/Darwin Core) dans observationExportService.
 
     // 1. Add Data as JSON
-    zip.file("data.json", JSON.stringify(safeObservations, null, 2));
+    zip.file("data.json", JSON.stringify(observations, null, 2));
 
     // 2. Add Data as CSV (properly escaped)
     const csvHeader = [
@@ -180,7 +181,7 @@ export const createBackup = async (
         "Statut", "Code Atlas", "Protocole", "Sexe", "Age", "Condition d'observation", "Comportement", "Conditions météo", "Commentaire"
     ].join(",");
 
-    const csvRows = safeObservations.map(obs => {
+    const csvRows = observations.map(obs => {
         return [
             escapeCsvCell(obs.id),
             escapeCsvCell(obs.speciesName),
@@ -214,11 +215,17 @@ export const createBackup = async (
     zip.file("data.csv", [csvHeader, ...csvRows].join("\n"));
 
     // 2b. Add GPS notice for sensitive species
+    const hasSensitive = observations.some(obs => isSensitiveSpecies(obs.status));
     if (hasSensitive) {
         zip.file("NOTICE_GPS.txt",
-            "Les coordonnees GPS des especes menacees (VU, EN, CR, EW) ont ete\n" +
-            "arrondies a environ 11 km de precision pour des raisons de protection\n" +
-            "contre le braconnage et le pillage (Code de l'environnement L411-1).\n"
+            "Cette sauvegarde est FIDELE : elle contient les coordonnees GPS\n" +
+            "EXACTES de toutes vos observations, y compris les especes menacees\n" +
+            "(VU, EN, CR, EW), afin de permettre une restauration sans perte.\n\n" +
+            "Ne la partagez pas publiquement : la divulgation des localisations\n" +
+            "precises d'especes protegees expose au braconnage et au pillage\n" +
+            "(Code de l'environnement L411-1). Pour partager vos donnees, utilisez\n" +
+            "les exports Excel / PDF / GeoJSON / Darwin Core, dont les coordonnees\n" +
+            "des especes sensibles sont automatiquement arrondies (~11 km).\n"
         );
     }
 

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { getOfflineQueueSnapshot } from '../../services/storageService';
 
 interface UserProfileProps {
     onExportData?: () => void;
@@ -10,6 +11,29 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
     const { user, signOut } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Audit v2 (H7) : signOut purge la file offline scopée. Avertir avant toute
+    // perte définitive d'observations saisies hors-ligne et non synchronisées.
+    const handleSignOut = async () => {
+        setIsOpen(false);
+        let pendingCount = 0;
+        try {
+            pendingCount = getOfflineQueueSnapshot().length;
+        } catch {
+            pendingCount = 0;
+        }
+        if (pendingCount > 0) {
+            const confirmed = window.confirm(
+                `Vous avez ${pendingCount} observation(s) non synchronisée(s) qui seront ` +
+                `définitivement perdues à la déconnexion.\n\n` +
+                `Pour les conserver : annulez, reconnectez-vous à Internet, puis lancez la ` +
+                `synchronisation depuis le centre de synchronisation avant de vous déconnecter.\n\n` +
+                `Se déconnecter quand même ?`
+            );
+            if (!confirmed) return;
+        }
+        await signOut();
+    };
 
     // Close dropdown when clicking outside or pressing Escape
     useEffect(() => {
@@ -85,10 +109,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
 
                         <button
                             role="menuitem"
-                            onClick={async () => {
-                                setIsOpen(false);
-                                await signOut();
-                            }}
+                            onClick={handleSignOut}
                             className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
                         >
                             <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">

@@ -97,7 +97,12 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                     }).catch(err => {
                         if (err.name !== 'AbortError') {
                             logger.error(err);
-                            onToastRef.current('warning', "Impossible de récupérer l'adresse exacte pour ce point.");
+                            // BUG-06 : transmettre quand même les coordonnées cliquées au
+                            // formulaire (le géocodage inverse n'a fait qu'échouer pour
+                            // l'adresse) — sinon le marqueur est posé mais l'observation
+                            // serait sauvegardée SANS GPS.
+                            onLocationChangeRef.current(lat, lng, '', '', '', '');
+                            onToastRef.current('warning', "Position enregistrée, mais l'adresse exacte n'a pas pu être récupérée.");
                         }
                     });
                 }, 300);
@@ -285,6 +290,23 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
         setIsLocating(true);
         let firstFix = true;
 
+        // Géocode inverse puis transmet la position au formulaire. Transmet TOUJOURS
+        // les coordonnées, y compris si le géocodage échoue (BUG-06) — sinon une
+        // observation pourrait être sauvegardée sans GPS.
+        const geocodeAndApply = (lat: number, lon: number) => {
+            reverseGeocode(lat, lon).then(result => {
+                if (result?.address) {
+                    onLocationChangeRef.current(lat, lon, result.address.municipality || '', result.address.location || '', result.address.department || '', result.address.country || '');
+                } else {
+                    onLocationChangeRef.current(lat, lon, '', '', '', '');
+                }
+            }).catch((error) => {
+                logger.error(error);
+                onLocationChangeRef.current(lat, lon, '', '', '', '');
+                onToastRef.current('warning', "Position enregistrée, mais l'adresse exacte n'a pas pu être récupérée.");
+            });
+        };
+
         watchIdRef.current = navigator.geolocation.watchPosition(
             (position) => {
                 const { latitude, longitude, accuracy: acc } = position.coords;
@@ -322,24 +344,25 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
                     }).addTo(mapRef.current);
                 }
 
-                // Reverse geocode — debounce pour éviter la saturation API
-                if (watchGeocodeTimerRef.current) clearTimeout(watchGeocodeTimerRef.current);
-                watchGeocodeTimerRef.current = window.setTimeout(() => {
-                    reverseGeocode(latitude, longitude).then(result => {
-                        if (result?.address) {
-                            onLocationChangeRef.current(latitude, longitude, result.address.municipality || '', result.address.location || '', result.address.department || '', result.address.country || '');
-                        } else {
-                            onLocationChangeRef.current(latitude, longitude, '', '', '', '');
-                        }
-                    }).catch((error) => {
-                        logger.error(error);
-                        onToastRef.current('warning', (error instanceof Error && error.message) ? error.message : "Impossible de récupérer l'adresse de votre position.");
-                    });
-                }, 2000);
-
-                // Stop watching once accuracy is good enough (<30m)
+                // H10 : quand la précision est suffisante (<30 m, cas nominal en
+                // extérieur), transmettre la position TOUT DE SUITE puis arrêter le
+                // suivi. Auparavant, le géocodage était posé dans un timer débounce
+                // de 2 s que stopWatching() annulait aussitôt → onLocationChange
+                // n'était jamais appelé et le formulaire ne recevait pas les coordonnées.
                 if (acc < 30) {
+                    if (watchGeocodeTimerRef.current) {
+                        clearTimeout(watchGeocodeTimerRef.current);
+                        watchGeocodeTimerRef.current = null;
+                    }
+                    geocodeAndApply(latitude, longitude);
                     stopWatching();
+                } else {
+                    // Pas encore assez précis : débounce le géocodage pour ne pas
+                    // saturer l'API pendant que les fix s'affinent.
+                    if (watchGeocodeTimerRef.current) clearTimeout(watchGeocodeTimerRef.current);
+                    watchGeocodeTimerRef.current = window.setTimeout(() => {
+                        geocodeAndApply(latitude, longitude);
+                    }, 2000);
                 }
             },
             (error) => {

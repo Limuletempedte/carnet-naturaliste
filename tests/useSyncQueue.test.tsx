@@ -70,6 +70,28 @@ describe('useSyncQueue', () => {
         expect(result.current.isSyncingQueue).toBe(false);
     });
 
+    it('BUG-11 hors-ligne : toast warning explicite, processOfflineQueue non appelé', async () => {
+        Object.defineProperty(navigator, 'onLine', { value: false, configurable: true, writable: true });
+        const params = makeParams();
+        const { result } = renderHook(() => useSyncQueue(params));
+
+        await act(async () => { await result.current.resyncAll(); });
+
+        expect(processOfflineQueueMock).not.toHaveBeenCalled();
+        expect(params.onToast).toHaveBeenCalledWith('warning', expect.stringContaining('Hors-ligne'), 5000);
+    });
+
+    it('BUG-11 file vide : toast info « Rien à synchroniser » plutôt qu\'un faux succès', async () => {
+        processOfflineQueueMock.mockResolvedValue({ processed: 0, failed: 0, failureReasons: [], skippedItems: [] });
+        const params = makeParams();
+        const { result } = renderHook(() => useSyncQueue(params));
+
+        await act(async () => { await result.current.resyncAll(); });
+
+        expect(params.onToast).toHaveBeenCalledWith('info', 'Rien à synchroniser.', 4000);
+        expect(params.onToast).not.toHaveBeenCalledWith('success', expect.anything(), expect.anything());
+    });
+
     it('retryQueueItem passe l\'id ciblé à processOfflineQueue', async () => {
         processOfflineQueueMock.mockResolvedValue({ processed: 1, failed: 0, failureReasons: [], skippedItems: [] });
         const params = makeParams();

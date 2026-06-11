@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import { parseExcel } from '../services/excelImportService';
-import { TaxonomicGroup } from '../types';
+import { Habitat, Phenology, TaxonomicGroup } from '../types';
 
 const createExcelFile = async (rows: Record<string, unknown>[]): Promise<File> => {
     const workbook = new ExcelJS.Workbook();
@@ -80,5 +80,46 @@ describe('excelImportService taxonomic mapping', () => {
         expect(result.observations).toHaveLength(0);
         expect(result.report.blockingErrors).toHaveLength(1);
         expect(result.report.blockingErrors[0].message).toContain('Colonnes obligatoires manquantes');
+    });
+});
+
+describe('excelImportService — champs habitat/phénologie/observateurs (H12)', () => {
+    it('réimporte Habitat, Phénologie et Observateurs (plus de perte au round-trip)', async () => {
+        const file = await createExcelFile([
+            {
+                "Nom de l'espèce": 'Chouette hulotte', Date: '2026-03-01', Nombre: 1,
+                Habitat: 'Forêt de feuillus', 'Phénologie': 'En reproduction', Observateurs: 'Jean D. | Marie L.'
+            }
+        ]);
+
+        const result = await parseExcel(file);
+        const obs = result.observations[0];
+
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(obs.habitat).toBe(Habitat.FOREST_DECIDUOUS);
+        expect(obs.phenology).toBe(Phenology.BREEDING);
+        expect(obs.observers).toEqual(['Jean D.', 'Marie L.']);
+    });
+
+    it('laisse ces champs à undefined quand les colonnes sont absentes (pas d\'écrasement par null)', async () => {
+        const file = await createExcelFile([
+            { "Nom de l'espèce": 'Merle', Date: '2026-03-01', Nombre: 1 }
+        ]);
+
+        const obs = (await parseExcel(file)).observations[0];
+        expect(obs.habitat).toBeUndefined();
+        expect(obs.phenology).toBeUndefined();
+        expect(obs.observers).toBeUndefined();
+    });
+});
+
+describe('excelImportService — heure manquante (BUG-07)', () => {
+    it('laisse l\'heure vide (pas « 12:00 » fabriqué) quand la colonne Heure est absente', async () => {
+        const file = await createExcelFile([
+            { "Nom de l'espèce": 'Pinson', Date: '2026-03-01', Nombre: 1 }
+        ]);
+
+        const obs = (await parseExcel(file)).observations[0];
+        expect(obs.time).toBe('');
     });
 });

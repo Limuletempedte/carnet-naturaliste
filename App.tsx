@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View } from './types';
-import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, getOfflineQueueSnapshot } from './services/storageService';
+import { getObservations, saveObservation, updateObservation, deleteObservation, processOfflineQueue, getOfflineQueueSnapshot, setObservationWikipediaImage } from './services/storageService';
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
@@ -55,6 +55,10 @@ const ENRICHMENT_CONCURRENCY = 3;
 
 const App: React.FC = () => {
     const { user, loading: authLoading, isOffline } = useAuth();
+    // Identité stable de l'utilisateur (cf. H6) : l'objet `user` change de
+    // référence à chaque rafraîchissement de token, pas son id.
+    const userId = user?.id;
+    const hasLoadedOnceRef = useRef(false);
     const { offlineQueueItems, refreshOfflineQueueSnapshot } = useOfflineQueue(user);
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
@@ -209,14 +213,20 @@ const App: React.FC = () => {
     useEffect(() => {
         // supabaseConfigError is a module-level constant (never changes at runtime),
         // so it does not need to be in the dependency array.
-        if (authLoading || !user || supabaseConfigError) {
+        // Audit v2 (H6) : on dépend de `userId` (identité stable) et NON de l'objet
+        // `user`, recréé à chaque TOKEN_REFRESHED (~1×/h) — sinon l'app se
+        // rechargeait entièrement toutes les heures, effaçant la saisie en cours.
+        if (authLoading || !userId || supabaseConfigError) {
             return;
         }
 
         let mounted = true;
 
         const loadData = async () => {
-            setIsLoading(true);
+            // N'afficher l'écran plein « Chargement… » qu'au tout premier chargement.
+            // Sur un re-run (bascule online/offline), garder l'UI montée pour ne pas
+            // perdre l'état (formulaire, position de défilement).
+            if (!hasLoadedOnceRef.current) setIsLoading(true);
             try {
                 // Try to sync if online (PE-15: skip if queue empty to avoid unnecessary auth call)
                 const pendingQueue = getOfflineQueueSnapshot();
@@ -251,6 +261,7 @@ const App: React.FC = () => {
                     pushToast('warning', `Affichage du cache local: ${loadResult.warning}`, 7000);
                 }
                 setIsLoading(false);
+                hasLoadedOnceRef.current = true;
                 refreshOfflineQueueSnapshot();
 
                 // Auto-fetch missing images for existing observations
@@ -265,8 +276,6 @@ const App: React.FC = () => {
                 const obsWithMissingImages = startupSelection.candidates;
 
                 if (obsWithMissingImages.length > 0) {
-                    const updatedObs = [...loadResult.observations];
-                    let hasUpdates = false;
                     let nextIndex = 0;
 
                     const worker = async () => {
@@ -277,25 +286,21 @@ const App: React.FC = () => {
 
                             try {
                                 const info = await fetchSpeciesInfo(obs.latinName.trim());
-                                if (!mounted || !info) continue;
+                                if (!mounted || !info?.imageUrl) continue;
+                                const wikipediaImage = info.imageUrl;
 
-                                const index = updatedObs.findIndex(o => o.id === obs.id);
-                                if (index === -1) continue;
+                                // H9 : ne persister QUE le champ image (pas la ligne entière)
+                                // pour ne pas écraser une édition concurrente de l'utilisateur.
+                                await setObservationWikipediaImage(obs.id, wikipediaImage);
+                                if (!mounted) continue;
 
-                                const nextObservation = {
-                                    ...updatedObs[index],
-                                    wikipediaImage: info.imageUrl || updatedObs[index].wikipediaImage
-                                };
-
-                                const changed = (
-                                    nextObservation.wikipediaImage !== updatedObs[index].wikipediaImage
-                                );
-
-                                if (!changed) continue;
-
-                                updatedObs[index] = nextObservation;
-                                hasUpdates = true;
-                                await updateObservation(nextObservation);
+                                // Mise à jour fonctionnelle ciblée : ne touche que cette
+                                // observation et seulement si elle n'a pas reçu d'image
+                                // entre-temps — préserve ajouts / suppressions / éditions
+                                // faits par l'utilisateur pendant l'enrichissement.
+                                setObservations(prev => prev.map(o =>
+                                    o.id === obs.id && !o.wikipediaImage ? { ...o, wikipediaImage } : o
+                                ));
                             } catch (err) {
                                 logger.error(`Failed to fetch info for ${obs.latinName}`, err);
                             }
@@ -306,10 +311,6 @@ const App: React.FC = () => {
                     await Promise.all(
                         Array.from({ length: Math.min(ENRICHMENT_CONCURRENCY, obsWithMissingImages.length) }, () => worker())
                     );
-
-                    if (hasUpdates && mounted) {
-                        setObservations(updatedObs);
-                    }
                 }
             } catch (e: unknown) {
                 if (!mounted) return;
@@ -318,13 +319,14 @@ const App: React.FC = () => {
                 setError(`Erreur connexion: ${errorMsg}.`);
                 logger.error(e);
                 setIsLoading(false);
+                hasLoadedOnceRef.current = true;
                 refreshOfflineQueueSnapshot();
             }
         };
         loadData();
 
         return () => { mounted = false; };
-    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, user, pushToast]);
+    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, userId, pushToast]);
 
     const handleAddObservation = useCallback(() => {
         setEditingObservation(null);

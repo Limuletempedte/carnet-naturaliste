@@ -168,6 +168,29 @@ describe('backupService.createBackup', () => {
         await expect(readBackupZip(file)).rejects.toThrow(/data\.json/);
     });
 
+    it('H2 : la sauvegarde conserve les coordonnées GPS EXACTES des espèces sensibles', async () => {
+        // Régression audit v2 : data.json est la source de restauration ; l'obfuscation
+        // VP-11 y détruisait la précision au round-trip create → restore (merge).
+        const sensitiveObs = {
+            ...makeObservation(),
+            status: Status.CR,
+            gps: { lat: 43.61234, lon: 3.87654 },
+            photo: undefined,
+        };
+
+        const { createBackup } = await import('../services/backupService');
+        await createBackup([sensitiveObs]);
+
+        const savedBlob = saveAsMock.mock.calls[0][0] as Blob;
+        const zip = await JSZip.loadAsync(savedBlob);
+        const data = JSON.parse(await zip.files['data.json'].async('string'));
+
+        expect(data[0].gps.lat).toBe(43.61234);
+        expect(data[0].gps.lon).toBe(3.87654);
+        // Le NOTICE doit avertir que le backup est fidèle (à ne pas partager publiquement)
+        expect(Object.keys(zip.files)).toContain('NOTICE_GPS.txt');
+    });
+
     it('SR-01 : round-trip create → readBackupZip restaure les observations', async () => {
         const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=';
         const sourceObs = { ...makeObservation(), photo: dataUrl, wikipediaImage: undefined, sound: undefined };
