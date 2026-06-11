@@ -242,6 +242,36 @@ export const bulkUpsertObservationsInCache = (newObservations: Observation[]): v
     setLocalCache(Array.from(mergedById.values()));
 };
 
+/**
+ * Audit v2 (H8) : réconcilie une liste d'observations issue du serveur avec la
+ * file d'attente hors-ligne. Les actions non synchronisées (créations/éditions
+ * en attente ou en échec, suppressions en attente) sont appliquées sur la liste
+ * serveur pour que l'utilisateur ne « perde » jamais de vue ses saisies
+ * hors-ligne — y compris après une synchronisation partielle, où `getObservations`
+ * écrasait sinon la ré-injection SI-12 avec les seules données serveur.
+ */
+export const applyPendingQueueToObservations = (observations: Observation[]): Observation[] => {
+    let queue: OfflineQueueItem[];
+    try {
+        queue = getOfflineQueueSnapshot();
+    } catch {
+        return observations;
+    }
+    if (queue.length === 0) return observations;
+
+    const byId = new Map(observations.map(obs => [obs.id, obs] as [string, Observation]));
+    for (const item of queue) {
+        if (item.action === 'DELETE') {
+            const id = (item.payload as { id: string }).id;
+            if (id) byId.delete(id);
+        } else {
+            const obs = item.payload as Observation;
+            if (obs?.id) byId.set(obs.id, obs);
+        }
+    }
+    return Array.from(byId.values());
+};
+
 export const getObservations = async (): Promise<ObservationLoadResult> => {
     ensureStorageNamespace();
     const cached = getLocalCache();
@@ -273,7 +303,9 @@ export const getObservations = async (): Promise<ObservationLoadResult> => {
             if (data.length < PAGE_SIZE) break;
         }
 
-        const observations = rows.map(mapToObservation);
+        // H8 : réconcilier avec la file hors-ligne avant de remplacer le cache,
+        // pour ne pas faire disparaître les observations en attente/en échec.
+        const observations = applyPendingQueueToObservations(rows.map(mapToObservation));
         setLocalCache(observations);
         return { observations, source: 'remote' };
     } catch (error: unknown) {

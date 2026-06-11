@@ -171,6 +171,40 @@ beforeEach(() => {
     });
 });
 
+describe('storageService.applyPendingQueueToObservations (H8)', () => {
+    it('réinjecte les INSERT/UPDATE en attente et retire les DELETE en attente', async () => {
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+
+        const serverA = makeObservation('aaaaaaaa-e89b-42d3-a456-426614174000');
+        const serverB = makeObservation('bbbbbbbb-e89b-42d3-a456-426614174000');
+        const pendingInsert = { ...makeObservation('temp-123'), speciesName: 'Rougegorge' };
+        const editedA = { ...serverA, comment: 'édité hors-ligne' };
+
+        const now = Date.now();
+        localStorage.setItem('offline_sync_queue:user-1', JSON.stringify([
+            { id: 'q1', action: 'INSERT', payload: pendingInsert, timestamp: now + 1 },
+            { id: 'q2', action: 'UPDATE', payload: editedA, timestamp: now + 2 },
+            { id: 'q3', action: 'DELETE', payload: { id: serverB.id }, timestamp: now + 3 },
+        ]));
+
+        const result = storageService.applyPendingQueueToObservations([serverA, serverB]);
+        const byId = new Map(result.map(o => [o.id, o]));
+
+        // INSERT en attente visible, UPDATE appliqué, DELETE retiré
+        expect(byId.get('temp-123')?.speciesName).toBe('Rougegorge');
+        expect(byId.get(serverA.id)?.comment).toBe('édité hors-ligne');
+        expect(byId.has(serverB.id)).toBe(false);
+    });
+
+    it('renvoie la liste inchangée quand la file est vide', async () => {
+        const storageService = await import('../services/storageService');
+        storageService.setStorageNamespace('user-1');
+        const obs = [makeObservation('aaaaaaaa-e89b-42d3-a456-426614174000')];
+        expect(storageService.applyPendingQueueToObservations(obs)).toEqual(obs);
+    });
+});
+
 describe('storageService.getObservations', () => {
     it('returns remote observations and applies user_id filter', async () => {
         vi.stubGlobal('navigator', { onLine: true });
