@@ -12,6 +12,7 @@ import ExportScopeDialog from './ExportScopeDialog';
 import { ObservationExportType, runObservationExport } from '../services/observationExportService';
 import { buildImportPersistencePlan, ImportConflictMode } from '../services/importPolicy';
 import { logger } from '../utils/logger';
+import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from '../utils/chunkLoadError';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -140,7 +141,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
             await runObservationExport(pendingExportType, exportData);
         } catch (error) {
             logger.error('Erreur export:', error);
-            onToast('error', "Impossible d'exporter les observations.");
+            onToast('error', isChunkLoadError(error) ? CHUNK_LOAD_USER_MESSAGE : "Impossible d'exporter les observations.");
         } finally {
             setIsExporting(false);
         }
@@ -192,7 +193,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 setPreviewImportResult(importResult);
             } catch (error) {
                 logger.error("Erreur d'import:", error);
-                onToast('error', "Erreur lors de l'importation du fichier. Vérifiez le format.");
+                onToast('error', isChunkLoadError(error) ? CHUNK_LOAD_USER_MESSAGE : "Erreur lors de l'importation du fichier. Vérifiez le format.");
             } finally {
                 setIsParsingImport(false);
             }
