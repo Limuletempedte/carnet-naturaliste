@@ -1,5 +1,5 @@
 import { isUuid, generateUUID } from '../utils/uuidUtils';
-import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition } from '../types';
+import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
 import { dateToIsoLocal, isIsoDateString } from '../utils/dateUtils';
 import { logger } from '../utils/logger';
 
@@ -129,7 +129,12 @@ const HEADER_ALIASES: Record<string, string[]> = {
     observationCondition: ["Condition d'observation", 'Condition observation', 'Condition'],
     comportement: ['Comportement', 'Comportement observé', 'Behavior', 'Behaviour'],
     comment: ['Commentaire', 'Commentaires', 'Comment', 'Notes', 'Note'],
-    weather: ['Conditions météo', 'Conditions meteo', 'Météo', 'Meteo', 'Weather']
+    weather: ['Conditions météo', 'Conditions meteo', 'Météo', 'Meteo', 'Weather'],
+    // H12 : colonnes écrites par l'export mais absentes ici → un aller-retour
+    // export→import les remettait à null en base (mode merge). Alias ajoutés.
+    habitat: ['Habitat'],
+    phenology: ['Phénologie', 'Phenologie', 'Phenology'],
+    observers: ['Observateurs', 'Observers', 'Observateur']
 };
 
 const buildNormalizedRow = (rawRow: Record<string, unknown>): Record<string, unknown> => {
@@ -366,6 +371,19 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                     const comportement = mapEnum(getRowValue(row, HEADER_ALIASES.comportement), Comportement, {}, Comportement.UNKNOWN, 'Comportement', rowNum, warnings);
                     const weather = mapEnum(getRowValue(row, HEADER_ALIASES.weather), WeatherCondition, WEATHER_SYNONYMS, WeatherCondition.UNKNOWN, 'Conditions météo', rowNum, warnings);
 
+                    // H12 : habitat / phénologie / observateurs (optionnels — undefined
+                    // si absents ou non reconnus, comme l'import JSON, pour ne pas
+                    // écraser des valeurs existantes).
+                    const habitatRaw = toText(getRowValue(row, HEADER_ALIASES.habitat));
+                    const habitat = (Object.values(Habitat) as string[]).includes(habitatRaw) ? (habitatRaw as Habitat) : undefined;
+                    const phenologyRaw = toText(getRowValue(row, HEADER_ALIASES.phenology));
+                    const phenology = (Object.values(Phenology) as string[]).includes(phenologyRaw) ? (phenologyRaw as Phenology) : undefined;
+                    const observersText = toText(getRowValue(row, HEADER_ALIASES.observers));
+                    const observersList = observersText
+                        ? observersText.split('|').map(s => s.trim()).filter(s => s.length > 0)
+                        : [];
+                    const observers = observersList.length > 0 ? observersList : undefined;
+
                     // ── Validation ──
                     const speciesName = toText(getRowValue(row, HEADER_ALIASES.speciesName));
                     if (!speciesName) {
@@ -417,7 +435,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                         latinName: toText(getRowValue(row, HEADER_ALIASES.latinName)),
                         taxonomicGroup,
                         date: parseDate(getRowValue(row, HEADER_ALIASES.date), rowNum, warnings),
-                        time: parseTime(getRowValue(row, HEADER_ALIASES.time)),
+                        time: parseTime(getRowValue(row, HEADER_ALIASES.time), rowNum, warnings),
                         count: safeCount,
                         maleCount: hasValidBreakdown ? (safeMaleCount ?? undefined) : undefined,
                         femaleCount: hasValidBreakdown ? (safeFemaleCount ?? undefined) : undefined,
@@ -437,6 +455,9 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
                         comportement,
                         weather,
                         comment: toText(getRowValue(row, HEADER_ALIASES.comment)),
+                        habitat,
+                        phenology,
+                        observers,
                         photo: undefined,
                         sound: undefined,
                         wikipediaImage: undefined
@@ -616,13 +637,18 @@ const mapTaxonomicGroup = (value: unknown, rowNum: number, warnings: ImportWarni
 
 // ─── Time Parser ────────────────────────────────────────────────────────────
 
-const parseTime = (value: unknown): string => {
-    if (!value && value !== 0) return '12:00';
+const parseTime = (value: unknown, rowNum?: number, warnings?: ImportWarning[]): string => {
+    // BUG-07 : heure absente -> '' (heure inconnue), comme l'import JSON. Ne pas
+    // fabriquer « 12:00 » : une heure d'observation inventée est une donnée
+    // scientifique fausse (phénologie, pics d'activité).
+    if (!value && value !== 0) return '';
 
-    // Handle JS Date object (from cellDates: true)
+    // Handle JS Date object (from cellDates: true).
+    // H11 : ExcelJS désérialise en Date basée UTC (epoch Date.UTC) — lire avec
+    // getUTC* pour ne pas décaler l'heure selon le fuseau de l'utilisateur.
     if (value instanceof Date) {
-        const h = value.getHours().toString().padStart(2, '0');
-        const m = value.getMinutes().toString().padStart(2, '0');
+        const h = value.getUTCHours().toString().padStart(2, '0');
+        const m = value.getUTCMinutes().toString().padStart(2, '0');
         return `${h}:${m}`;
     }
 
@@ -648,7 +674,12 @@ const parseTime = (value: unknown): string => {
         return `${parts[0].padStart(2, '0')}:${(parts[1] || '00').padStart(2, '0')}`;
     }
 
-    return '12:00';
+    // BUG-07 : format non reconnu -> heure inconnue ('') + avertissement, plutôt
+    // qu'une heure fabriquée silencieusement.
+    if (warnings && rowNum !== undefined) {
+        warnings.push({ row: rowNum, field: 'Heure', message: 'Format d\'heure non reconnu, heure laissée vide', original: str, applied: '(vide)' });
+    }
+    return '';
 };
 
 // ─── Date Parser ────────────────────────────────────────────────────────────
@@ -660,13 +691,16 @@ const isValidIsoDate = (value: string): boolean => {
 const parseDate = (excelDate: unknown, rowNum: number, warnings: ImportWarning[]): string => {
     if (!excelDate) return todayIso();
 
-    // Handle JS Date object (from cellDates: true)
+    // Handle JS Date object (from cellDates: true).
+    // H11 : ExcelJS désérialise en Date basée UTC — lire avec getUTC* (comme la
+    // branche « serial » ci-dessous) pour ne pas décaler la date d'un jour selon
+    // le fuseau (ex. UTC-4 : « 10/06/2026 » devenait « 09/06/2026 »).
     if (excelDate instanceof Date) {
         if (Number.isNaN(excelDate.getTime())) {
             warnings.push({ row: rowNum, field: 'Date', message: 'Date invalide, fallback date du jour', original: String(excelDate), applied: todayIso() });
             return todayIso();
         }
-        return dateToIsoLocal(excelDate);
+        return `${excelDate.getUTCFullYear()}-${String(excelDate.getUTCMonth() + 1).padStart(2, '0')}-${String(excelDate.getUTCDate()).padStart(2, '0')}`;
     }
 
     // Handle Excel serial date (fallback)
