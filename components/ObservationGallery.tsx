@@ -23,6 +23,17 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
         });
     };
 
+    // UIA-13 : état vide explicite (la grille vide laissait un écran blanc).
+    if (observations.length === 0) {
+        return (
+            <div className={`text-center py-16 text-gray-400 dark:text-gray-500 ${isMobileView ? 'pb-24' : ''}`}>
+                <div className="text-5xl mb-3" aria-hidden="true">🖼️</div>
+                <p className="font-medium">Aucune photo à afficher.</p>
+                <p className="text-sm mt-1">Modifiez vos filtres ou ajoutez une observation avec une photo.</p>
+            </div>
+        );
+    }
+
     return (
         <div className={`grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-8 animate-fadeIn ${isMobileView ? 'pb-24' : ''}`}>
             {observations.map(obs => {

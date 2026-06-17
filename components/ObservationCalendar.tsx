@@ -84,11 +84,12 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
                             <table className="w-full text-left border-collapse">
                                 <thead className="bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5">
                                     <tr>
-                                        <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Groupe</th>
+                                        <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 hidden md:table-cell">Groupe</th>
                                         <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Espèce</th>
                                         <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 hidden md:table-cell">Lieu</th>
                                         <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 hidden lg:table-cell">Date</th>
                                         <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Nb.</th>
+                                        <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-center">Statut</th>
                                         <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-center">Actions</th>
                                     </tr>
                                 </thead>

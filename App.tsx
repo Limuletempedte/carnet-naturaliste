@@ -21,6 +21,7 @@ import StatsExportDialog, { StatsExportDialogState } from './components/StatsExp
 import ErrorBoundary from './components/ErrorBoundary';
 import StorageConsentBanner from './components/StorageConsentBanner';
 import { logger } from './utils/logger';
+import { mapUserFacingError } from './utils/userFacingError';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from './utils/chunkLoadError';
 import { safeGet, safeSet } from './utils/safeStorage';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
@@ -30,6 +31,7 @@ import { useBadgeUnlockToasts } from './hooks/useBadgeUnlockToasts';
 type AppConnectionStatus = 'online' | 'offline' | 'degraded';
 
 import Login from './components/Auth/Login';
+import ResetPassword from './components/Auth/ResetPassword';
 import UserProfile from './components/Auth/UserProfile';
 import { useAuth } from './contexts/AuthContext';
 import { supabaseConfigError } from './supabaseClient';
@@ -55,7 +57,7 @@ const ENRICHMENT_BATCH_LIMIT = 10;
 const ENRICHMENT_CONCURRENCY = 3;
 
 const App: React.FC = () => {
-    const { user, loading: authLoading, isOffline } = useAuth();
+    const { user, loading: authLoading, isOffline, passwordRecovery } = useAuth();
     // Identité stable de l'utilisateur (cf. H6) : l'objet `user` change de
     // référence à chaque rafraîchissement de token, pas son id.
     const userId = user?.id;
@@ -315,9 +317,8 @@ const App: React.FC = () => {
                 }
             } catch (e: unknown) {
                 if (!mounted) return;
-                const errorMsg = e instanceof Error ? e.message : "Erreur inconnue";
                 setConnectionStatus(navigator.onLine ? 'degraded' : 'offline');
-                setError(`Erreur connexion: ${errorMsg}.`);
+                setError(mapUserFacingError(e));
                 logger.error(e);
                 setIsLoading(false);
                 hasLoadedOnceRef.current = true;
@@ -383,8 +384,7 @@ const App: React.FC = () => {
             setEditingObservation(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (e) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            setError(`Erreur lors de la sauvegarde de l'observation: ${errorMessage}`);
+            setError(`Échec de l'enregistrement de l'observation. ${mapUserFacingError(e)}`);
             logger.error(e);
             throw e;
         }
@@ -561,6 +561,12 @@ const App: React.FC = () => {
         return <div role="status" className="flex items-center justify-center h-screen"><p>Chargement de la session...</p></div>;
     }
 
+    // H13 : retour du lien « mot de passe oublié » — priorité sur tout le reste,
+    // même si une session de récupération a été créée (user non nul).
+    if (passwordRecovery) {
+        return <ResetPassword />;
+    }
+
     if (!user) {
         // If offline and no cached user, show offline message instead of broken Login form
         if (isOffline) {
@@ -624,12 +630,15 @@ const App: React.FC = () => {
                 <header className="fixed top-0 left-0 right-0 z-50 px-4 py-2 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
                     <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} />
                     <div className="flex items-center gap-1.5">
-                        {/* Server Status Mobile */}
-                        <div className={`w-2.5 h-2.5 rounded-full ${statusColorClass}`} title={statusTitle}></div>
+                        {/* Server Status Mobile — pastille + libellé accessible (UIA-05) */}
+                        <span role="status" className="flex items-center" title={statusTitle}>
+                            <span aria-hidden="true" className={`w-2.5 h-2.5 rounded-full ${statusColorClass}`}></span>
+                            <span className="sr-only">{statusTitle}</span>
+                        </span>
 
                         <button
                             onClick={handleOpenSyncCenter}
-                            className="relative p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="relative p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
                             aria-label="Centre de synchronisation"
                         >
@@ -643,7 +652,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsAdvancedFilterOpen(true)}
-                            className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
                             aria-label="Filtres avancés"
                         >
@@ -652,7 +661,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleRefresh}
-                            className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
                             aria-label="Actualiser les données"
                         >
@@ -661,7 +670,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
-                            className="p-1.5 rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? 'Mode Clair' : 'Mode Sombre'}
                             aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
@@ -680,9 +689,10 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${statusBadgeClass}`} title={statusTitle}>
-                            <div className={`w-2 h-2 rounded-full ${statusColorClass}`}></div>
+                        <div role="status" className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${statusBadgeClass}`} title={statusTitle}>
+                            <div aria-hidden="true" className={`w-2 h-2 rounded-full ${statusColorClass}`}></div>
                             <span className="text-xs font-bold hidden md:inline">{statusLabel}</span>
+                            <span className="sr-only">{statusTitle}</span>
                         </div>
 
                         <button

@@ -17,6 +17,10 @@ interface AuthContextType {
     user: User | null;
     loading: boolean;
     isOffline: boolean;
+    // True après le clic sur un lien « mot de passe oublié » (événement Supabase
+    // PASSWORD_RECOVERY) : l'app doit alors afficher l'écran de nouveau mot de passe.
+    passwordRecovery: boolean;
+    clearPasswordRecovery: () => void;
     signOut: () => Promise<void>;
 }
 
@@ -25,6 +29,8 @@ const AuthContext = createContext<AuthContextType>({
     user: null,
     loading: true,
     isOffline: false,
+    passwordRecovery: false,
+    clearPasswordRecovery: () => { },
     signOut: async () => { },
 });
 
@@ -100,6 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
+    const [passwordRecovery, setPasswordRecovery] = useState(false);
 
     useEffect(() => {
         if (!isSupabaseConfigured) {
@@ -150,7 +157,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         initSession();
 
         // Listen for auth changes (works when back online)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'PASSWORD_RECOVERY') {
+                setPasswordRecovery(true);
+            }
             setSession(session);
             setUser(session?.user ?? null);
             cacheSession(session);
@@ -191,9 +201,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [user]);
 
+    const clearPasswordRecovery = useCallback(() => setPasswordRecovery(false), []);
+
     const contextValue = useMemo(
-        () => ({ session, user, loading, isOffline, signOut }),
-        [session, user, loading, isOffline, signOut]
+        () => ({ session, user, loading, isOffline, passwordRecovery, clearPasswordRecovery, signOut }),
+        [session, user, loading, isOffline, passwordRecovery, clearPasswordRecovery, signOut]
     );
 
     return (

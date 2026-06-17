@@ -24,6 +24,10 @@ const FilterBar: React.FC<FilterBarProps> = ({
     isMobileView,
     searchId = 'search-input-filter'
 }) => {
+    // Identifiants dérivés du searchId pour rester uniques si plusieurs FilterBar
+    // coexistent (UIA-06 : labels Année/Statut sans association).
+    const yearId = `${searchId}-year`;
+    const statusId = `${searchId}-status`;
     return (
         <div className={`${isMobileView ? 'p-3 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md rounded-xl shadow-sm space-y-2' : 'p-6 bg-white/60 dark:bg-nature-dark-surface/60 backdrop-blur-sm rounded-xl shadow-lg space-y-6'}`}>
             <div className={`grid ${isMobileView ? 'grid-cols-2 gap-2' : 'grid-cols-1 md:grid-cols-3 gap-6'} items-end`}>
@@ -39,8 +43,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
                     />
                 </div>
                 <div>
-                    <label className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Année</label>
+                    <label htmlFor={yearId} className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Année</label>
                     <select
+                        id={yearId}
                         value={yearFilter}
                         onChange={e => onYearChange(e.target.value)}
                         className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'p-1.5 text-xs' : 'p-2'}`}
@@ -52,8 +57,9 @@ const FilterBar: React.FC<FilterBarProps> = ({
                     </select>
                 </div>
                 <div>
-                    <label className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Statut</label>
+                    <label htmlFor={statusId} className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Statut</label>
                     <select
+                        id={statusId}
                         value={statusFilter}
                         onChange={e => onStatusChange(e.target.value as Status | 'all')}
                         className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'p-1.5 text-xs' : 'p-2'}`}

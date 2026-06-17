@@ -256,6 +256,25 @@ const ObservationList: React.FC<ObservationListProps> = ({
         return '';
     };
 
+    // UIA-03 : en-tête de tri accessible (clavier + aria-sort). Le <button> rend
+    // le tri activable au clavier et l'attribut aria-sort annonce l'état courant
+    // aux lecteurs d'écran (le ▲/▼ visuel reste pour les voyants).
+    const SortableHeader: React.FC<{ sortKey: keyof Observation; label: string; thClassName?: string }> = ({ sortKey, label, thClassName = '' }) => {
+        const isActive = sortConfig.key === sortKey;
+        const ariaSort = isActive ? (sortConfig.direction === 'ascending' ? 'ascending' : 'descending') : 'none';
+        return (
+            <th aria-sort={ariaSort} className={`p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 ${thClassName}`}>
+                <button
+                    type="button"
+                    onClick={() => requestSort(sortKey)}
+                    className="w-full text-left uppercase hover:text-nature-green transition-colors"
+                >
+                    {label}{getSortIndicator(sortKey)}
+                </button>
+            </th>
+        );
+    };
+
     const buttonClass = "px-4 py-2 rounded-full shadow-ios font-semibold text-white transition-all duration-300 transform hover:scale-105 active:scale-95";
     const primaryButtonClass = `${buttonClass} bg-nature-green hover:bg-green-600`;
     const secondaryButtonClass = `${buttonClass} bg-nature-gray hover:bg-gray-600`;
@@ -305,16 +324,16 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <h2 className="text-lg font-bold text-nature-dark dark:text-white">Observations</h2>
                             <div className="flex gap-2">
                                 {selectedIds.size > 0 && (
-                                    <button onClick={handleDeleteSelected} disabled={isBulkDeleting} className="bg-red-500 text-white p-2 rounded-full shadow-lg disabled:opacity-50">
+                                    <button onClick={handleDeleteSelected} disabled={isBulkDeleting} aria-label={`Supprimer la sélection (${selectedIds.size})`} title="Supprimer la sélection" className="bg-red-500 text-white p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full shadow-lg disabled:opacity-50">
                                         {isBulkDeleting ? (
-                                            <span className="animate-spin block w-6 h-6">⏳</span>
+                                            <span className="animate-spin block w-6 h-6" aria-hidden="true">⏳</span>
                                         ) : (
-                                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                            <svg aria-hidden="true" className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                         )}
                                     </button>
                                 )}
-                                <button onClick={onAdd} className="bg-nature-green text-white p-2 rounded-full shadow-lg">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                                <button onClick={onAdd} aria-label="Ajouter une observation" title="Ajouter une observation" className="bg-nature-green text-white p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full shadow-lg">
+                                    <svg aria-hidden="true" className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
                                 </button>
                             </div>
                         </div>
@@ -439,6 +458,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <input
                                 type="text"
                                 placeholder="Rechercher..."
+                                aria-label="Rechercher une observation"
                                 value={searchTerm}
                                 onChange={e => onSearchChange(e.target.value)}
                                 className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-white/10 rounded-xl text-sm focus:ring-2 focus:ring-nature-green/50 outline-none dark:text-white"
@@ -457,6 +477,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <select
                                 value={yearFilter}
                                 onChange={e => onYearChange(e.target.value)}
+                                aria-label="Filtrer par année"
                                 className="bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap dark:text-white border-none outline-none"
                             >
                                 <option value="all">Toutes années</option>
@@ -467,6 +488,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <select
                                 value={statusFilter}
                                 onChange={e => onStatusChange(e.target.value as Status | 'all')}
+                                aria-label="Filtrer par statut de conservation"
                                 className="bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap dark:text-white border-none outline-none"
                             >
                                 <option value="all">Tous statuts</option>
@@ -718,24 +740,12 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                             className="w-5 h-5 rounded border-gray-300 text-nature-green focus:ring-nature-green cursor-pointer"
                                         />
                                     </th>
-                                    <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('taxonomicGroup')}>
-                                        Groupe {getSortIndicator('taxonomicGroup')}
-                                    </th>
-                                    <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('speciesName')}>
-                                        Espèce {getSortIndicator('speciesName')}
-                                    </th>
-                                    <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 hidden md:table-cell cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('location')}>
-                                        Lieu {getSortIndicator('location')}
-                                    </th>
-                                    <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 hidden lg:table-cell cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('date')}>
-                                        Date {getSortIndicator('date')}
-                                    </th>
-                                    <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('count')}>
-                                        Nb. {getSortIndicator('count')}
-                                    </th>
-                                    <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 cursor-pointer hover:text-nature-green transition-colors" onClick={() => requestSort('status')}>
-                                        Statut {getSortIndicator('status')}
-                                    </th>
+                                    <SortableHeader sortKey="taxonomicGroup" label="Groupe" />
+                                    <SortableHeader sortKey="speciesName" label="Espèce" />
+                                    <SortableHeader sortKey="location" label="Lieu" thClassName="hidden md:table-cell" />
+                                    <SortableHeader sortKey="date" label="Date" thClassName="hidden lg:table-cell" />
+                                    <SortableHeader sortKey="count" label="Nb." />
+                                    <SortableHeader sortKey="status" label="Statut" />
                                     <th className="p-6 text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 text-center no-print">Actions</th>
                                 </tr>
                             </thead>
