@@ -1,0 +1,18 @@
+# Veille des dépendances (audit v2, lot C — constat DEP-04 : aucune veille,
+# 15 vulnérabilités accumulées silencieusement).
+#
+# Budget GitHub Actions ≈ 0 $ : une seule PR groupée par mois au maximum
+# pour les mises à jour de versions. Les correctifs de SÉCURITÉ (Dependabot
+# security updates, activés dans les réglages du dépôt) arrivent eux en PR
+# dédiées dès qu'une vulnérabilité corrigeable est publiée.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    groups:
+      dependances:
+        patterns:
+          - "*"

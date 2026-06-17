@@ -22,6 +22,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import StorageConsentBanner from './components/StorageConsentBanner';
 import { logger } from './utils/logger';
 import { mapUserFacingError } from './utils/userFacingError';
+import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from './utils/chunkLoadError';
 import { safeGet, safeSet } from './utils/safeStorage';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { useStorageQuotaToasts } from './hooks/useStorageQuotaToasts';
@@ -450,7 +451,7 @@ const App: React.FC = () => {
             setStatsExportDialogState(createDefaultStatsExportDialogState());
         } catch (e) {
             removeToast(toastId);
-            const message = e instanceof Error ? e.message : String(e);
+            const message = isChunkLoadError(e) ? CHUNK_LOAD_USER_MESSAGE : (e instanceof Error ? e.message : String(e));
             pushToast('error', `Échec de l'export Stats: ${message}`, 9000);
         } finally {
             setIsExportingStats(false);
@@ -485,7 +486,7 @@ const App: React.FC = () => {
             );
         } catch (backupError) {
             removeToast(backupToastId);
-            const message = backupError instanceof Error ? backupError.message : String(backupError);
+            const message = isChunkLoadError(backupError) ? CHUNK_LOAD_USER_MESSAGE : (backupError instanceof Error ? backupError.message : String(backupError));
             pushToast('error', `Échec de la sauvegarde ZIP: ${message}`, 9000);
             logger.error('Backup ZIP error:', backupError);
         } finally {

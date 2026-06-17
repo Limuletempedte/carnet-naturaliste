@@ -21,7 +21,7 @@ const buildSupabaseStoragePattern = (supabaseUrl?: string): RegExp | null => {
 
 type RuntimeCachingRule = {
   urlPattern: RegExp | (({ url }: { url: URL }) => boolean);
-  handler: 'StaleWhileRevalidate';
+  handler: 'StaleWhileRevalidate' | 'CacheFirst';
   options: {
     cacheName: string;
     expiration: {
@@ -38,6 +38,25 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const supabaseStoragePattern = buildSupabaseStoragePattern(env.VITE_SUPABASE_URL);
   const runtimeCaching: RuntimeCachingRule[] = [
+    {
+      // Audit v2 (lot C) : les chunks vendeur lourds sont exclus du precache
+      // (globIgnores PE-11) mais n'étaient couverts par AUCUNE règle runtime :
+      // après un redéploiement Vercel, un onglet déjà ouvert demandant
+      // vendor-exceljs-<ancien hash>.js recevait un 404 (export/import cassés).
+      // CacheFirst est sûr : les noms de fichiers sont hashés (immuables).
+      urlPattern: ({ url }: { url: URL }) => /^\/assets\/vendor-.*\.js$/.test(url.pathname),
+      handler: 'CacheFirst' as const,
+      options: {
+        cacheName: 'vendor-chunks-cache',
+        expiration: {
+          maxEntries: 12,
+          maxAgeSeconds: 60 * 60 * 24 * 30 // 30 jours
+        },
+        cacheableResponse: {
+          statuses: [0, 200]
+        }
+      }
+    },
     {
       urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/Logo/'),
       handler: 'StaleWhileRevalidate' as const,
@@ -80,7 +99,11 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
-        registerType: 'autoUpdate',
+        // Audit v2 (lot C, H14) : 'autoUpdate' rendait la bannière CO-06
+        // (index.tsx onNeedRefresh) inopérante — onNeedRefresh n'est appelé
+        // qu'en mode 'prompt' — et un déploiement pouvait recharger l'app
+        // pendant une saisie. En 'prompt', l'utilisateur choisit le moment.
+        registerType: 'prompt',
         // CO-01: masked-icon.svg n'existe pas (feature Safari pinned-tab deprecated), retire de la liste.
         includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
         manifest: {
