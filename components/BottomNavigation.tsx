@@ -48,9 +48,9 @@ const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentView, onView
                         role="tab"
                         aria-selected={currentView === tab.id}
                         onClick={() => onViewChange(tab.id)}
-                        className={`flex flex-col items-center p-2 transition-all duration-300 ${currentView === tab.id
-                                ? 'text-nature-green transform scale-110'
-                                : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+                        className={`flex flex-col items-center justify-center min-w-[44px] min-h-[44px] p-2 transition-all duration-300 ${currentView === tab.id
+                                ? 'text-nature-green-text dark:text-nature-green transform scale-110'
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                             }`}
                     >
                         <span aria-hidden="true" className="mb-1">{tab.icon}</span>

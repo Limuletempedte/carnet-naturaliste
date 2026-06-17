@@ -8,6 +8,7 @@ import { uploadPhoto } from '../services/storageService';
 import { isSafeImageUrl } from '../utils/urlUtils';
 import { generateUUID } from '../utils/uuidUtils';
 import { logger } from '../utils/logger';
+import { mapUserFacingError } from '../utils/userFacingError';
 import { createEmptyFormData, mapObservationToFormData } from '../utils/observationFormHelpers';
 import { useObserverTags } from '../hooks/useObserverTags';
 import { useSpeciesLookup } from '../hooks/useSpeciesLookup';
@@ -133,7 +134,21 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const validate = () => {
         const nextErrors = validateObservationForm(formData);
         setErrors(nextErrors);
-        return Object.keys(nextErrors).length === 0;
+        return nextErrors;
+    };
+
+    // UIA-10 : amène l'utilisateur au premier champ invalide (le formulaire est
+    // long et la barre « Sauvegarder » est en bas — sinon le clic semble sans effet).
+    const focusFirstError = (validationErrors: Record<string, string>) => {
+        const firstKey = Object.keys(validationErrors)[0];
+        if (!firstKey) return;
+        const field = document.getElementById(firstKey) ?? document.getElementById(`${firstKey}-error`);
+        if (field) {
+            field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (typeof (field as HTMLElement & { focus?: () => void }).focus === 'function') {
+                (field as HTMLElement).focus({ preventScroll: true });
+            }
+        }
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -262,7 +277,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isUploading) return;
-        if (!validate()) {
+        const validationErrors = validate();
+        if (Object.keys(validationErrors).length > 0) {
+            onToast('warning', 'Veuillez corriger les champs en rouge avant d\'enregistrer.');
+            focusFirstError(validationErrors);
             return;
         }
 
@@ -302,8 +320,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             }
         } catch (error) {
             logger.error("Erreur lors de l'envoi:", error);
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            onToast('error', `Erreur lors de l'envoi de l'observation: ${errorMessage}`);
+            onToast('error', `Échec de l'enregistrement. ${mapUserFacingError(error)}`);
         } finally {
             setIsUploading(false);
         }
