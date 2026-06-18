@@ -563,7 +563,23 @@ const stripHtml = (html: string): string =>
 // GBIF class/order → TaxonomicGroup mapping
 // ---------------------------------------------------------------------------
 
-const mapGBIFToTaxonomicGroup = (
+// Familles végétales quasi entièrement ligneuses (arbres + arbustes) → groupe « Arbre ».
+// On EXCLUT volontairement les familles très mixtes (Rosaceae, Fabaceae, Caprifoliaceae,
+// Berberidaceae, Malvaceae, Rutaceae, Vitaceae) : leurs membres herbacés seraient mal
+// classés. Les arbustes de ces familles restent en « Botanique » et sont corrigeables à
+// la main dans le formulaire (le choix manuel n'est jamais écrasé par la détection auto).
+const WOODY_FAMILIES = new Set<string>([
+    'Fagaceae', 'Betulaceae', 'Salicaceae', 'Sapindaceae', 'Aceraceae', 'Hippocastanaceae',
+    'Juglandaceae', 'Ulmaceae', 'Platanaceae', 'Oleaceae', 'Cornaceae', 'Aquifoliaceae',
+    'Buxaceae', 'Ericaceae', 'Tiliaceae', 'Magnoliaceae', 'Lauraceae', 'Myrtaceae',
+    'Anacardiaceae', 'Rhamnaceae', 'Celastraceae', 'Elaeagnaceae', 'Tamaricaceae',
+    'Grossulariaceae', 'Hydrangeaceae', 'Cistaceae', 'Thymelaeaceae', 'Adoxaceae',
+    'Bignoniaceae',
+    // Conifères : déjà couverts par la classe (Pinopsida…), listés ici par sécurité.
+    'Pinaceae', 'Cupressaceae', 'Taxaceae',
+]);
+
+export const mapGBIFToTaxonomicGroup = (
     gbifClass?: string,
     order?: string,
     family?: string,
@@ -649,13 +665,18 @@ const mapGBIFToTaxonomicGroup = (
         case 'Bivalvia':
             return TaxonomicGroup.BIVALVE;
 
-        case 'Magnoliopsida':
-        case 'Liliopsida':
-        case 'Polypodiopsida':
+        // Gymnospermes : intégralement ligneux (conifères, cycas, ginkgo) → Arbre.
         case 'Pinopsida':
         case 'Gnetopsida':
         case 'Cycadopsida':
+        case 'Ginkgoopsida':
+            return TaxonomicGroup.TREE;
+
+        case 'Magnoliopsida':
+        case 'Liliopsida':
+        case 'Polypodiopsida':
             if (family === 'Orchidaceae') return TaxonomicGroup.ORCHID;
+            if (family && WOODY_FAMILIES.has(family)) return TaxonomicGroup.TREE;
             return TaxonomicGroup.BOTANY;
 
         case 'Bryopsida':
@@ -674,7 +695,10 @@ const mapGBIFToTaxonomicGroup = (
             return TaxonomicGroup.LICHEN;
 
         default:
-            if (kingdom === 'Plantae') return TaxonomicGroup.BOTANY;
+            if (kingdom === 'Plantae') {
+                if (family && WOODY_FAMILIES.has(family)) return TaxonomicGroup.TREE;
+                return TaxonomicGroup.BOTANY;
+            }
             if (kingdom === 'Fungi') return TaxonomicGroup.MUSHROOM;
             if (kingdom === 'Animalia') return TaxonomicGroup.OTHER;
             return undefined;

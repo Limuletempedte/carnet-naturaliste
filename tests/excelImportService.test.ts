@@ -38,6 +38,20 @@ describe('excelImportService taxonomic mapping', () => {
         ]);
     });
 
+    it('maps arbre keywords to TaxonomicGroup.TREE (BUG-E3)', async () => {
+        const file = await createExcelFile([
+            { "Nom de l'espèce": 'Chêne', 'Groupe taxonomique': 'arbre', Date: '2026-03-01', Heure: '12:00', Nombre: 1 },
+            { "Nom de l'espèce": 'Pin', 'Groupe taxonomique': 'Arbres', Date: '2026-03-01', Heure: '12:00', Nombre: 1 },
+            { "Nom de l'espèce": 'Saule', 'Groupe taxonomique': 'sylviculture', Date: '2026-03-01', Heure: '12:00', Nombre: 1 }
+        ]);
+
+        const result = await parseExcel(file);
+        const groups = result.observations.map(obs => obs.taxonomicGroup);
+
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(groups).toEqual([TaxonomicGroup.TREE, TaxonomicGroup.TREE, TaxonomicGroup.TREE]);
+    });
+
     it('maps lichen keyword to TaxonomicGroup.LICHEN', async () => {
         const file = await createExcelFile([
             { "Nom de l'espèce": 'Lichen X', 'Groupe taxonomique': 'lichen', Date: '2026-03-01', Heure: '12:00', Nombre: 1 }
