@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseJsonImport } from '../services/jsonImportValidation';
 import { generateUUID } from '../utils/uuidUtils';
+import { TaxonomicGroup } from '../types';
 
 const makeValidRow = (overrides: Record<string, unknown> = {}) => ({
     id: generateUUID(),
@@ -38,5 +39,13 @@ describe('jsonImportValidation URL sanitization (SE-03)', () => {
         const url = 'https://example.com/photo.jpg';
         const result = parseJsonImport([makeValidRow({ photo: url })]);
         expect(result.observations[0]?.photo).toBe(url);
+    });
+});
+
+describe('jsonImportValidation — groupe Arbre (BUG-E3, anti-régression import)', () => {
+    it("accepte une observation dont le groupe taxonomique est 'Arbres'", () => {
+        const result = parseJsonImport([makeValidRow({ taxonomicGroup: 'Arbres' })]);
+        expect(result.observations).toHaveLength(1);
+        expect(result.observations[0]?.taxonomicGroup).toBe(TaxonomicGroup.TREE);
     });
 });

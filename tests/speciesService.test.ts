@@ -1,5 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearSpeciesInfoCache, fetchSpeciesInfo, suggestSpeciesAutocomplete } from '../services/speciesService';
+import { clearSpeciesInfoCache, fetchSpeciesInfo, mapGBIFToTaxonomicGroup, suggestSpeciesAutocomplete } from '../services/speciesService';
+import { TaxonomicGroup } from '../types';
+
+describe('mapGBIFToTaxonomicGroup — classement des plantes ligneuses (BUG-E3)', () => {
+    it('classe les conifères (gymnospermes) en Arbre', () => {
+        expect(mapGBIFToTaxonomicGroup('Pinopsida', 'Pinales', 'Pinaceae', 'Plantae')).toBe(TaxonomicGroup.TREE);
+    });
+
+    it('classe une famille franchement ligneuse (chêne, Fagaceae) en Arbre', () => {
+        expect(mapGBIFToTaxonomicGroup('Magnoliopsida', 'Fagales', 'Fagaceae', 'Plantae')).toBe(TaxonomicGroup.TREE);
+    });
+
+    it('laisse une plante herbacée (Asteraceae) en Botanique (pas de faux positif)', () => {
+        expect(mapGBIFToTaxonomicGroup('Magnoliopsida', 'Asterales', 'Asteraceae', 'Plantae')).toBe(TaxonomicGroup.BOTANY);
+    });
+
+    it('garde les orchidées en Orchidées (non-régression)', () => {
+        expect(mapGBIFToTaxonomicGroup('Liliopsida', 'Asparagales', 'Orchidaceae', 'Plantae')).toBe(TaxonomicGroup.ORCHID);
+    });
+
+    it('utilise la famille ligneuse même sans classe connue (fallback Plantae)', () => {
+        expect(mapGBIFToTaxonomicGroup(undefined, undefined, 'Betulaceae', 'Plantae')).toBe(TaxonomicGroup.TREE);
+    });
+});
 
 const fetchMock = vi.fn();
 
