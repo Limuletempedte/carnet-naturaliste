@@ -319,7 +319,10 @@ const ObservationList: React.FC<ObservationListProps> = ({
             <>
                 <div className="space-y-4 pb-20">
                     {/* Mobile Header & Filters */}
-                    <div className="bg-white/90 dark:bg-nature-dark-bg/90 backdrop-blur-md p-3 -mx-4 shadow-sm space-y-2">
+                    {/* -mx-2 annule pile le px-2 du <main> mobile (8 px) pour un bandeau
+                        pleine largeur. -mx-4 (ancien) dépassait de 16 px → page plus large
+                        que l'écran = léger zoom + bords coupés sur iOS ET Android (BUG-E5). */}
+                    <div className="bg-white/90 dark:bg-nature-dark-bg/90 backdrop-blur-md p-3 -mx-2 shadow-sm space-y-2">
                         <div className="flex justify-between items-center">
                             <h2 className="text-lg font-bold text-nature-dark dark:text-white">Observations</h2>
                             <div className="flex gap-2">
@@ -461,7 +464,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 aria-label="Rechercher une observation"
                                 value={searchTerm}
                                 onChange={e => onSearchChange(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-white/10 rounded-xl text-sm focus:ring-2 focus:ring-nature-green/50 outline-none dark:text-white"
+                                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-white/10 rounded-xl text-base focus:ring-2 focus:ring-nature-green/50 outline-none dark:text-white"
                             />
                             <svg className="w-4 h-4 text-gray-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         </div>
@@ -478,7 +481,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 value={yearFilter}
                                 onChange={e => onYearChange(e.target.value)}
                                 aria-label="Filtrer par année"
-                                className="bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap dark:text-white border-none outline-none"
+                                className="bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-lg text-base font-medium whitespace-nowrap dark:text-white border-none outline-none"
                             >
                                 <option value="all">Toutes années</option>
                                 {availableYears.map(year => (
@@ -489,7 +492,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 value={statusFilter}
                                 onChange={e => onStatusChange(e.target.value as Status | 'all')}
                                 aria-label="Filtrer par statut de conservation"
-                                className="bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap dark:text-white border-none outline-none"
+                                className="bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-lg text-base font-medium whitespace-nowrap dark:text-white border-none outline-none"
                             >
                                 <option value="all">Tous statuts</option>
                                 {Object.values(Status).map(status => (

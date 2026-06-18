@@ -108,6 +108,9 @@ const App: React.FC = () => {
         startTransition(() => {
             setView(nextView);
         });
+        // Repart en haut à chaque changement d'onglet : sinon la position de scroll
+        // d'une vue « fuit » sur la suivante (BUG-E2).
+        window.scrollTo({ top: 0 });
     }, []);
 
     const pushToast = useCallback((type: ToastType, message: string, durationMs = 4500) => {
@@ -622,8 +625,11 @@ const App: React.FC = () => {
         </div>
     );
 
+    // overflow-x-clip (mobile) : garde-fou anti-débordement horizontal — empêche tout
+    // élément trop large de rendre la page « zoomée »/coupée (cf. BUG-E5). Variante
+    // `clip` (et non `hidden`) : n'affecte ni le scroll vertical ni les `fixed` (header/nav).
     return (
-        <div className={`min-h-screen font-sans transition-colors duration-500 bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface text-nature-dark dark:text-nature-dark-text ${isMobileView ? 'pb-20' : ''}`}>
+        <div className={`min-h-screen font-sans transition-colors duration-500 bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface text-nature-dark dark:text-nature-dark-text ${isMobileView ? 'pb-20 overflow-x-clip' : ''}`}>
 
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
