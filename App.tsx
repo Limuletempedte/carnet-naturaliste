@@ -108,6 +108,9 @@ const App: React.FC = () => {
         startTransition(() => {
             setView(nextView);
         });
+        // Repart en haut à chaque changement d'onglet : sinon la position de scroll
+        // d'une vue « fuit » sur la suivante (BUG-E2).
+        window.scrollTo({ top: 0 });
     }, []);
 
     const pushToast = useCallback((type: ToastType, message: string, durationMs = 4500) => {

@@ -197,13 +197,14 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 detectRetina: true
             }).addTo(mapRef.current);
         } else {
-            // Placeholder {r} = "@2x" sur HiDPI pour OSM et OpenTopoMap (supportés),
-            // omis pour ArcGIS (pas de tuiles 2x) — detectRetina compense via chargement
-            // de tuiles voisines en zoom supérieur.
+            // Pas de placeholder {r} ici : ni OSM ni OpenTopoMap ne servent de tuiles
+            // @2x, donc {r}→"@2x" provoquerait des 404 (fond gris) sur écran haute
+            // densité (BUG-E1). detectRetina charge des tuiles standard plus fines à la
+            // place. ArcGIS (satellite) n'a jamais eu de {r}, d'où son bon fonctionnement.
             const configs = {
-                osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}{r}.png', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 19 },
+                osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 19 },
                 satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri', maxZoom: 18 },
-                topo: { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}{r}.png', attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>', maxZoom: 17 }
+                topo: { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>', maxZoom: 17 }
             };
             const config = configs[activeLayer];
             tileLayerRef.current = L.tileLayer(config.url, {
