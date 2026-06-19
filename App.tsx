@@ -20,6 +20,7 @@ import AdvancedFilterDialog from './components/AdvancedFilterDialog';
 import StatsExportDialog, { StatsExportDialogState } from './components/StatsExportDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import StorageConsentBanner from './components/StorageConsentBanner';
+import InstallPromptHint from './components/InstallPromptHint';
 import { logger } from './utils/logger';
 import { mapUserFacingError } from './utils/userFacingError';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from './utils/chunkLoadError';
@@ -27,6 +28,7 @@ import { safeGet, safeSet } from './utils/safeStorage';
 import { useOfflineQueue } from './hooks/useOfflineQueue';
 import { useStorageQuotaToasts } from './hooks/useStorageQuotaToasts';
 import { useBadgeUnlockToasts } from './hooks/useBadgeUnlockToasts';
+import { useInstallPrompt } from './hooks/useInstallPrompt';
 
 type AppConnectionStatus = 'online' | 'offline' | 'degraded';
 
@@ -75,7 +77,6 @@ const App: React.FC = () => {
     const [confirmation, setConfirmation] = useState<{ title: string; message: string; onConfirm: () => void; } | null>(null);
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
-    const [isCreatingBackup, setIsCreatingBackup] = useState(false);
     const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -188,6 +189,22 @@ const App: React.FC = () => {
 
     useStorageQuotaToasts(pushToast);
     useBadgeUnlockToasts(observations, pushToast);
+
+    // PWA — installation de l'application (bouton desktop + item menu compte mobile + invite).
+    const { canInstall, isStandalone, isIOS, promptInstall } = useInstallPrompt();
+    const showInstallOption = (canInstall || isIOS) && !isStandalone;
+    const handleInstallClick = useCallback(async () => {
+        if (canInstall) {
+            const outcome = await promptInstall();
+            if (outcome === 'unavailable') {
+                pushToast('info', "L'installation n'est pas disponible sur ce navigateur.", 6000);
+            }
+            return;
+        }
+        if (isIOS) {
+            pushToast('info', "Pour installer : touchez « Partager » puis « Sur l'écran d'accueil ».", 9000);
+        }
+    }, [canInstall, isIOS, promptInstall, pushToast]);
 
     // VP-18 — afficher le tour guidé au 1er run pour un utilisateur connecté sans observation
     useEffect(() => {
@@ -461,51 +478,35 @@ const App: React.FC = () => {
         }
     };
 
-    const handleCreateBackup = async () => {
-        if (isCreatingBackup) return;
-        setIsCreatingBackup(true);
-        const backupToastId = pushToast('info', 'Préparation de la sauvegarde ZIP...', 0);
+    const handleExportUserData = async () => {
+        const exportToastId = pushToast('info', 'Export de vos données (RGPD)...', 0);
         try {
             const { createBackup, estimateBackupSize, BACKUP_WARN_SIZE_BYTES } = await import('./services/backupService');
-            // SR-04 : au-delà du seuil, proposer d'exclure les images.
+            // SR-04 : au-delà du seuil, proposer d'exclure les images du ZIP.
             const estimated = estimateBackupSize(observations);
             let includeImages = true;
             if (estimated > BACKUP_WARN_SIZE_BYTES) {
                 const mb = Math.round(estimated / (1024 * 1024));
                 includeImages = window.confirm(
-                    `La sauvegarde risque d'être volumineuse (~${mb} Mo). Cliquez sur OK pour l'inclure tout de même, ou sur Annuler pour la créer sans les images.`,
+                    `L'export risque d'être volumineux (~${mb} Mo). Cliquez sur OK pour inclure les images, ou sur Annuler pour exporter sans les images.`,
                 );
             }
             const result = await createBackup(observations, { includeImages });
-            removeToast(backupToastId);
+            removeToast(exportToastId);
             pushToast(
                 result.failedImages > 0 ? 'warning' : 'success',
                 result.skippedImages
-                    ? `ZIP créé sans les images (${result.fileName}).`
+                    ? `Export RGPD créé sans les images (${result.fileName}).`
                     : result.failedImages > 0
-                        ? `ZIP créé (${result.fileName}) avec ${result.failedImages} image(s) manquante(s).`
-                        : `ZIP créé (${result.fileName}).`,
+                        ? `Export RGPD terminé (${result.fileName}) avec ${result.failedImages} image(s) manquante(s).`
+                        : `Export RGPD terminé : ${result.fileName}.`,
                 7000
             );
-        } catch (backupError) {
-            removeToast(backupToastId);
-            const message = isChunkLoadError(backupError) ? CHUNK_LOAD_USER_MESSAGE : (backupError instanceof Error ? backupError.message : String(backupError));
-            pushToast('error', `Échec de la sauvegarde ZIP: ${message}`, 9000);
-            logger.error('Backup ZIP error:', backupError);
-        } finally {
-            setIsCreatingBackup(false);
-        }
-    };
-
-    const handleExportUserData = async () => {
-        pushToast('info', 'Export de vos données (RGPD)...', 0);
-        try {
-            const { createBackup } = await import('./services/backupService');
-            const result = await createBackup(observations);
-            pushToast('success', `Export RGPD terminé : ${result.fileName}`, 7000);
         } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            removeToast(exportToastId);
+            const message = isChunkLoadError(err) ? CHUNK_LOAD_USER_MESSAGE : (err instanceof Error ? err.message : String(err));
             pushToast('error', `Échec de l'export : ${message}`, 9000);
+            logger.error('Export RGPD error:', err);
         }
     };
 
@@ -634,7 +635,7 @@ const App: React.FC = () => {
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
                 <header className="fixed top-0 left-0 right-0 z-50 px-4 py-2 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
-                    <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} />
+                    <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     <div className="flex items-center gap-1.5">
                         {/* Server Status Mobile — pastille + libellé accessible (UIA-05) */}
                         <span role="status" className="flex items-center" title={statusTitle}>
@@ -843,18 +844,16 @@ const App: React.FC = () => {
                 onConfirm={() => void handleConfirmStatsExport()}
             />
 
-            {/* Backup Button (Desktop Only) */}
-            {!isMobileView && (
+            {/* Bouton d'installation PWA (Desktop) — remplace l'ancien bouton de
+                sauvegarde ZIP, désormais redondant avec l'export du menu compte. */}
+            {!isMobileView && canInstall && (
                 <button
-                    onClick={handleCreateBackup}
-                    disabled={isCreatingBackup}
-                    className="fixed bottom-6 left-6 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-nature-dark dark:text-white disabled:opacity-60 disabled:cursor-not-allowed"
-                    title="Sauvegarde Complète (ZIP)"
+                    onClick={() => void handleInstallClick()}
+                    className="fixed bottom-6 left-6 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-nature-dark dark:text-white"
+                    title="Installer l'application"
+                    aria-label="Installer l'application"
                 >
-                    {isCreatingBackup
-                        ? <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                        : <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-                    }
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 7.5h-.75A2.25 2.25 0 004.5 9.75v7.5a2.25 2.25 0 002.25 2.25h7.5a2.25 2.25 0 002.25-2.25v-7.5a2.25 2.25 0 00-2.25-2.25h-.75m-6 3 3 3m0 0 3-3m-3 3V3" /></svg>
                 </button>
             )}
 
@@ -1060,6 +1059,7 @@ const App: React.FC = () => {
                 </footer>
             </main>
             <StorageConsentBanner />
+            <InstallPromptHint canInstall={canInstall} isStandalone={isStandalone} onInstall={() => void handleInstallClick()} />
             {showOnboarding && (
                 <Suspense fallback={null}>
                     <OnboardingTour isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
