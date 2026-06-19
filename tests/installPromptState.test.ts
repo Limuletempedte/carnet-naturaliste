@@ -26,38 +26,38 @@ describe('shouldShowHint', () => {
     const now = 1_700_000_000_000;
 
     it('affiche dans le cas nominal (installable, jamais vu)', () => {
-        expect(shouldShowHint(baseState(), now, { isStandalone: false, canInstall: true })).toBe(true);
+        expect(shouldShowHint(baseState(), now, { isStandalone: false, eligible: true })).toBe(true);
     });
 
     it("n'affiche pas si l'app est déjà installée (standalone)", () => {
-        expect(shouldShowHint(baseState(), now, { isStandalone: true, canInstall: true })).toBe(false);
+        expect(shouldShowHint(baseState(), now, { isStandalone: true, eligible: true })).toBe(false);
     });
 
-    it("n'affiche pas si aucun prompt natif n'est disponible", () => {
-        expect(shouldShowHint(baseState(), now, { isStandalone: false, canInstall: false })).toBe(false);
+    it("n'affiche pas si le contexte est indéterminé (non éligible)", () => {
+        expect(shouldShowHint(baseState(), now, { isStandalone: false, eligible: false })).toBe(false);
     });
 
     it("n'affiche pas si déjà installé", () => {
-        expect(shouldShowHint(baseState({ installed: true }), now, { isStandalone: false, canInstall: true })).toBe(false);
+        expect(shouldShowHint(baseState({ installed: true }), now, { isStandalone: false, eligible: true })).toBe(false);
     });
 
     it("n'affiche pas si rejeté explicitement", () => {
-        expect(shouldShowHint(baseState({ dismissed: true }), now, { isStandalone: false, canInstall: true })).toBe(false);
+        expect(shouldShowHint(baseState({ dismissed: true }), now, { isStandalone: false, eligible: true })).toBe(false);
     });
 
     it("n'affiche pas au-delà du quota d'affichages", () => {
         const state = baseState({ shownCount: MAX_HINT_SHOWS, firstSeenAt: now });
-        expect(shouldShowHint(state, now, { isStandalone: false, canInstall: true })).toBe(false);
+        expect(shouldShowHint(state, now, { isStandalone: false, eligible: true })).toBe(false);
     });
 
     it("n'affiche plus après le délai d'expiration (refus implicite)", () => {
         const state = baseState({ firstSeenAt: now - (HINT_EXPIRY_DAYS + 1) * DAY_MS, shownCount: 1 });
-        expect(shouldShowHint(state, now, { isStandalone: false, canInstall: true })).toBe(false);
+        expect(shouldShowHint(state, now, { isStandalone: false, eligible: true })).toBe(false);
     });
 
     it('affiche encore juste avant le délai d’expiration', () => {
         const state = baseState({ firstSeenAt: now - (HINT_EXPIRY_DAYS - 1) * DAY_MS, shownCount: 1 });
-        expect(shouldShowHint(state, now, { isStandalone: false, canInstall: true })).toBe(true);
+        expect(shouldShowHint(state, now, { isStandalone: false, eligible: true })).toBe(true);
     });
 });
 

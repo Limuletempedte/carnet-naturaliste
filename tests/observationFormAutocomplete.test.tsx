@@ -429,7 +429,9 @@ describe('ObservationForm species enrichment', () => {
 
         await user.clear(speciesInput);
         await user.type(speciesInput, 'Seconde');
-        expect(await screen.findByText('INFO SECONDE')).toBeTruthy(); // 2e requête résolue et appliquée
+        // Timeout aligné sur le waitFor ci-dessus (3000 ms) : la recherche d'espèce est
+        // debouncée, 1000 ms (défaut) peut déborder sous charge → test instable.
+        expect(await screen.findByText('INFO SECONDE', undefined, { timeout: 3000 })).toBeTruthy(); // 2e requête résolue et appliquée
 
         // On résout maintenant la 1re requête (obsolète) : elle doit être ignorée.
         resolveFirst();

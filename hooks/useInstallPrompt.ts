@@ -12,6 +12,18 @@ interface BeforeInstallPromptEvent extends Event {
 
 export type InstallOutcome = 'accepted' | 'dismissed' | 'unavailable';
 
+/**
+ * Comment l'utilisateur peut installer l'app selon son navigateur :
+ *  - 'prompt'      : prompt natif disponible (Chrome/Edge desktop, Android Chromium).
+ *  - 'ios'         : iPhone/iPad → ajout manuel via Safari (Partager → écran d'accueil).
+ *  - 'unsupported' : navigateur intégré (app Google, réseaux sociaux…) ou navigateur
+ *                    sans installation PWA (Firefox, Safari de bureau) → conseiller un
+ *                    navigateur compatible.
+ *  - 'pending'     : indéterminé (probablement Chromium, prompt pas encore émis) — on
+ *                    n'affirme RIEN, pour ne pas conseiller à tort de changer de navigateur.
+ */
+export type InstallMode = 'pending' | 'prompt' | 'ios' | 'unsupported';
+
 const detectStandalone = (): boolean => {
     if (typeof window === 'undefined') return false;
     const mqStandalone = window.matchMedia?.('(display-mode: standalone)').matches ?? false;
@@ -28,6 +40,26 @@ const detectIOS = (): boolean => {
     return /iPad|iPhone|iPod/.test(ua) || iPadOS;
 };
 
+/**
+ * Classe le contexte AVANT tout événement `beforeinstallprompt`.
+ * Renvoie 'pending' dès qu'on ne peut rien affirmer (probable Chromium) : on
+ * attend alors l'éventuel prompt plutôt que de dire à tort « changez de navigateur ».
+ */
+const classifyInstallContext = (): InstallMode => {
+    if (typeof navigator === 'undefined') return 'pending';
+    if (detectIOS()) return 'ios';
+    const ua = navigator.userAgent || '';
+    // Navigateurs intégrés dans une app (pas d'installation possible).
+    const inApp = /; wv\)|FBAN|FBAV|FB_IAB|Instagram|Line\/|Twitter|Snapchat|Pinterest|GSA\/|MicroMessenger|musical_ly|TikTok/i.test(ua);
+    if (inApp) return 'unsupported';
+    // Navigateurs sans installation PWA standard.
+    const isFirefox = /Firefox\/|FxiOS\//.test(ua);
+    const isDesktopSafari = /Safari\//.test(ua) && !/Chrome\/|Chromium\/|CriOS\/|Edg\/|OPR\/|Android/.test(ua);
+    if (isFirefox || isDesktopSafari) return 'unsupported';
+    // Probablement Chromium : on attend l'éventuel prompt (sinon on reste silencieux).
+    return 'pending';
+};
+
 export interface InstallPromptApi {
     /** Un prompt natif d'installation est disponible (et l'app n'est pas déjà installée). */
     canInstall: boolean;
@@ -35,6 +67,8 @@ export interface InstallPromptApi {
     isStandalone: boolean;
     /** iOS : installation manuelle uniquement (pas de prompt natif). */
     isIOS: boolean;
+    /** Comment l'utilisateur peut installer selon son navigateur (cf. InstallMode). */
+    installMode: InstallMode;
     /** Déclenche le prompt natif. Renvoie le choix de l'utilisateur, ou 'unavailable'. */
     promptInstall: () => Promise<InstallOutcome>;
 }
@@ -47,6 +81,7 @@ export const useInstallPrompt = (): InstallPromptApi => {
     const deferredRef = useRef<BeforeInstallPromptEvent | null>(null);
     const [canInstall, setCanInstall] = useState(false);
     const [isStandalone, setIsStandalone] = useState<boolean>(detectStandalone);
+    const [installMode, setInstallMode] = useState<InstallMode>(classifyInstallContext);
     const isIOS = detectIOS();
 
     useEffect(() => {
@@ -55,6 +90,7 @@ export const useInstallPrompt = (): InstallPromptApi => {
             e.preventDefault();
             deferredRef.current = e as BeforeInstallPromptEvent;
             setCanInstall(true);
+            setInstallMode('prompt');
         };
         const onInstalled = () => {
             deferredRef.current = null;
@@ -89,5 +125,5 @@ export const useInstallPrompt = (): InstallPromptApi => {
         return choice.outcome;
     }, []);
 
-    return { canInstall: canInstall && !isStandalone, isStandalone, isIOS, promptInstall };
+    return { canInstall: canInstall && !isStandalone, isStandalone, isIOS, installMode, promptInstall };
 };

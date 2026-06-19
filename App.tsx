@@ -191,8 +191,8 @@ const App: React.FC = () => {
     useBadgeUnlockToasts(observations, pushToast);
 
     // PWA — installation de l'application (bouton desktop + item menu compte mobile + invite).
-    const { canInstall, isStandalone, isIOS, promptInstall } = useInstallPrompt();
-    const showInstallOption = (canInstall || isIOS) && !isStandalone;
+    const { canInstall, isStandalone, installMode, promptInstall } = useInstallPrompt();
+    const showInstallOption = !isStandalone && installMode !== 'pending';
     const handleInstallClick = useCallback(async () => {
         if (canInstall) {
             const outcome = await promptInstall();
@@ -201,10 +201,14 @@ const App: React.FC = () => {
             }
             return;
         }
-        if (isIOS) {
-            pushToast('info', "Pour installer : touchez « Partager » puis « Sur l'écran d'accueil ».", 9000);
+        if (installMode === 'ios') {
+            pushToast('info', "Sur iPhone/iPad, depuis Safari : touchez « Partager » puis « Sur l'écran d'accueil ».", 9000);
+            return;
         }
-    }, [canInstall, isIOS, promptInstall, pushToast]);
+        if (installMode === 'unsupported') {
+            pushToast('info', "Pour installer l'app, ouvrez ce site dans Chrome, Edge, Brave, Opera ou Samsung Internet.", 9000);
+        }
+    }, [canInstall, installMode, promptInstall, pushToast]);
 
     // VP-18 — afficher le tour guidé au 1er run pour un utilisateur connecté sans observation
     useEffect(() => {
@@ -1059,7 +1063,7 @@ const App: React.FC = () => {
                 </footer>
             </main>
             <StorageConsentBanner />
-            <InstallPromptHint canInstall={canInstall} isStandalone={isStandalone} onInstall={() => void handleInstallClick()} />
+            <InstallPromptHint installMode={installMode} isStandalone={isStandalone} onInstall={() => void handleInstallClick()} />
             {showOnboarding && (
                 <Suspense fallback={null}>
                     <OnboardingTour isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
