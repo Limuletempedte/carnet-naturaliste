@@ -68,10 +68,10 @@ export const setInstallHintState = (state: InstallHintState): void => {
 export const shouldShowHint = (
     state: InstallHintState,
     now: number,
-    opts: { isStandalone: boolean; canInstall: boolean },
+    opts: { isStandalone: boolean; eligible: boolean },
 ): boolean => {
     if (opts.isStandalone) return false;          // déjà installée
-    if (!opts.canInstall) return false;           // aucun prompt natif disponible
+    if (!opts.eligible) return false;             // rien à proposer (mode indéterminé)
     if (state.installed || state.dismissed) return false;
     if (state.shownCount >= MAX_HINT_SHOWS) return false;
     if (state.firstSeenAt !== null && now - state.firstSeenAt > HINT_EXPIRY_DAYS * DAY_MS) {

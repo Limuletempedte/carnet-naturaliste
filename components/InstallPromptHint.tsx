@@ -5,37 +5,46 @@ import {
     markHintShown,
     shouldShowHint,
 } from '../utils/installPromptState';
+import type { InstallMode } from '../hooks/useInstallPrompt';
 
 interface InstallPromptHintProps {
-    /** Un prompt natif d'installation est disponible. */
-    canInstall: boolean;
+    /** Comment l'utilisateur peut installer selon son navigateur. */
+    installMode: InstallMode;
     /** L'app est déjà installée (standalone). */
     isStandalone: boolean;
-    /** Déclenche l'installation (prompt natif). */
+    /** Déclenche l'installation (prompt natif) — utilisé uniquement en mode 'prompt'. */
     onInstall: () => void;
 }
+
+const BODY_BY_MODE: Record<Exclude<InstallMode, 'pending'>, string> = {
+    prompt: "Accès plus rapide et utilisation hors-ligne, directement depuis votre écran d'accueil.",
+    ios: "Sur iPhone/iPad, depuis Safari : touchez « Partager » puis « Sur l'écran d'accueil ».",
+    unsupported: "Votre navigateur ne permet pas l'installation. Ouvrez ce site dans Chrome, Edge, Brave, Opera ou Samsung Internet pour pouvoir l'installer.",
+};
 
 /**
  * Invite discrète « Installer l'application ».
  * Affichée près de l'affordance d'installation, en respectant les règles
  * anti-harcèlement (cf. utils/installPromptState : 3 fois max, 14 jours, etc.).
+ * Le message s'adapte au navigateur (prompt natif, iOS, navigateur non compatible).
  * Modèle visuel : StorageConsentBanner.
  */
-const InstallPromptHint: React.FC<InstallPromptHintProps> = ({ canInstall, isStandalone, onInstall }) => {
+const InstallPromptHint: React.FC<InstallPromptHintProps> = ({ installMode, isStandalone, onInstall }) => {
     const [visible, setVisible] = useState(false);
     const decidedRef = useRef(false);
 
     useEffect(() => {
         if (decidedRef.current || visible) return;
+        const eligible = installMode !== 'pending';
         const now = Date.now();
-        if (shouldShowHint(getInstallHintState(), now, { isStandalone, canInstall })) {
+        if (shouldShowHint(getInstallHintState(), now, { isStandalone, eligible })) {
             decidedRef.current = true;
             markHintShown(now);
             setVisible(true);
         }
-    }, [canInstall, isStandalone, visible]);
+    }, [installMode, isStandalone, visible]);
 
-    if (!visible) return null;
+    if (!visible || installMode === 'pending') return null;
 
     const handleDismiss = () => {
         markHintDismissed();
@@ -62,21 +71,32 @@ const InstallPromptHint: React.FC<InstallPromptHintProps> = ({ canInstall, isSta
                 <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-nature-dark dark:text-white">Installer l'application</p>
                     <p className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">
-                        Accès plus rapide et utilisation hors-ligne, directement depuis votre écran d'accueil.
+                        {BODY_BY_MODE[installMode]}
                     </p>
                     <div className="flex items-center gap-2 mt-3">
-                        <button
-                            onClick={handleInstall}
-                            className="px-4 py-1.5 rounded-lg bg-nature-green hover:bg-nature-dark text-white text-sm font-semibold shadow-sm transition-all"
-                        >
-                            Installer
-                        </button>
-                        <button
-                            onClick={handleDismiss}
-                            className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                        >
-                            Plus tard
-                        </button>
+                        {installMode === 'prompt' ? (
+                            <>
+                                <button
+                                    onClick={handleInstall}
+                                    className="px-4 py-1.5 rounded-lg bg-nature-green hover:bg-nature-dark text-white text-sm font-semibold shadow-sm transition-all"
+                                >
+                                    Installer
+                                </button>
+                                <button
+                                    onClick={handleDismiss}
+                                    className="px-3 py-1.5 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+                                >
+                                    Non merci
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                onClick={handleDismiss}
+                                className="px-4 py-1.5 rounded-lg bg-nature-green hover:bg-nature-dark text-white text-sm font-semibold shadow-sm transition-all"
+                            >
+                                Compris
+                            </button>
+                        )}
                     </div>
                 </div>
                 <button
