@@ -31,10 +31,10 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 
 export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
     <LegalPageWrapper title="Politique de confidentialite" onBack={onBack}>
-        <p className="text-xs text-gray-400 italic">Derniere mise a jour : [A COMPLETER]</p>
+        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 19 juin 2026</p>
 
         <Section title="1. Responsable du traitement">
-            <p>[A COMPLETER — Nom, adresse, email du responsable de traitement]</p>
+            <p>Eliot SERIVE — editeur particulier (service non commercial). Contact : carnetnaturaliste.app@gmail.com</p>
         </Section>
 
         <Section title="2. Donnees collectees">
@@ -85,7 +85,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
 
         <Section title="7. Contact DPO / RGPD">
             <p>Pour toute demande relative a vos donnees personnelles :</p>
-            <p className="font-medium">[A COMPLETER — email du DPO ou du responsable RGPD]</p>
+            <p className="font-medium">carnetnaturaliste.app@gmail.com</p>
         </Section>
 
         <Section title="8. Cookies et stockage local">
@@ -106,10 +106,10 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
 
 export const TermsOfService: React.FC<LegalPageProps> = ({ onBack }) => (
     <LegalPageWrapper title="Conditions Generales d'Utilisation" onBack={onBack}>
-        <p className="text-xs text-gray-400 italic">Derniere mise a jour : [A COMPLETER]</p>
+        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 19 juin 2026</p>
 
         <Section title="1. Objet">
-            <p>Les presentes Conditions Generales d'Utilisation (CGU) regissent l'acces et l'utilisation de l'application Carnet Naturaliste, editee par [A COMPLETER].</p>
+            <p>Les presentes Conditions Generales d'Utilisation (CGU) regissent l'acces et l'utilisation de l'application Carnet Naturaliste, editee par Eliot SERIVE.</p>
         </Section>
 
         <Section title="2. Acces au service">
@@ -136,7 +136,7 @@ export const TermsOfService: React.FC<LegalPageProps> = ({ onBack }) => (
         </Section>
 
         <Section title="5. Propriete intellectuelle">
-            <p>L'application et son code source sont la propriete de [A COMPLETER]. Les observations saisies par l'utilisateur restent sa propriete.</p>
+            <p>L'application et son code source sont la propriete de Eliot SERIVE. Les observations saisies par l'utilisateur restent sa propriete.</p>
             <p>Les images provenant d'iNaturalist ou de Wikipedia sont soumises a leurs licences respectives (generalement Creative Commons).</p>
         </Section>
 
@@ -153,7 +153,7 @@ export const TermsOfService: React.FC<LegalPageProps> = ({ onBack }) => (
         </Section>
 
         <Section title="9. Droit applicable">
-            <p>Les presentes CGU sont soumises au droit francais. Tout litige sera porte devant les tribunaux competents de [A COMPLETER].</p>
+            <p>Les presentes CGU sont soumises au droit francais. Tout litige sera porte devant les tribunaux francais competents.</p>
         </Section>
     </LegalPageWrapper>
 );
@@ -162,11 +162,12 @@ export const MentionsLegales: React.FC<LegalPageProps> = ({ onBack }) => (
     <LegalPageWrapper title="Mentions legales" onBack={onBack}>
         <Section title="Editeur">
             <ul className="list-none space-y-1">
-                <li><strong>Nom / Raison sociale</strong> : [A COMPLETER]</li>
-                <li><strong>Adresse</strong> : [A COMPLETER]</li>
-                <li><strong>Email</strong> : [A COMPLETER]</li>
-                <li><strong>SIRET</strong> : [A COMPLETER]</li>
-                <li><strong>Directeur de la publication</strong> : [A COMPLETER]</li>
+                <li><strong>Nom</strong> : Eliot SERIVE</li>
+                <li><strong>Statut</strong> : editeur particulier (service non commercial)</li>
+                <li><strong>Adresse</strong> : communiquee a l'hebergeur ; disponible sur demande a carnetnaturaliste.app@gmail.com</li>
+                <li><strong>Email</strong> : carnetnaturaliste.app@gmail.com</li>
+                <li><strong>SIRET</strong> : non applicable (editeur particulier non commercial)</li>
+                <li><strong>Directeur de la publication</strong> : Eliot SERIVE</li>
             </ul>
         </Section>
 
