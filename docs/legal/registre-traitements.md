@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
-**Responsable de traitement** : [A COMPLETER — nom, adresse, contact DPO]
-**Date de mise a jour** : 2026-04-11
+**Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
+**Date de mise a jour** : 2026-06-19
 
 ---
 
@@ -80,4 +80,4 @@
 Les utilisateurs peuvent exercer leurs droits (acces, rectification, effacement, portabilite, opposition) :
 - **Export** : bouton "Exporter mes donnees" dans le menu profil
 - **Suppression** : bouton "Supprimer mon compte" (suppression cascade de toutes les donnees)
-- **Contact DPO** : [A COMPLETER]
+- **Contact DPO** : carnetnaturaliste.app@gmail.com
