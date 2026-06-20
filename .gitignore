@@ -51,3 +51,7 @@ supabase/.temp/
 
 # Artefacts Playwright MCP locaux
 .playwright-mcp/
+
+# Captures d'écran de bugs / matériel de travail local (ne JAMAIS committer)
+bug-screenshots-local/
+Photos-*.zip
