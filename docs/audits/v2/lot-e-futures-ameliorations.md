@@ -6,14 +6,28 @@
 > **Supabase est limité** (offre gratuite : ~500 Mo base, 1 Go stockage fichiers).
 > Statut : 🟢 validé · 🟡 à expliquer/décider · ⚪ en réserve · 🐛 bug.
 
+## ✅ État au 2026-06-20 (mise à jour)
+
+**Tout le travail prévu du lot E est livré et en prod** (PR #24 → #32). Récap détaillé :
+[`RECAP-lot-E.md`](./RECAP-lot-E.md).
+- **Bugs** : BUG-E1, BUG-E2, BUG-E3, BUG-E5 ✅ corrigés ; BUG-E4 ❌ abandonné.
+- **Features livrées** (au-delà des idées EE ci-dessous) : installation PWA (notification +
+  bouton permanent du menu compte), invite d'avis par mail, mentions légales remplies,
+  RGPD région (eu-central-1, UE).
+- **Reste = idées en réserve** : EE-1 à EE-5 (ci-dessous) + propositions d'audit non
+  retenues pour l'instant.
+- Finalisation (branche `fix/pwa-install-icons-tests`) : icônes PWA compressées + tests
+  composants + ce récap.
+
 ## Bugs remontés par Eliot (priorité — un bug passe avant une fonctionnalité)
 
-| # | Bug | Confirmé ? | Note |
-|---|---|---|---|
-| BUG-E1 | 🐛 Onglet Carte : fonds **topo et standard** restent gris (tuiles non chargées), **satellite OK** | ✅ confirmé (captures) | Fonctionne pourtant dans le formulaire d'observation → la config carte diffère entre `ObservationMap` (onglet) et `MapInput` (formulaire). |
-| BUG-E2 | 🐛 **Scroll partagé** entre onglets : descendre dans un onglet fait descendre les autres (ex. revenir sur Liste en bas de page) | à reproduire | Position de scroll non réinitialisée au changement de vue. |
-| BUG-E3 | 🐛 Les **données « arbre »** ne se classent pas automatiquement dans le groupe Arbre | à vérifier | Auto-détection du groupe taxonomique à revoir pour la flore ligneuse. |
-| BUG-E4 | 🐛 Le **ZIP** (sauvegarde) à améliorer | à préciser | Détail à clarifier : poids ? contenu ? lisibilité ? |
+| # | Bug | Statut (màj 2026-06-20) |
+|---|---|---|
+| BUG-E1 | Onglet Carte : fonds **topo et standard** gris (satellite OK) | ✅ **CORRIGÉ** (PR #24) — retiré le `{r}` des URLs OSM/OpenTopoMap |
+| BUG-E2 | **Scroll partagé** entre onglets | ✅ **CORRIGÉ** (PR #24) — `window.scrollTo({top:0})` dans `handleViewChange` |
+| BUG-E3 | Données **« arbre »** non classées auto | ✅ **CORRIGÉ** (PR #25) — `mapGBIFToTaxonomicGroup` + `WOODY_FAMILIES` |
+| BUG-E4 | **ZIP** de sauvegarde à améliorer | ❌ **ABANDONNÉ** — Eliot : « pas de problème en fait » |
+| BUG-E5 | **Zoom involontaire mobile** (onglet Liste) — *nouveau, juin 2026* | ✅ **CORRIGÉ** (PR #24) — vraie cause = débordement horizontal (`-mx-4` vs `px-2`) → `-mx-2` + `overflow-x-clip` |
 
 ## Idées d'Eliot (fonctionnalités / UX)
 
