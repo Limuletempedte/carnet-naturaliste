@@ -10,6 +10,7 @@ import { generateUUID } from '../utils/uuidUtils';
 import { logger } from '../utils/logger';
 import { mapUserFacingError } from '../utils/userFacingError';
 import { createEmptyFormData, mapObservationToFormData } from '../utils/observationFormHelpers';
+import { ATLAS_CODE_GROUPS, isKnownAtlasCode } from '../utils/atlasCodes';
 import { useObserverTags } from '../hooks/useObserverTags';
 import { useSpeciesLookup } from '../hooks/useSpeciesLookup';
 import { ToastType } from './ToastContainer';
@@ -620,9 +621,23 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                     <div>
                                         <label htmlFor="atlasCode" className={labelClass}>
                                             Code atlas
-                                            <FieldTooltip text="Code de reproduction atlas (ex: 14 = nid avec œufs, 19 = adulte avec nourriture pour jeunes). Utilisé pour les atlas de nidification. Laissez vide si non pertinent." />
+                                            <FieldTooltip text="Indice de nidification (codes atlas EBCC, Atlas des Oiseaux de France). Indiquez l'indice le plus élevé constaté pour l'espèce sur le site (ex. 15 = nid avec œufs). Laissez vide si non pertinent." />
                                         </label>
-                                        <input type="text" id="atlasCode" name="atlasCode" value={formData.atlasCode} onChange={handleChange} className={inputClass} />
+                                        <select id="atlasCode" name="atlasCode" value={formData.atlasCode} onChange={handleChange} className={`${inputClass} appearance-none cursor-pointer`}>
+                                            <option value="">— Non concerné —</option>
+                                            {formData.atlasCode !== '' && !isKnownAtlasCode(formData.atlasCode) && (
+                                                <optgroup label="Valeur actuelle">
+                                                    <option value={formData.atlasCode}>{formData.atlasCode}</option>
+                                                </optgroup>
+                                            )}
+                                            {ATLAS_CODE_GROUPS.map(group => (
+                                                <optgroup key={group.level} label={group.level}>
+                                                    {group.options.map(option => (
+                                                        <option key={option.code} value={option.code}>{option.code} — {option.label}</option>
+                                                    ))}
+                                                </optgroup>
+                                            ))}
+                                        </select>
                                     </div>
                                     <div>
                                         <label htmlFor="sexe" className={labelClass}>Sexe</label>
