@@ -20,6 +20,7 @@ import AdvancedFilterDialog from './components/AdvancedFilterDialog';
 import StatsExportDialog, { StatsExportDialogState } from './components/StatsExportDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import StorageConsentBanner from './components/StorageConsentBanner';
+import FeedbackPromptHint from './components/FeedbackPromptHint';
 import { logger } from './utils/logger';
 import { mapUserFacingError } from './utils/userFacingError';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from './utils/chunkLoadError';
@@ -1053,6 +1054,7 @@ const App: React.FC = () => {
                 </footer>
             </main>
             <StorageConsentBanner />
+            <FeedbackPromptHint observationCount={observations.length} />
             {showOnboarding && (
                 <Suspense fallback={null}>
                     <OnboardingTour isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
