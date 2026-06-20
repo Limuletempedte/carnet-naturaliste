@@ -5,6 +5,8 @@
 - **Données brutes** : [`rapport-workflow-brut.json`](./rapport-workflow-brut.json) (74 constats avec preuves et verdicts détaillés, 29 propositions).
 - **Légende** : ✅ contre-expertisé et confirmé · ✋ vérifié manuellement par l'orchestrateur · ⚠️ non contre-expertisé (à re-vérifier en début de PR).
 
+> **Mise à jour 2026-06-20** : les lots A→E ont été livrés et déployés en production. Récap du lot E (bugs, features, légal/RGPD) : [`RECAP-lot-E.md`](./RECAP-lot-E.md).
+
 **Verdict global** : socle sain (RLS observations correcte, CSP stricte, AuthContext durci, offline-first robuste, 0 TODO/any/ts-ignore) — l'audit v1 a porté ses fruits. Mais **2 critiques et ~14 hauts**, dont plusieurs régressions sur des corrections v1 documentées à tort comme faites (VP-05, SI-12, AC-26, CO-06).
 
 ---
