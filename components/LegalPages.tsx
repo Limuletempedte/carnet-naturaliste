@@ -66,8 +66,8 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
 
         <Section title="5. Destinataires et transferts">
             <ul className="list-disc pl-5 space-y-1">
-                <li><strong>Supabase</strong> (hebergement base de donnees et fichiers) — [Region : A VERIFIER, idealement UE]</li>
-                <li><strong>Vercel</strong> (hebergement frontend) — [Region : A CONFIGURER sur cdg1/Paris]</li>
+                <li><strong>Supabase</strong> (hebergement base de donnees et fichiers) — donnees hebergees dans l'UE (Francfort, eu-central-1)</li>
+                <li><strong>Vercel</strong> (hebergement frontend) — fichiers statiques distribues via CDN mondial ; aucune donnee personnelle stockee</li>
                 <li><strong>Aucun partage actif</strong> de vos donnees vers des tiers. Les appels vers iNaturalist, GBIF et Nominatim sont en lecture seule (autocomplete) et ne transmettent pas vos observations.</li>
             </ul>
         </Section>

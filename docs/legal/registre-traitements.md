@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-06-19
+**Date de mise a jour** : 2026-06-20
 
 ---
 
@@ -14,7 +14,7 @@
 | Donnees collectees | Email, mot de passe (hashe par Supabase Auth) |
 | Duree de conservation | Duree du compte + 30 jours apres suppression |
 | Destinataires | Supabase Inc. (sous-traitant, hebergeur auth + BDD) |
-| Transfert hors UE | Oui — Supabase (AWS us-east-1). Clauses contractuelles types. |
+| Transfert hors UE | Non — Supabase heberge dans l'UE (eu-central-1, Francfort). |
 
 ## Traitement 2 : Observations naturalistes
 
@@ -25,7 +25,7 @@
 | Donnees collectees | Espece, date, heure, lieu-dit, coordonnees GPS, altitude, commune, departement, pays, commentaire, photos, protocole, conditions meteo |
 | Duree de conservation | Duree du compte. Cache local : 90 jours (TTL). |
 | Destinataires | Supabase Inc. (BDD PostgreSQL), Vercel Inc. (CDN/hosting) |
-| Transfert hors UE | Oui — Supabase (AWS us-east-1), Vercel (edge global). Clauses contractuelles types. |
+| Transfert hors UE | Non — Supabase heberge dans l'UE (eu-central-1, Francfort). Vercel : frontend statique public (CDN mondial), aucune donnee personnelle. |
 
 ## Traitement 3 : Geolocalisation (GPS)
 
