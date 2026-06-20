@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
-import { fetchAltitude } from '../services/locationService';
+import { fetchAltitude, fetchWeather } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
 import { buildObservationFromForm, ObservationFormData, validateObservationForm } from '../services/observationFormService';
 import { uploadPhoto } from '../services/storageService';
@@ -40,10 +40,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const bottomButtonsRef = useRef<HTMLDivElement>(null);
     const blobUrlsRef = useRef<Set<string>>(new Set());
     const [showStickyBar, setShowStickyBar] = useState(false);
-    const [fieldTouched, setFieldTouched] = useState<{ latinName: boolean; taxonomicGroup: boolean; status: boolean }>({
+    const [fieldTouched, setFieldTouched] = useState<{ latinName: boolean; taxonomicGroup: boolean; status: boolean; weather: boolean }>({
         latinName: false,
         taxonomicGroup: false,
-        status: false
+        status: false,
+        weather: false
     });
 
     // Logique espèce (autocomplétion + enrichissement) extraite dans un hook dédié.
@@ -76,11 +77,12 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             setFieldTouched({
                 latinName: !!initialData.latinName,
                 taxonomicGroup: initialData.taxonomicGroup !== defaultTaxonomicGroup,
-                status: initialData.status !== Status.NE
+                status: initialData.status !== Status.NE,
+                weather: initialData.weather !== WeatherCondition.UNKNOWN
             });
         } else {
             setFormData(createEmptyFormData(defaultTaxonomicGroup));
-            setFieldTouched({ latinName: false, taxonomicGroup: false, status: false });
+            setFieldTouched({ latinName: false, taxonomicGroup: false, status: false, weather: false });
         }
     }, [defaultTaxonomicGroup, initialData]);
 
@@ -125,10 +127,18 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             country: country || prev.country
         }));
 
-        // Fetch altitude automatically
-        const altitude = await fetchAltitude(lat, lon);
+        // Altitude + météo automatiques (Open-Meteo). La météo n'est demandée que si
+        // l'utilisateur n'a pas déjà choisi/renseigné une valeur (respect de fieldTouched).
+        const [altitude, weather] = await Promise.all([
+            fetchAltitude(lat, lon),
+            fieldTouched.weather ? Promise.resolve(null) : fetchWeather(lat, lon, formData.date, formData.time)
+        ]);
         if (altitude !== null) {
             setFormData(prev => ({ ...prev, altitude }));
+        }
+        if (weather) {
+            // N'écrase jamais un choix météo manuel (ou déjà renseigné côté édition).
+            setFormData(prev => prev.weather === WeatherCondition.UNKNOWN ? { ...prev, weather } : prev);
         }
     };
 
@@ -178,6 +188,9 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             }
             if (name === 'status') {
                 setFieldTouched(prev => ({ ...prev, status: true }));
+            }
+            if (name === 'weather') {
+                setFieldTouched(prev => ({ ...prev, weather: true }));
             }
             setFormData(prev => ({ ...prev, [name]: value }));
         }
@@ -283,7 +296,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         blobUrlsRef.current.clear();
         setPhotoFile(null);
         setErrors({});
-        setFieldTouched({ latinName: false, taxonomicGroup: false, status: false });
+        setFieldTouched({ latinName: false, taxonomicGroup: false, status: false, weather: false });
         setFormData(prev => ({
             ...createEmptyFormData(prev.taxonomicGroup),
             date: prev.date,

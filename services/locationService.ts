@@ -1,4 +1,6 @@
 import { logger } from '../utils/logger';
+import { WeatherCondition } from '../types';
+import { mapWmoCodeToWeather } from '../utils/weatherCodes';
 
 export interface SearchResult {
     lat: number;
@@ -123,6 +125,40 @@ export const fetchAltitude = async (lat: number, lon: number): Promise<number | 
         return null;
     } catch (error) {
         logger.error("Erreur lors de la récupération de l'altitude:", error);
+        return null;
+    }
+};
+
+/**
+ * Récupère la condition météo (code WMO) pour une position et une date données via
+ * Open-Meteo (même fournisseur que l'altitude, gratuit, sans clé). Couvre le jour même
+ * et le passé récent (jusqu'à ~92 jours) ; renvoie null au-delà ou en cas d'échec.
+ * `time` ("HH:MM") sert à choisir l'heure correspondante dans la série horaire.
+ */
+export const fetchWeather = async (
+    lat: number,
+    lon: number,
+    date: string,
+    time?: string
+): Promise<WeatherCondition | null> => {
+    if (!date) return null;
+    try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=weather_code&start_date=${date}&end_date=${date}&timezone=auto`;
+        const response = await fetchJsonWithTimeout(url, {}, 5000);
+        const data = await response.json();
+        const codes: unknown = data?.hourly?.weather_code;
+
+        if (!Array.isArray(codes) || codes.length === 0) return null;
+
+        // La série est horaire (00:00 → 23:00) → l'indice = l'heure de l'observation.
+        const hour = time && /^\d{2}:/.test(time) ? parseInt(time.slice(0, 2), 10) : 12;
+        const index = Math.min(Math.max(hour, 0), codes.length - 1);
+        const code = codes[index];
+        if (typeof code !== 'number') return null;
+
+        return mapWmoCodeToWeather(code);
+    } catch (error) {
+        logger.error('Erreur lors de la récupération de la météo:', error);
         return null;
     }
 };
