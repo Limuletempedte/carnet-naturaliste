@@ -8,7 +8,7 @@
 
 ## ✅ État au 2026-06-20 (mise à jour)
 
-**Tout le travail prévu du lot E est livré et en prod** (PR #24 → #32). Récap détaillé :
+**Tout le travail prévu du lot E est livré et en prod** (PR #24 → #35). Récap détaillé :
 [`RECAP-lot-E.md`](./RECAP-lot-E.md).
 - **Bugs** : BUG-E1, BUG-E2, BUG-E3, BUG-E5 ✅ corrigés ; BUG-E4 ❌ abandonné.
 - **Features livrées** (au-delà des idées EE ci-dessous) : installation PWA (notification +
@@ -16,8 +16,7 @@
   RGPD région (eu-central-1, UE).
 - **Reste = idées en réserve** : EE-1 à EE-5 (ci-dessous) + propositions d'audit non
   retenues pour l'instant.
-- Finalisation (branche `fix/pwa-install-icons-tests`) : icônes PWA compressées + tests
-  composants + ce récap.
+- Finalisation **livrée** : icônes PWA compressées + tests composants (PR #33), docs/récap (PR #35).
 
 ## Bugs remontés par Eliot (priorité — un bug passe avant une fonctionnalité)
 
