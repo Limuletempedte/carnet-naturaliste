@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { markInstalled } from '../utils/installPromptState';
 
 /**
  * Événement `beforeinstallprompt` (Chrome/Edge desktop + Android). Non typé par
@@ -95,6 +96,7 @@ export const useInstallPrompt = (): InstallPromptApi => {
             deferredRef.current = null;
             setCanInstall(false);
             setIsStandalone(true);
+            markInstalled();
         };
 
         window.addEventListener('beforeinstallprompt', onBeforeInstall);
@@ -119,6 +121,7 @@ export const useInstallPrompt = (): InstallPromptApi => {
         // L'événement n'est utilisable qu'une fois.
         deferredRef.current = null;
         setCanInstall(false);
+        if (choice.outcome === 'accepted') markInstalled();
         return choice.outcome;
     }, []);
 

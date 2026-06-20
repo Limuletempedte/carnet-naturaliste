@@ -5,33 +5,54 @@ import {
     markFeedbackShown,
     shouldShowFeedback,
 } from '../utils/feedbackPromptState';
+import { getInstallHintState, shouldShowHint } from '../utils/installPromptState';
+import type { InstallMode } from '../hooks/useInstallPrompt';
 
 const FEEDBACK_EMAIL = 'carnetnaturaliste.app@gmail.com';
 const FEEDBACK_MAILTO = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent('Carnet Naturaliste - Avis / Suggestion')}`;
+// Laisse à la notification d'installation le temps de se décider (beforeinstallprompt
+// est asynchrone) avant d'éventuellement afficher l'invite d'avis.
+const FEEDBACK_DECISION_DELAY_MS = 4000;
 
 interface FeedbackPromptHintProps {
     /** Nombre d'observations de l'utilisateur (seuil de déclenchement). */
     observationCount: number;
+    /** Contexte d'installation : l'invite d'avis cède la priorité à la notif d'installation. */
+    installMode: InstallMode;
+    isStandalone: boolean;
 }
 
 /**
  * Invite d'avis discrète : sollicite l'utilisateur après quelques observations,
  * de façon récurrente mais espacée (cf. utils/feedbackPromptState).
- * Modèle visuel : ancienne bannière d'installation / StorageConsentBanner.
+ * Cède la priorité à la notification d'installation (jamais les deux en même temps).
+ * Modèle visuel : bannière d'installation / StorageConsentBanner.
  */
-const FeedbackPromptHint: React.FC<FeedbackPromptHintProps> = ({ observationCount }) => {
+const FeedbackPromptHint: React.FC<FeedbackPromptHintProps> = ({ observationCount, installMode, isStandalone }) => {
     const [visible, setVisible] = useState(false);
     const decidedRef = useRef(false);
 
     useEffect(() => {
         if (decidedRef.current || visible) return;
-        const now = Date.now();
-        if (shouldShowFeedback(getFeedbackPromptState(), now, { observationCount })) {
-            decidedRef.current = true;
-            markFeedbackShown(now);
-            setVisible(true);
-        }
-    }, [observationCount, visible]);
+        // Délai : on attend que le contexte d'installation soit fixé (beforeinstallprompt
+        // arrive après le chargement) pour ne jamais doubler la notif d'installation.
+        const timer = window.setTimeout(() => {
+            if (decidedRef.current) return;
+            const now = Date.now();
+            // Priorité à la notification d'installation si elle peut s'afficher.
+            const installShowable = shouldShowHint(getInstallHintState(), now, {
+                isStandalone,
+                eligible: installMode !== 'pending',
+            });
+            if (installShowable) return;
+            if (shouldShowFeedback(getFeedbackPromptState(), now, { observationCount })) {
+                decidedRef.current = true;
+                markFeedbackShown(now);
+                setVisible(true);
+            }
+        }, FEEDBACK_DECISION_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [observationCount, installMode, isStandalone, visible]);
 
     if (!visible) return null;
 
