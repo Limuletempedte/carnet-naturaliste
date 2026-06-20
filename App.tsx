@@ -20,7 +20,6 @@ import AdvancedFilterDialog from './components/AdvancedFilterDialog';
 import StatsExportDialog, { StatsExportDialogState } from './components/StatsExportDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import StorageConsentBanner from './components/StorageConsentBanner';
-import InstallPromptHint from './components/InstallPromptHint';
 import { logger } from './utils/logger';
 import { mapUserFacingError } from './utils/userFacingError';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from './utils/chunkLoadError';
@@ -190,9 +189,10 @@ const App: React.FC = () => {
     useStorageQuotaToasts(pushToast);
     useBadgeUnlockToasts(observations, pushToast);
 
-    // PWA — installation de l'application (bouton desktop + item menu compte mobile + invite).
+    // PWA — installation de l'application : entrée discrète et PERMANENTE dans le menu
+    // compte (desktop + mobile), pour pouvoir (ré)installer à tout moment. Plus de notif.
     const { canInstall, isStandalone, installMode, promptInstall } = useInstallPrompt();
-    const showInstallOption = !isStandalone && installMode !== 'pending';
+    const showInstallOption = !isStandalone;
     const handleInstallClick = useCallback(async () => {
         if (canInstall) {
             const outcome = await promptInstall();
@@ -207,7 +207,10 @@ const App: React.FC = () => {
         }
         if (installMode === 'unsupported') {
             pushToast('info', "Pour installer l'app, ouvrez ce site dans Chrome, Edge, Brave, Opera ou Samsung Internet.", 9000);
+            return;
         }
+        // 'pending' : Chromium où le prompt n'est pas (encore) disponible, ou app déjà installée.
+        pushToast('info', "Pour installer : ouvrez le menu de votre navigateur (⋮) puis « Installer l'application ». Si l'option n'apparaît pas, réessayez dans un instant.", 9000);
     }, [canInstall, installMode, promptInstall, pushToast]);
 
     // VP-18 — afficher le tour guidé au 1er run pour un utilisateur connecté sans observation
@@ -696,7 +699,7 @@ const App: React.FC = () => {
                 /* Desktop Layout: Floating Buttons */
                 <>
                     <div className="fixed top-6 left-6 z-50">
-                        <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} />
+                        <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     </div>
 
                     <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
@@ -847,19 +850,6 @@ const App: React.FC = () => {
                 onClose={() => setIsStatsExportDialogOpen(false)}
                 onConfirm={() => void handleConfirmStatsExport()}
             />
-
-            {/* Bouton d'installation PWA (Desktop) — remplace l'ancien bouton de
-                sauvegarde ZIP, désormais redondant avec l'export du menu compte. */}
-            {!isMobileView && canInstall && (
-                <button
-                    onClick={() => void handleInstallClick()}
-                    className="fixed bottom-6 left-6 z-50 p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-nature-dark dark:text-white"
-                    title="Installer l'application"
-                    aria-label="Installer l'application"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 7.5h-.75A2.25 2.25 0 004.5 9.75v7.5a2.25 2.25 0 002.25 2.25h7.5a2.25 2.25 0 002.25-2.25v-7.5a2.25 2.25 0 00-2.25-2.25h-.75m-6 3 3 3m0 0 3-3m-3 3V3" /></svg>
-                </button>
-            )}
 
             <div aria-live="polite" className="sr-only" role="status">
                 {view === View.LIST ? 'Vue liste active' : view === View.MAP ? 'Vue carte active' : view === View.STATS ? 'Vue statistiques active' : view === View.CALENDAR ? 'Vue calendrier active' : view === View.GALLERY ? 'Vue galerie active' : view === View.FORM ? 'Formulaire actif' : ''}
@@ -1063,7 +1053,6 @@ const App: React.FC = () => {
                 </footer>
             </main>
             <StorageConsentBanner />
-            <InstallPromptHint installMode={installMode} isStandalone={isStandalone} onInstall={() => void handleInstallClick()} />
             {showOnboarding && (
                 <Suspense fallback={null}>
                     <OnboardingTour isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
