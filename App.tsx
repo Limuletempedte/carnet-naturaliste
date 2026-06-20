@@ -396,7 +396,7 @@ const App: React.FC = () => {
         });
     }, [observations, isImporting, refreshOfflineQueueSnapshot]);
 
-    const handleSaveObservation = async (observation: Observation) => {
+    const handleSaveObservation = async (observation: Observation, options?: { keepFormOpen?: boolean }) => {
         if (isImporting) throw new Error('Un import est en cours. Veuillez patienter.');
         try {
             if (editingObservation) {
@@ -409,6 +409,11 @@ const App: React.FC = () => {
                 setObservations(prev => [newObservation, ...prev]);
             }
             refreshOfflineQueueSnapshot();
+            // Saisie en série : on reste sur le formulaire (réinitialisé côté ObservationForm)
+            // au lieu de revenir à la liste. Toujours une création (editingObservation null).
+            if (options?.keepFormOpen) {
+                return;
+            }
             setView(View.LIST);
             setEditingObservation(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
