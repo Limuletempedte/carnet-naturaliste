@@ -3,8 +3,9 @@
 > **Dernière mise à jour : 2026-06-20.**
 > Synthèse de tout le travail réalisé sur le lot E (bugs + features + légal/RGPD).
 > Backlog source : [`lot-e-futures-ameliorations.md`](./lot-e-futures-ameliorations.md).
-> Statut global : **tout le travail prévu est livré et mergé sur `main` (PR #24 → #32)**,
-> il ne reste que des idées en réserve (EE-1/2/3/4/5) + une finalisation (icônes + tests + ce récap).
+> Statut global : **tout le lot E est livré et mergé sur `main` (PR #24 → #35)** — y compris la
+> finalisation : icônes PWA compressées + tests composants (#33) et docs/récap (#35).
+> Il ne reste que des **idées en réserve** (EE-1 à EE-5).
 
 ---
 
@@ -21,11 +22,14 @@
 | #30 | Installation discrète et permanente dans le menu + retrait de la notif | ✅ mergé `main` |
 | #31 | Invite d'avis utilisateur (mail) | ✅ mergé `main` |
 | #32 | Rétablir la notification d'installation (+ garder le bouton du menu) | ✅ mergé `main` |
-| branche `fix/pwa-install-icons-tests` | Icônes PWA compressées + tests composants + ce récap | ⏳ à merger |
+| #33 | Icônes PWA compressées (1,4 Mo → 7/57 Ko) + tests composants (notif + avis) | ✅ mergé `main` |
+| #35 | Docs : ce récap + mise à jour des statuts | ✅ mergé `main` |
 
 > Note historique : la PR #23 (1er « pack bugs ») avait été empilée par erreur sur la
 > branche lot D ; on a reparti proprement de `main` avec la **PR #24** (cherry-pick). Le
-> lot D était déjà en prod via la **PR #22**.
+> lot D était déjà en prod via la **PR #22**. La **PR #34** (finalisation empilée sur la
+> branche de #33) a été **fermée** car en conflit, puis refaite proprement en **#35**
+> (docs seuls) depuis `main` à jour.
 
 ---
 
@@ -88,7 +92,7 @@
   (`registre-traitements.md`, `LegalPages.tsx`, `infrastructure-regions.md` réécrit).
   **Données personnelles hébergées dans l'UE, aucun transfert hors UE.** *(PR #29)*
 
-### Finalisation (branche `fix/pwa-install-icons-tests`, à merger)
+### Finalisation (livrée — icônes/tests via #33, docs via #35)
 - **Icônes PWA** `pwa-192x192.png` / `pwa-512x512.png` recompressées (1,4 Mo → 7 / 57 Ko).
 - **Tests composants** ajoutés : `tests/InstallPromptHint.test.tsx`,
   `tests/FeedbackPromptHint.test.tsx`, `tests/useInstallPrompt.test.tsx`.
@@ -137,6 +141,6 @@ en ce moment ».
   `carnetnaturaliste.app@gmail.com`.
 - **Contraintes** : tout **gratuit**, Supabase limité (~500 Mo / 1 Go) → privilégier le
   client-only.
-- **Tests** : 51 fichiers / 353 tests (après merge de la branche de finalisation).
+- **Tests** : 51 fichiers / 353 tests.
 - **Workflow** : petits PRs, `npm run check` vert avant chaque push, pause + récap après
   chaque PR ; le pre-commit (lint-staged) ne lance **pas** les tests.
