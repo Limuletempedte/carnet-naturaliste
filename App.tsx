@@ -20,6 +20,7 @@ import AdvancedFilterDialog from './components/AdvancedFilterDialog';
 import StatsExportDialog, { StatsExportDialogState } from './components/StatsExportDialog';
 import ErrorBoundary from './components/ErrorBoundary';
 import StorageConsentBanner from './components/StorageConsentBanner';
+import InstallPromptHint from './components/InstallPromptHint';
 import FeedbackPromptHint from './components/FeedbackPromptHint';
 import { logger } from './utils/logger';
 import { mapUserFacingError } from './utils/userFacingError';
@@ -1054,7 +1055,8 @@ const App: React.FC = () => {
                 </footer>
             </main>
             <StorageConsentBanner />
-            <FeedbackPromptHint observationCount={observations.length} />
+            <InstallPromptHint installMode={installMode} isStandalone={isStandalone} onInstall={() => void handleInstallClick()} />
+            <FeedbackPromptHint observationCount={observations.length} installMode={installMode} isStandalone={isStandalone} />
             {showOnboarding && (
                 <Suspense fallback={null}>
                     <OnboardingTour isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
