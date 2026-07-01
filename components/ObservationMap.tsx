@@ -29,6 +29,7 @@ interface ObservationMapProps {
     isMobileView?: boolean;
     onToast: (type: 'warning' | 'error' | 'info' | 'success', message: string, durationMs?: number) => void;
     onEdit?: (id: string) => void;
+    onAddAtLocation?: (lat: number, lon: number) => void;
 }
 
 import { isSafeImageUrl } from '../utils/urlUtils';
@@ -104,13 +105,39 @@ const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: stri
     return root;
 };
 
+// EE-1 : popup « Ajouter une observation ici » ouverte au clic sur un point vierge
+// de la carte (les clics sur un marqueur ne déclenchent pas l'événement map 'click').
+const buildAddHerePopupContent = (onAdd: () => void): HTMLElement => {
+    const root = document.createElement('div');
+    root.style.textAlign = 'center';
+    root.style.minWidth = '160px';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '➕ Ajouter une observation ici';
+    btn.style.width = '100%';
+    btn.style.padding = '8px 12px';
+    // CO-23 : couleur adaptée au mode sombre via la variable CSS partagée --map-accent.
+    btn.style.backgroundColor = 'var(--map-accent, #5D7B45)';
+    btn.style.color = 'white';
+    btn.style.border = 'none';
+    btn.style.borderRadius = '8px';
+    btn.style.cursor = 'pointer';
+    btn.style.fontWeight = '600';
+    btn.style.fontSize = '13px';
+    btn.addEventListener('click', onAdd);
+    root.appendChild(btn);
+
+    return root;
+};
+
 const HIGH_ACCURACY_OPTIONS: PositionOptions = {
     enableHighAccuracy: true,
     timeout: 15000,
     maximumAge: 0
 };
 
-const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false, onToast, onEdit }) => {
+const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false, onToast, onEdit, onAddAtLocation }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const markersRef = useRef<L.Marker[]>([]);
@@ -120,8 +147,10 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
     const tileLayerRef = useRef<L.TileLayer | null>(null);
     const onEditRef = useRef(onEdit);
     const isDarkModeRef = useRef(isDarkMode);
+    const onAddAtLocationRef = useRef(onAddAtLocation);
     onEditRef.current = onEdit;
     isDarkModeRef.current = isDarkMode;
+    onAddAtLocationRef.current = onAddAtLocation;
 
     const [userAccuracy, setUserAccuracy] = React.useState<number | null>(null);
     const [activeLayer, setActiveLayer] = React.useState<'auto' | 'osm' | 'satellite' | 'topo'>('auto');
@@ -137,6 +166,21 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
             L.control.zoom({
                 position: 'bottomright'
             }).addTo(map);
+
+            // EE-1 : clic sur un point vierge → popup proposant d'ajouter une obs ici.
+            // (Un clic sur un marqueur ne déclenche pas l'événement 'click' de la carte,
+            // donc aucun risque de conflit avec l'ouverture de la fiche d'une obs.)
+            map.on('click', (e: L.LeafletMouseEvent) => {
+                if (!onAddAtLocationRef.current) return;
+                const { lat, lng } = e.latlng;
+                const popup = L.popup({ closeButton: true, autoClose: true })
+                    .setLatLng(e.latlng)
+                    .setContent(buildAddHerePopupContent(() => {
+                        map.closePopup(popup);
+                        onAddAtLocationRef.current?.(lat, lng);
+                    }))
+                    .openOn(map);
+            });
 
             mapRef.current = map;
         }
