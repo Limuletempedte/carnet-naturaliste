@@ -635,7 +635,7 @@ describe('storageService.bulkUpsertObservationsInCache', () => {
         const rawCache = localStorage.getItem(cacheKey);
         const parsed = JSON.parse(rawCache || '[]') as Array<{ id: string; speciesName: string }>;
 
-        expect(setItemSpy).toHaveBeenCalledTimes(2); // cache data + cache timestamp
+        expect(setItemSpy).toHaveBeenCalledTimes(3); // cache data + cache timestamp + cache schema version
         expect(parsed).toHaveLength(2);
         expect(parsed.find(o => o.id === 'obs1')?.speciesName).toBe('Updated A');
         expect(parsed.find(o => o.id === 'obs2')?.speciesName).toBe('Mésange');

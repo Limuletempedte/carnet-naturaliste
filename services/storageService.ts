@@ -18,6 +18,7 @@ import { extractStoragePath, dataUrlToBlob, scopedKey, assertOnlineUserId, asSup
 import { isRecoverableNetworkError, notifyRecoverableError } from './storage/storagePredicates';
 import { isMissingColumnError, withColumnFallback } from './storage/storageSchema';
 import { uploadPhoto, uploadSound } from './storage/storageMedia';
+import { CACHE_SCHEMA_VERSION, sanitizeCachedObservations } from './storage/storageCacheValidation';
 
 const LEGACY_QUEUE_KEY = 'offline_sync_queue';
 const LEGACY_LOCAL_CACHE_KEY = 'local_observations_cache';
@@ -26,6 +27,7 @@ const LOCAL_CACHE_KEY_PREFIX = 'local_observations_cache';
 const STORAGE_NAMESPACE_ERROR = "Storage namespace absent. Réessayez après authentification.";
 const LOCAL_CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const LOCAL_CACHE_TS_SUFFIX = '_ts';
+const LOCAL_CACHE_VERSION_SUFFIX = '_v';
 
 // Types déplacés dans ./storage/storageTypes — ré-export de l'API publique
 // (les imports existants depuis './storageService' restent inchangés).
@@ -70,6 +72,8 @@ export const clearScopedOfflineData = (userId?: string): void => {
 
     localStorage.removeItem(getQueueScopedKey(targetUserId));
     localStorage.removeItem(getCacheScopedKey(targetUserId));
+    localStorage.removeItem(getCacheScopedKey(targetUserId) + LOCAL_CACHE_TS_SUFFIX);
+    localStorage.removeItem(getCacheScopedKey(targetUserId) + LOCAL_CACHE_VERSION_SUFFIX);
 };
 
 export const migrateLegacyLocalStorageToScoped = (userId: string): void => {
@@ -168,13 +172,36 @@ const getLocalCache = (): Observation[] => {
         if (Date.now() - cachedAt > LOCAL_CACHE_TTL_MS) {
             localStorage.removeItem(cacheKey);
             localStorage.removeItem(cacheKey + LOCAL_CACHE_TS_SUFFIX);
+            localStorage.removeItem(cacheKey + LOCAL_CACHE_VERSION_SUFFIX);
             return [];
         }
     }
-    return parseJson<Observation[]>(localStorage.getItem(cacheKey), [], (err) => {
+
+    const raw = parseJson<unknown>(localStorage.getItem(cacheKey), null, (err) => {
         logger.error('[storageService] Cache local corrompu — données locales perdues:', err);
         notifyStorageCorruption('cache');
     });
+    if (raw === null) return [];
+
+    // Versionnage du cache (migration douce) : aucune migration nécessaire en v1 —
+    // la validation de forme ci-dessous fait office de filet quel que soit l'écart de
+    // version (cache d'une app plus ancienne, ou plus récente après retour arrière).
+    const storedVersion = Number(localStorage.getItem(cacheKey + LOCAL_CACHE_VERSION_SUFFIX) ?? 0);
+    if (storedVersion > CACHE_SCHEMA_VERSION) {
+        logger.warn(`[storageService] Cache local écrit par une version plus récente (v${storedVersion} > v${CACHE_SCHEMA_VERSION}) — lecture tolérante.`);
+    }
+
+    const { observations, dropped, invalidRoot } = sanitizeCachedObservations(raw);
+    if (invalidRoot) {
+        logger.error('[storageService] Cache local de forme inattendue (racine non-tableau) — ignoré.');
+        notifyStorageCorruption('cache');
+        return [];
+    }
+    if (dropped > 0) {
+        // On n'écarte que les entrées inexploitables — jamais le cache entier.
+        logger.warn(`[storageService] ${dropped} entrée(s) de cache local invalide(s) ignorée(s) (${observations.length} conservée(s)).`);
+    }
+    return observations;
 };
 
 const setLocalCache = (observations: Observation[]) => {
@@ -197,6 +224,7 @@ const setLocalCache = (observations: Observation[]) => {
         }));
         localStorage.setItem(cacheKey, JSON.stringify(lightweight));
         localStorage.setItem(cacheKey + LOCAL_CACHE_TS_SUFFIX, String(Date.now()));
+        localStorage.setItem(cacheKey + LOCAL_CACHE_VERSION_SUFFIX, String(CACHE_SCHEMA_VERSION));
         if (strippedMediaCount > 0) {
             window.dispatchEvent(new CustomEvent('media-stripped-offline', { detail: { count: strippedMediaCount } }));
         }
