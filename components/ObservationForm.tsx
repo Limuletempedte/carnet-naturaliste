@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
-import { fetchAltitude, fetchWeather } from '../services/locationService';
+import { fetchAltitude, fetchWeather, reverseGeocode } from '../services/locationService';
 import { compressImage } from '../utils/imageUtils';
 import { buildObservationFromForm, ObservationFormData, validateObservationForm } from '../services/observationFormService';
 import { uploadPhoto } from '../services/storageService';
@@ -23,10 +23,12 @@ interface ObservationFormProps {
     onSave: (observation: Observation, options?: { keepFormOpen?: boolean }) => Promise<void>;
     onCancel: () => void;
     initialData: Observation | null;
+    /** EE-1 : position de départ (clic sur la carte) pour une nouvelle observation. */
+    initialPosition?: { lat: number; lon: number } | null;
     onToast: (type: ToastType, message: string, durationMs?: number) => void;
 }
 
-const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, onToast }) => {
+const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, initialPosition, onToast }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
     const [formData, setFormData] = useState<ObservationFormData>(() => createEmptyFormData(defaultTaxonomicGroup));
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -141,6 +143,29 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             setFormData(prev => prev.weather === WeatherCondition.UNKNOWN ? { ...prev, weather } : prev);
         }
     };
+
+    // EE-1 : ouverture depuis un clic sur la carte (création uniquement). On pré-remplit
+    // la position tout de suite, puis on récupère adresse + altitude + météo comme pour
+    // un point posé à la main sur la carte du formulaire.
+    useEffect(() => {
+        if (initialData || !initialPosition) return;
+        const { lat, lon } = initialPosition;
+        setFormData(prev => ({ ...prev, gps: { lat, lon } }));
+        let cancelled = false;
+        reverseGeocode(lat, lon)
+            .then(result => {
+                if (cancelled) return;
+                const address = result?.address;
+                handleLocationChange(lat, lon, address?.municipality || '', address?.location || '', address?.department || '', address?.country || '');
+            })
+            .catch(() => {
+                if (!cancelled) handleLocationChange(lat, lon, '', '', '', '');
+            });
+        return () => { cancelled = true; };
+        // handleLocationChange est recréé à chaque rendu mais lit des valeurs fraîches
+        // (date/heure du jour, fieldTouched) au moment de son exécution — pas une dépendance.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialData, initialPosition]);
 
     const validate = () => {
         const nextErrors = validateObservationForm(formData);

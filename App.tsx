@@ -69,6 +69,8 @@ const App: React.FC = () => {
     const [observations, setObservations] = useState<Observation[]>([]);
     const [view, setView] = useState<View>(View.LIST);
     const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
+    // EE-1 : position de départ quand on crée une obs depuis un clic sur la carte.
+    const [pendingPosition, setPendingPosition] = useState<{ lat: number; lon: number } | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // SR-12 : bandeau d'erreurs critiques persistant (pas d'auto-dismiss)
@@ -361,6 +363,15 @@ const App: React.FC = () => {
 
     const handleAddObservation = useCallback(() => {
         setEditingObservation(null);
+        setPendingPosition(null);
+        setView(View.FORM);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, []);
+
+    // EE-1 : création d'une obs depuis un clic sur la carte (position pré-remplie).
+    const handleAddObservationAtLocation = useCallback((lat: number, lon: number) => {
+        setEditingObservation(null);
+        setPendingPosition({ lat, lon });
         setView(View.FORM);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, []);
@@ -369,6 +380,7 @@ const App: React.FC = () => {
         const observationToEdit = observations.find(obs => obs.id === id);
         if (observationToEdit) {
             setEditingObservation(observationToEdit);
+            setPendingPosition(null);
             setView(View.FORM);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -416,6 +428,7 @@ const App: React.FC = () => {
             }
             setView(View.LIST);
             setEditingObservation(null);
+            setPendingPosition(null);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } catch (e) {
             setError(`Échec de l'enregistrement de l'observation. ${mapUserFacingError(e)}`);
@@ -427,6 +440,7 @@ const App: React.FC = () => {
     const handleCancel = useCallback(() => {
         setView(View.LIST);
         setEditingObservation(null);
+        setPendingPosition(null);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, []);
 
@@ -968,6 +982,7 @@ const App: React.FC = () => {
                                 isMobileView={isMobileView}
                                 onToast={pushToast}
                                 onEdit={handleEditObservation}
+                                onAddAtLocation={handleAddObservationAtLocation}
                             />
 
                             <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
@@ -1042,6 +1057,7 @@ const App: React.FC = () => {
                             onSave={handleSaveObservation}
                             onCancel={handleCancel}
                             initialData={editingObservation}
+                            initialPosition={pendingPosition}
                             onToast={pushToast}
                         />
                     )}
