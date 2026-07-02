@@ -169,6 +169,8 @@ const Login: React.FC = () => {
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
             <div className="w-full max-w-md bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-2xl shadow-ios p-8 border border-white/20">
+                {/* EE-5 : logo de l'app au-dessus du titre */}
+                <img src="/logo.svg" alt="" aria-hidden="true" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-sm" />
                 <h1 className="text-3xl font-bold text-center mb-2 text-nature-dark dark:text-white">Carnet Naturaliste</h1>
                 <p className="text-center text-gray-500 dark:text-gray-400 mb-6">
                     {isSignUp ? 'Créez votre compte' : 'Connectez-vous pour accéder à vos observations'}

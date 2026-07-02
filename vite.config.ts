@@ -105,7 +105,8 @@ export default defineConfig(({ mode }) => {
         // pendant une saisie. En 'prompt', l'utilisateur choisit le moment.
         registerType: 'prompt',
         // CO-01: masked-icon.svg n'existe pas (feature Safari pinned-tab deprecated), retire de la liste.
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+        // EE-5: logo.svg precache (affiche sur l'ecran de connexion et l'ecran hors-ligne).
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'logo.svg'],
         manifest: {
           name: 'Carnet Naturaliste',
           short_name: 'CarnetNat',
@@ -140,9 +141,15 @@ export default defineConfig(({ mode }) => {
               sizes: '512x512',
               type: 'image/png'
             },
-            // CO-09: variant maskable pour les launchers Android adaptifs
+            // CO-09 / EE-5: variants maskable dedies (oiseau dans la zone de securite 80 %)
             {
-              src: 'pwa-512x512.png',
+              src: 'pwa-maskable-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'maskable'
+            },
+            {
+              src: 'pwa-maskable-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable'
