@@ -18,6 +18,8 @@ interface ObservationListProps {
     observations: Observation[];
     allObservations: Observation[];
     onAdd: () => void;
+    // EE-2 : le clic sur une carte/ligne ouvre la vue détail (lecture seule).
+    onView: (id: string) => void;
     onEdit: (id: string) => void;
     onDelete: (id: string) => void;
     onBulkDelete: (ids: string[]) => void;
@@ -47,6 +49,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
     observations,
     allObservations,
     onAdd,
+    onView,
     onEdit,
     onDelete,
     onBulkDelete,
@@ -509,6 +512,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 <ObservationCard
                                     key={obs.id}
                                     observation={obs}
+                                    onView={onView}
                                     onEdit={onEdit}
                                     onDelete={onDelete}
                                     selected={selectedIds.has(obs.id)}
@@ -758,6 +762,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         <ObservationRow
                                             key={obs.id}
                                             observation={obs}
+                                            onView={onView}
                                             onEdit={onEdit}
                                             onDelete={onDelete}
                                             selected={selectedIds.has(obs.id)}

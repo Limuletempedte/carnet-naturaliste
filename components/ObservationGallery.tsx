@@ -6,11 +6,12 @@ import { isSafeImageUrl } from '../utils/urlUtils';
 
 interface ObservationGalleryProps {
     observations: Observation[];
-    onEdit: (id: string) => void;
+    // EE-2 : le clic sur une vignette ouvre la vue détail (lecture seule).
+    onView: (id: string) => void;
     isMobileView?: boolean;
 }
 
-const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ observations, onEdit, isMobileView = false }) => {
+const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ observations, onView, isMobileView = false }) => {
     // FO-50 : images dont le chargement a échoué (404, lien cassé) → on bascule
     // sur le placeholder plutôt que d'afficher l'icône d'image brisée du navigateur.
     const [failedImageIds, setFailedImageIds] = useState<Set<string>>(new Set());
@@ -49,8 +50,8 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
                         tabIndex={0}
                         aria-label={`Voir l'observation de ${obs.speciesName}`}
                         className="bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 overflow-hidden hover:shadow-ios-hover transition-all duration-300 transform hover:-translate-y-2 cursor-pointer group"
-                        onClick={() => onEdit(obs.id)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEdit(obs.id); } }}
+                        onClick={() => onView(obs.id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView(obs.id); } }}
                     >
                         <div className="relative h-40 sm:h-56 overflow-hidden">
                             {imageSrc ? (

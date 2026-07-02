@@ -28,13 +28,14 @@ interface ObservationMapProps {
     isDarkMode: boolean;
     isMobileView?: boolean;
     onToast: (type: 'warning' | 'error' | 'info' | 'success', message: string, durationMs?: number) => void;
-    onEdit?: (id: string) => void;
+    // EE-2 : le bouton « Voir l'observation » du popup ouvre la vue détail (lecture seule).
+    onView?: (id: string) => void;
     onAddAtLocation?: (lat: number, lon: number) => void;
 }
 
 import { isSafeImageUrl } from '../utils/urlUtils';
 
-const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: string) => void): HTMLElement => {
+const buildPopupContent = (obs: Observation, isDark: boolean, onView?: (id: string) => void): HTMLElement => {
     const root = document.createElement('div');
     root.style.minWidth = '200px';
     root.style.color = isDark ? '#e5e7eb' : '#1f2937';
@@ -84,7 +85,7 @@ const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: stri
 
     root.appendChild(details);
 
-    if (onEdit) {
+    if (onView) {
         const btn = document.createElement('button');
         btn.textContent = 'Voir l\'observation';
         btn.style.marginTop = '10px';
@@ -98,7 +99,7 @@ const buildPopupContent = (obs: Observation, isDark: boolean, onEdit?: (id: stri
         btn.style.cursor = 'pointer';
         btn.style.fontWeight = '600';
         btn.style.fontSize = '13px';
-        btn.addEventListener('click', () => onEdit(obs.id));
+        btn.addEventListener('click', () => onView(obs.id));
         root.appendChild(btn);
     }
 
@@ -137,7 +138,7 @@ const HIGH_ACCURACY_OPTIONS: PositionOptions = {
     maximumAge: 0
 };
 
-const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false, onToast, onEdit, onAddAtLocation }) => {
+const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMode, isMobileView = false, onToast, onView, onAddAtLocation }) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<L.Map | null>(null);
     const markersRef = useRef<L.Marker[]>([]);
@@ -145,10 +146,10 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
     const userAccuracyCircleRef = useRef<L.Circle | null>(null);
 
     const tileLayerRef = useRef<L.TileLayer | null>(null);
-    const onEditRef = useRef(onEdit);
+    const onViewRef = useRef(onView);
     const isDarkModeRef = useRef(isDarkMode);
     const onAddAtLocationRef = useRef(onAddAtLocation);
-    onEditRef.current = onEdit;
+    onViewRef.current = onView;
     isDarkModeRef.current = isDarkMode;
     onAddAtLocationRef.current = onAddAtLocation;
 
@@ -315,7 +316,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
 
                 const marker = L.marker([obs.gps.lat, obs.gps.lon], { icon: customIcon });
                 // PE-22: Lazy popup — DOM created only when popup is opened
-                marker.bindPopup(() => buildPopupContent(obs, isDarkModeRef.current, onEditRef.current));
+                marker.bindPopup(() => buildPopupContent(obs, isDarkModeRef.current, onViewRef.current));
 
                 // Hover effect
                 marker.on('mouseover', function (this: L.Marker) {
@@ -338,7 +339,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
         return () => {
             map.removeLayer(markers);
         };
-    // PE-23: onEdit and isDarkMode stored in refs — only observations triggers marker recreation
+    // PE-23: onView and isDarkMode stored in refs — only observations triggers marker recreation
     }, [observations]);
 
     const [searchQuery, setSearchQuery] = React.useState('');

@@ -44,6 +44,7 @@ const ObservationMap = lazy(() => import('./components/ObservationMap'));
 const ObservationStats = lazy(() => import('./components/ObservationStats'));
 const ObservationGallery = lazy(() => import('./components/ObservationGallery'));
 const ObservationCalendar = lazy(() => import('./components/ObservationCalendar'));
+const ObservationDetail = lazy(() => import('./components/ObservationDetail'));
 const LegalPages = lazy(() => import('./components/LegalPages').then(m => ({ default: m.PrivacyPolicy })));
 const LegalTerms = lazy(() => import('./components/LegalPages').then(m => ({ default: m.TermsOfService })));
 const LegalNotices = lazy(() => import('./components/LegalPages').then(m => ({ default: m.MentionsLegales })));
@@ -71,6 +72,9 @@ const App: React.FC = () => {
     const [editingObservation, setEditingObservation] = useState<Observation | null>(null);
     // EE-1 : position de départ quand on crée une obs depuis un clic sur la carte.
     const [pendingPosition, setPendingPosition] = useState<{ lat: number; lon: number } | null>(null);
+    // EE-2 : observation consultée dans la vue détail + vue d'origine pour le bouton retour.
+    const [selectedObservationId, setSelectedObservationId] = useState<string | null>(null);
+    const [detailReturnView, setDetailReturnView] = useState<View>(View.LIST);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     // SR-12 : bandeau d'erreurs critiques persistant (pas d'auto-dismiss)
@@ -385,6 +389,29 @@ const App: React.FC = () => {
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     }, [observations]);
+
+    // EE-2 : ouvre la vue détail (lecture seule) en mémorisant la vue d'origine.
+    const handleViewObservation = useCallback((id: string) => {
+        setSelectedObservationId(id);
+        setDetailReturnView(view);
+        setView(View.DETAIL);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, [view]);
+
+    const handleBackFromDetail = useCallback(() => {
+        setView(detailReturnView);
+        setSelectedObservationId(null);
+        window.scrollTo({ top: 0 });
+    }, [detailReturnView]);
+
+    // EE-2 : si l'observation consultée disparaît (suppression depuis le détail,
+    // suppression en masse…), on revient automatiquement à la vue d'origine.
+    useEffect(() => {
+        if (view === View.DETAIL && selectedObservationId && !observations.some(o => o.id === selectedObservationId)) {
+            setView(detailReturnView);
+            setSelectedObservationId(null);
+        }
+    }, [view, selectedObservationId, observations, detailReturnView]);
 
     const handleDeleteRequest = useCallback((id: string) => {
         if (isImporting) return;
@@ -937,6 +964,7 @@ const App: React.FC = () => {
                         <ObservationList
                             observations={sortedAndFilteredObservations}
                             onAdd={handleAddObservation}
+                            onView={handleViewObservation}
                             onEdit={handleEditObservation}
                             onDelete={handleDeleteRequest}
                             onBulkDelete={handleBulkDeleteRequest}
@@ -981,7 +1009,7 @@ const App: React.FC = () => {
                                 isDarkMode={isDarkMode}
                                 isMobileView={isMobileView}
                                 onToast={pushToast}
-                                onEdit={handleEditObservation}
+                                onView={handleViewObservation}
                                 onAddAtLocation={handleAddObservationAtLocation}
                             />
 
@@ -1005,6 +1033,7 @@ const App: React.FC = () => {
                     ) : view === View.CALENDAR ? (
                         <ObservationCalendar
                             observations={observations}
+                            onView={handleViewObservation}
                             onEdit={handleEditObservation}
                             onDelete={handleDeleteRequest}
                             isMobileView={isMobileView}
@@ -1025,7 +1054,7 @@ const App: React.FC = () => {
                             />
                             <ObservationGallery
                                 observations={sortedAndFilteredObservations}
-                                onEdit={handleEditObservation}
+                                onView={handleViewObservation}
                                 isMobileView={isMobileView}
                             />
                             <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
@@ -1052,6 +1081,21 @@ const App: React.FC = () => {
                                 setView(View.LIST);
                             }}
                         />
+                    ) : view === View.DETAIL ? (
+                        // EE-2 : dérivée de l'état global → reste fraîche après une édition ;
+                        // si l'obs a disparu, l'effet de redirection ramène à la vue d'origine.
+                        (() => {
+                            const selectedObservation = observations.find(o => o.id === selectedObservationId);
+                            return selectedObservation ? (
+                                <ObservationDetail
+                                    observation={selectedObservation}
+                                    onBack={handleBackFromDetail}
+                                    onEdit={handleEditObservation}
+                                    onDelete={handleDeleteRequest}
+                                    isMobileView={isMobileView}
+                                />
+                            ) : null;
+                        })()
                     ) : (
                         <ObservationForm
                             onSave={handleSaveObservation}

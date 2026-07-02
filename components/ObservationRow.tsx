@@ -17,6 +17,8 @@ const getStatusBadgeClass = (status: string): string => {
 
 interface ObservationRowProps {
     observation: Observation;
+    // EE-2 : le clic sur la ligne (ou le nom d'espèce au clavier) ouvre la vue détail.
+    onView: (id: string) => void;
     onEdit: (id: string) => void;
     onDelete: (id: string) => void;
     selected: boolean;
@@ -24,7 +26,7 @@ interface ObservationRowProps {
     showSelection?: boolean;
 }
 
-const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation, onEdit, onDelete, selected, onToggle, showSelection = true }) => {
+const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation, onView, onEdit, onDelete, selected, onToggle, showSelection = true }) => {
     const { id, speciesName, latinName, taxonomicGroup, location, date, count, photo, wikipediaImage } = observation;
 
     const logo = TAXON_LOGOS[taxonomicGroup as keyof typeof TAXON_LOGOS];
@@ -32,9 +34,13 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
     const imageSrc = rawImageSrc && isSafeImageUrl(rawImageSrc) ? rawImageSrc : undefined;
 
     return (
-        <tr className={`border-b border-gray-100/50 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/5 transition-all duration-300 group relative backdrop-blur-sm ${selected ? 'bg-nature-green/10 dark:bg-nature-green/20' : ''}`}>
+        <tr
+            onClick={() => onView(id)}
+            className={`border-b border-gray-100/50 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/5 transition-all duration-300 group relative backdrop-blur-sm cursor-pointer ${selected ? 'bg-nature-green/10 dark:bg-nature-green/20' : ''}`}
+        >
             {showSelection && (
-                <td className="p-6 align-middle">
+                // stopPropagation : cocher/décocher ne doit pas ouvrir la vue détail.
+                <td className="p-6 align-middle" onClick={(e) => e.stopPropagation()}>
                     <input
                         type="checkbox"
                         checked={selected}
@@ -61,7 +67,15 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
                         />
                     )}
                     <div>
-                        <div className="font-bold text-nature-dark dark:text-white text-base">{speciesName}</div>
+                        {/* Bouton texte : accès clavier à la vue détail (le clic ligne est un bonus souris). */}
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onView(id); }}
+                            aria-label={`Voir l'observation de ${speciesName}`}
+                            className="font-bold text-nature-dark dark:text-white text-base text-left hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-nature-green rounded"
+                        >
+                            {speciesName}
+                        </button>
                         <div className="text-sm text-gray-500 dark:text-gray-400 italic">{latinName}</div>
                     </div>
                 </div>
@@ -86,7 +100,7 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
             <td className="p-6 align-middle text-center">
                 <div className="flex justify-center items-center gap-3 transition-all duration-300">
                     <button
-                        onClick={() => onEdit(id)}
+                        onClick={(e) => { e.stopPropagation(); onEdit(id); }}
                         className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 bg-blue-50/50 hover:bg-blue-100/80 dark:text-blue-400 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 rounded-full transition-all shadow-sm backdrop-blur-md hover:scale-110"
                         aria-label="Modifier"
                         title="Modifier"
@@ -98,7 +112,7 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
                         <span className="sr-only md:not-sr-only md:ml-1 md:text-xs">Modifier</span>
                     </button>
                     <button
-                        onClick={() => onDelete(id)}
+                        onClick={(e) => { e.stopPropagation(); onDelete(id); }}
                         className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-600 bg-red-50/50 hover:bg-red-100/80 dark:text-red-400 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-full transition-all shadow-sm backdrop-blur-md hover:scale-110"
                         aria-label="Supprimer"
                         title="Supprimer"

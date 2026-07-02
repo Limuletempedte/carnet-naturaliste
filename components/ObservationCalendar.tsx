@@ -8,6 +8,8 @@ import { dateToIsoLocal } from '../utils/dateUtils';
 
 interface ObservationCalendarProps {
     observations: Observation[];
+    // EE-2 : le clic sur une ligne ouvre la vue détail (lecture seule).
+    onView: (id: string) => void;
     onEdit: (id: string) => void;
     onDelete: (id: string) => void;
     isMobileView?: boolean;
@@ -16,7 +18,7 @@ interface ObservationCalendarProps {
 type ValuePiece = Date | null;
 type Value = ValuePiece | [ValuePiece, ValuePiece];
 
-const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations, onEdit, onDelete, isMobileView = false }) => {
+const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations, onView, onEdit, onDelete, isMobileView = false }) => {
     const [date, setDate] = useState<Value>(new Date());
     const observationsByDate = useMemo(() => {
         const grouped = new Map<string, Observation[]>();
@@ -95,7 +97,7 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                                     {selectedObservations.map(obs => (
-                                        <ObservationRow key={obs.id} observation={obs} onEdit={onEdit} onDelete={onDelete} selected={false} onToggle={() => { }} showSelection={false} />
+                                        <ObservationRow key={obs.id} observation={obs} onView={onView} onEdit={onEdit} onDelete={onDelete} selected={false} onToggle={() => { }} showSelection={false} />
                                     ))}
                                 </tbody>
                             </table>
