@@ -6,6 +6,8 @@ import { isSafeImageUrl } from '../utils/urlUtils';
 
 interface ObservationCardProps {
     observation: Observation;
+    // EE-2 : le clic sur la zone image + contenu ouvre la vue détail (lecture seule).
+    onView: (id: string) => void;
     onEdit: (id: string) => void;
     onDelete: (id: string) => void;
     selected: boolean;
@@ -23,7 +25,7 @@ const getStatusBadgeClass = (status: string): string => {
     }
 };
 
-const ObservationCard: React.FC<ObservationCardProps> = React.memo(({ observation, onEdit, onDelete, selected, onToggle }) => {
+const ObservationCard: React.FC<ObservationCardProps> = React.memo(({ observation, onView, onEdit, onDelete, selected, onToggle }) => {
     return (
         <div className={`bg-white/60 dark:bg-nature-dark-surface/60 backdrop-blur-md rounded-2xl p-4 shadow-sm border border-white/20 dark:border-white/5 mb-4 relative overflow-hidden group ${selected ? 'ring-2 ring-nature-green bg-nature-green/5' : ''}`}>
             <div className="flex items-start gap-4">
@@ -37,44 +39,55 @@ const ObservationCard: React.FC<ObservationCardProps> = React.memo(({ observatio
                         className="w-6 h-6 rounded border-gray-300 text-nature-green focus:ring-nature-green cursor-pointer"
                     />
                 </div>
-                {/* Image or Icon */}
-                <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 dark:bg-black/20 relative">
-                    {observation.photo && isSafeImageUrl(observation.photo) ? (
-                        <img src={observation.photo} alt={observation.speciesName} loading="lazy" className="w-full h-full object-cover" />
-                    ) : observation.wikipediaImage && isSafeImageUrl(observation.wikipediaImage) ? (
-                        <img src={observation.wikipediaImage} alt={observation.speciesName} loading="lazy" className="w-full h-full object-cover" />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-3xl opacity-50">
-                            {TAXON_LOGOS[observation.taxonomicGroup] ? (
-                                <img src={TAXON_LOGOS[observation.taxonomicGroup]} alt={observation.taxonomicGroup} loading="lazy" className="w-10 h-10 opacity-50" />
-                            ) : <span aria-hidden="true">🐾</span>}
+                {/* Zone cliquable (image + contenu) → vue détail. La checkbox et les
+                    boutons d'action restent en dehors : pas de conflit de clic. */}
+                <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Voir l'observation de ${observation.speciesName}`}
+                    onClick={() => onView(observation.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView(observation.id); } }}
+                    className="flex flex-1 items-start gap-4 min-w-0 cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-nature-green"
+                >
+                    {/* Image or Icon */}
+                    <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 dark:bg-black/20 relative">
+                        {observation.photo && isSafeImageUrl(observation.photo) ? (
+                            <img src={observation.photo} alt={observation.speciesName} loading="lazy" className="w-full h-full object-cover" />
+                        ) : observation.wikipediaImage && isSafeImageUrl(observation.wikipediaImage) ? (
+                            <img src={observation.wikipediaImage} alt={observation.speciesName} loading="lazy" className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-3xl opacity-50">
+                                {TAXON_LOGOS[observation.taxonomicGroup] ? (
+                                    <img src={TAXON_LOGOS[observation.taxonomicGroup]} alt={observation.taxonomicGroup} loading="lazy" className="w-10 h-10 opacity-50" />
+                                ) : <span aria-hidden="true">🐾</span>}
+                            </div>
+                        )}
+                        <div className="absolute top-0 right-0 bg-nature-green text-white text-[10px] font-bold px-1.5 py-0.5 rounded-bl-lg">
+                            {observation.count}
                         </div>
-                    )}
-                    <div className="absolute top-0 right-0 bg-nature-green text-white text-[10px] font-bold px-1.5 py-0.5 rounded-bl-lg">
-                        {observation.count}
-                    </div>
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <h3 className="font-bold text-nature-dark dark:text-white truncate pr-2">{observation.speciesName}</h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 italic truncate">{observation.latinName}</p>
-                        </div>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusBadgeClass(observation.status)}`}>
-                            {observation.status}
-                        </span>
                     </div>
 
-                    <div className="mt-2 space-y-1">
-                        <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
-                            <span className="mr-1" aria-hidden="true">📍</span>
-                            <span className="truncate">{observation.location}</span>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="font-bold text-nature-dark dark:text-white truncate pr-2">{observation.speciesName}</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 italic truncate">{observation.latinName}</p>
+                            </div>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusBadgeClass(observation.status)}`}>
+                                {observation.status}
+                            </span>
                         </div>
-                        <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
-                            <span className="mr-1" aria-hidden="true">📅</span>
-                            <span>{isoToFrDisplay(observation.date, { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
+
+                        <div className="mt-2 space-y-1">
+                            <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
+                                <span className="mr-1" aria-hidden="true">📍</span>
+                                <span className="truncate">{observation.location}</span>
+                            </div>
+                            <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
+                                <span className="mr-1" aria-hidden="true">📅</span>
+                                <span>{isoToFrDisplay(observation.date, { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
+                            </div>
                         </div>
                     </div>
                 </div>

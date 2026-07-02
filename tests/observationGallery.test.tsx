@@ -35,7 +35,7 @@ const makeObservation = (overrides: Partial<Observation> = {}): Observation => (
 describe('ObservationGallery — FO-50 image cassée', () => {
     it('affiche le placeholder quand l\'image échoue à charger', () => {
         const obs = makeObservation({ wikipediaImage: 'https://upload.wikimedia.org/cassee.jpg' });
-        render(<ObservationGallery observations={[obs]} onEdit={vi.fn()} />);
+        render(<ObservationGallery observations={[obs]} onView={vi.fn()} />);
 
         const img = screen.getByAltText('Mésange bleue') as HTMLImageElement;
         expect(img).toBeTruthy();

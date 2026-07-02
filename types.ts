@@ -189,6 +189,7 @@ export enum View {
     STATS,
     GALLERY,
     CALENDAR,
+    DETAIL = 6, // EE-2 : vue lecture seule d'une observation (valeur explicite : 7-10 déjà pris)
     PRIVACY = 7,
     TERMS = 8,
     LEGAL_NOTICES = 9,
