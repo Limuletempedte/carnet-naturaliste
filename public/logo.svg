@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- EE-5 : logo « Tuile verte » — l'oiseau historique en blanc sur le vert de l'app. -->
+  <title>Carnet Naturaliste</title>
+  <rect width="120" height="120" rx="27" fill="#34C759"/>
+  <g transform="translate(8,2)">
+    <path d="M46 16 C62 16 75 28 79 44 C81 52 82 59 80 65 L94 74 L78 77 C72 90 59 98 46 98 C28 98 15 84 15 65 C15 45 27 30 40 27 Z" fill="#FFFFFF"/>
+    <circle cx="45" cy="28" r="17" fill="#FFFFFF"/>
+    <path d="M30 22 L14 29 L30 35 Z" fill="#FFFFFF"/>
+    <path d="M41 97 v8 h7" stroke="#FFFFFF" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M56 97 v8 h7" stroke="#FFFFFF" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <circle cx="49" cy="27" r="3" fill="#34C759"/>
+</svg>
