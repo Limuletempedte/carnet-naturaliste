@@ -99,7 +99,7 @@ const App: React.FC = () => {
     const [isDarkMode, setIsDarkMode] = useState(() => safeGet('darkMode') === 'true');
     // EE-4 : réfraction Liquid Glass (Chromium) sur le header mobile et le
     // dialogue de suppression de compte.
-    const headerGlassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 10 });
+    const headerGlassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 16 });
     const deleteDialogGlassRef = useLiquidGlassRefraction<HTMLDivElement>();
     const closeDeleteAccountDialog = useCallback(() => { setIsDeleteAccountOpen(false); setDeleteConfirmText(''); }, []);
     const { dialogRef: deleteAccountDialogRef, dialogProps: deleteAccountDialogProps } = useAccessibleDialog({ isOpen: isDeleteAccountOpen, onClose: closeDeleteAccountDialog, titleId: 'delete-account-dialog-title' });

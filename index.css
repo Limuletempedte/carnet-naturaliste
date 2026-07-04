@@ -240,11 +240,17 @@ body {
    Verre translucide « chrome » : flou fort + saturation, liseré spéculaire
    (inset haut/bas) et reflet diagonal (sheen). La réfraction des bords est
    ajoutée en plus par components/LiquidGlass.tsx sur Chromium uniquement. */
-.liquid-glass {
+/* Positionnement : :where() = spécificité nulle, pour que les utilitaires
+   Tailwind (.fixed, .absolute, .sticky) posés sur l'élément gardent toujours
+   la main — le pseudo-élément sheen a juste besoin d'un ancêtre positionné. */
+:where(.liquid-glass, .liquid-glass-opaque) {
     position: relative;
-    background: rgba(255, 255, 255, 0.5);
-    backdrop-filter: blur(24px) saturate(170%);
-    -webkit-backdrop-filter: blur(24px) saturate(170%);
+}
+
+.liquid-glass {
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.45);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.55),
@@ -253,7 +259,7 @@ body {
 }
 
 .dark .liquid-glass {
-    background: rgba(28, 28, 30, 0.5);
+    background: rgba(28, 28, 30, 0.45);
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.18),
@@ -281,7 +287,6 @@ body {
 /* Panneaux denses (dialogues avec beaucoup de contenu) : verre plus opaque,
    la lisibilité prime sur l'effet. */
 .liquid-glass-opaque {
-    position: relative;
     background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(25px) saturate(150%);
     -webkit-backdrop-filter: blur(25px) saturate(150%);

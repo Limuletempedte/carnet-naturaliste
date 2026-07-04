@@ -151,7 +151,7 @@ const buildDisplacementMapUrl = (
 export function useLiquidGlassRefraction<T extends HTMLElement>(
     options: LiquidGlassRefractionOptions = {}
 ): (node: T | null) => void {
-    const { scale = 24, bezelWidth = 14, blur = 3, saturate = 1.7, enabled = true } = options;
+    const { scale = 32, bezelWidth = 14, blur = 3, saturate = 1.8, enabled = true } = options;
     // useId peut contenir « : » ou « « » » selon la version de React → assainir pour url(#…).
     const rawId = useId();
     const filterId = `lg-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
