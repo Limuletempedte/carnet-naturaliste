@@ -5,6 +5,8 @@ import { getObservations, saveObservation, updateObservation, deleteObservation,
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
+import FullScreenLoader from './components/FullScreenLoader';
+import { useLiquidGlassRefraction } from './components/LiquidGlass';
 import { fetchSpeciesInfo } from './services/speciesService';
 import FilterBar from './components/FilterBar';
 import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
@@ -95,6 +97,10 @@ const App: React.FC = () => {
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
     const [isDarkMode, setIsDarkMode] = useState(() => safeGet('darkMode') === 'true');
+    // EE-4 : réfraction Liquid Glass (Chromium) sur le header mobile et le
+    // dialogue de suppression de compte.
+    const headerGlassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 10 });
+    const deleteDialogGlassRef = useLiquidGlassRefraction<HTMLDivElement>();
     const closeDeleteAccountDialog = useCallback(() => { setIsDeleteAccountOpen(false); setDeleteConfirmText(''); }, []);
     const { dialogRef: deleteAccountDialogRef, dialogProps: deleteAccountDialogProps } = useAccessibleDialog({ isOpen: isDeleteAccountOpen, onClose: closeDeleteAccountDialog, titleId: 'delete-account-dialog-title' });
 
@@ -617,7 +623,7 @@ const App: React.FC = () => {
     }
 
     if (authLoading) {
-        return <div role="status" className="flex items-center justify-center h-screen"><p>Chargement de la session...</p></div>;
+        return <FullScreenLoader label="Chargement de la session..." />;
     }
 
     // H13 : retour du lien « mot de passe oublié » — priorité sur tout le reste,
@@ -631,7 +637,7 @@ const App: React.FC = () => {
         if (isOffline) {
             return (
                 <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
-                    <div className="w-full max-w-md bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-2xl shadow-ios p-8 border border-white/20 text-center">
+                    <div className="w-full max-w-md liquid-glass-opaque rounded-2xl p-8 text-center">
                         {/* EE-5 : logo de l'app au-dessus du titre */}
                         <img src="/logo.svg" alt="" aria-hidden="true" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-sm" />
                         <h1 className="text-3xl font-bold mb-2 text-nature-dark dark:text-white">Carnet Naturaliste</h1>
@@ -646,7 +652,7 @@ const App: React.FC = () => {
     }
 
     if (isLoading) {
-        return <div role="status" className="flex items-center justify-center h-screen"><p>Chargement des données...</p></div>;
+        return <FullScreenLoader label="Chargement des données..." />;
     }
 
     const statusColorClass = connectionStatus === 'offline'
@@ -691,7 +697,7 @@ const App: React.FC = () => {
 
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
-                <header className="fixed top-0 left-0 right-0 z-50 px-4 py-2 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
+                <header ref={headerGlassRef} className="fixed top-0 left-0 right-0 z-50 px-4 py-2 liquid-glass liquid-glass-sheen border-x-0 border-t-0 flex items-center justify-between transition-all duration-300">
                     <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     <div className="flex items-center gap-1.5">
                         {/* Server Status Mobile — pastille + libellé accessible (UIA-05) */}
@@ -716,7 +722,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsAdvancedFilterOpen(true)}
-                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
                             aria-label="Filtres avancés"
                         >
@@ -725,7 +731,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleRefresh}
-                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
                             aria-label="Actualiser les données"
                         >
@@ -734,7 +740,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
-                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? 'Mode Clair' : 'Mode Sombre'}
                             aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
@@ -753,7 +759,7 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
-                        <div role="status" className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${statusBadgeClass}`} title={statusTitle}>
+                        <div role="status" className={`flex items-center gap-2 px-3 py-1.5 rounded-full liquid-glass transition-all ${statusBadgeClass}`} title={statusTitle}>
                             <div aria-hidden="true" className={`w-2 h-2 rounded-full ${statusColorClass}`}></div>
                             <span className="text-xs font-bold hidden md:inline">{statusLabel}</span>
                             <span className="sr-only">{statusTitle}</span>
@@ -761,7 +767,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleOpenSyncCenter}
-                            className="relative p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="relative p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
                             aria-label="Centre de synchronisation"
                         >
@@ -775,7 +781,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsAdvancedFilterOpen(true)}
-                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
                             aria-label="Filtres avancés"
                         >
@@ -784,7 +790,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleRefresh}
-                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
                             aria-label="Actualiser les données"
                         >
@@ -793,7 +799,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
-                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
                             aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
@@ -817,7 +823,11 @@ const App: React.FC = () => {
             )}
             {isDeleteAccountOpen && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-                    <div ref={deleteAccountDialogRef} {...deleteAccountDialogProps} className="bg-white/80 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-xl shadow-2xl p-8 w-full max-w-md">
+                    <div
+                        ref={(node) => { deleteAccountDialogRef.current = node; deleteDialogGlassRef(node); }}
+                        {...deleteAccountDialogProps}
+                        className="liquid-glass liquid-glass-sheen animate-scaleIn rounded-2xl p-8 w-full max-w-md"
+                    >
                         <h3 id="delete-account-dialog-title" className="text-2xl font-serif font-bold text-red-600">Supprimer mon compte</h3>
                         <p className="mt-4 text-gray-700 dark:text-gray-300">
                             Cette action est <strong>irréversible</strong>. Toutes vos observations, photos et données seront définitivement supprimées.

@@ -13,11 +13,12 @@ interface ToastContainerProps {
     onDismiss: (id: string) => void;
 }
 
+// EE-4 : tons translucides (verre) + variantes sombres (absentes jusqu'ici).
 const toneClass: Record<ToastType, string> = {
-    success: 'bg-emerald-100 border-emerald-300 text-emerald-800',
-    error: 'bg-red-100 border-red-300 text-red-800',
-    info: 'bg-blue-100 border-blue-300 text-blue-800',
-    warning: 'bg-amber-100 border-amber-300 text-amber-900'
+    success: 'bg-emerald-100/70 border-emerald-300/60 text-emerald-900 dark:bg-emerald-900/50 dark:border-emerald-700/50 dark:text-emerald-100',
+    error: 'bg-red-100/70 border-red-300/60 text-red-900 dark:bg-red-900/50 dark:border-red-700/50 dark:text-red-100',
+    info: 'bg-blue-100/70 border-blue-300/60 text-blue-900 dark:bg-blue-900/50 dark:border-blue-700/50 dark:text-blue-100',
+    warning: 'bg-amber-100/70 border-amber-300/60 text-amber-900 dark:bg-amber-900/50 dark:border-amber-700/50 dark:text-amber-100'
 };
 
 const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
@@ -29,7 +30,7 @@ const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) =>
                 <div
                     key={toast.id}
                     role="alert"
-                    className={`border backdrop-blur-md rounded-xl shadow-md px-4 py-3 ${toneClass[toast.type]}`}
+                    className={`border backdrop-blur-xl rounded-xl shadow-md px-4 py-3 animate-toastIn ${toneClass[toast.type]}`}
                 >
                     <div className="flex items-start justify-between gap-3">
                         <p className="text-sm font-medium leading-snug break-words">{toast.message}</p>

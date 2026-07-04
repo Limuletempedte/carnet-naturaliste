@@ -110,7 +110,7 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose }) => {
             <div
                 ref={dialogRef}
                 {...dialogProps}
-                className="w-full max-w-lg bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6"
+                className="w-full max-w-lg liquid-glass-opaque animate-scaleIn rounded-2xl p-6"
             >
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">

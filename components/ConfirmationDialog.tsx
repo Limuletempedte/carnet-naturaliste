@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { useAccessibleDialog } from '../hooks/useAccessibleDialog';
+import { useLiquidGlassRefraction } from './LiquidGlass';
 
 interface ConfirmationDialogProps {
     isOpen: boolean;
@@ -13,6 +14,8 @@ interface ConfirmationDialogProps {
 
 const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({ isOpen, onClose, onConfirm, title, message, variant }) => {
     const { dialogRef, dialogProps } = useAccessibleDialog({ isOpen, onClose, titleId: 'confirmation-dialog-title' });
+    // EE-4 : réfraction Liquid Glass sur le panneau (Chromium uniquement).
+    const glassRef = useLiquidGlassRefraction<HTMLDivElement>();
 
     if (!isOpen) return null;
 
@@ -24,9 +27,13 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({ isOpen, onClose
 
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-            <div ref={dialogRef} {...dialogProps} className="bg-white/80 backdrop-blur-md rounded-xl shadow-2xl p-8 w-full max-w-md transform transition-all">
-                <h3 id="confirmation-dialog-title" className="text-2xl font-serif font-bold text-nature-dark">{title}</h3>
-                <p className="mt-4 text-gray-700">{message}</p>
+            <div
+                ref={(node) => { dialogRef.current = node; glassRef(node); }}
+                {...dialogProps}
+                className="liquid-glass liquid-glass-sheen animate-scaleIn rounded-2xl p-8 w-full max-w-md transform transition-all"
+            >
+                <h3 id="confirmation-dialog-title" className="text-2xl font-serif font-bold text-nature-dark dark:text-white">{title}</h3>
+                <p className="mt-4 text-gray-700 dark:text-gray-300">{message}</p>
                 <div className="mt-8 flex justify-end space-x-4">
                     <button 
                         onClick={onClose} 

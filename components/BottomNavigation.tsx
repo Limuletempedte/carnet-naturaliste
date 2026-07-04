@@ -1,5 +1,6 @@
 import React from 'react';
 import { View } from '../types';
+import { useLiquidGlassRefraction } from './LiquidGlass';
 
 interface BottomNavigationProps {
     currentView: View;
@@ -39,8 +40,10 @@ const TABS: TabDefinition[] = [
 ];
 
 const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentView, onViewChange }) => {
+    // EE-4 : réfraction Liquid Glass sur les bords de la barre (Chromium uniquement).
+    const glassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 10 });
     return (
-        <nav aria-label="Navigation principale" className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-xl border-t border-gray-200 dark:border-white/10 pb-safe pt-2 px-4 z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+        <nav ref={glassRef} aria-label="Navigation principale" className="fixed bottom-0 left-0 right-0 liquid-glass liquid-glass-sheen border-x-0 border-b-0 pb-safe pt-2 px-4 z-50">
             <div role="tablist" aria-label="Vues" className="flex justify-around items-center">
                 {TABS.map((tab) => (
                     <button

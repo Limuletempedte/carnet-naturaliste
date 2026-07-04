@@ -30,7 +30,7 @@ const StatsExportDialog: React.FC<StatsExportDialogProps> = ({
 
     return (
         <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-            <div ref={dialogRef} {...dialogProps} className="w-full max-w-xl bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
+            <div ref={dialogRef} {...dialogProps} className="w-full max-w-xl liquid-glass-opaque animate-scaleIn rounded-2xl p-6">
                 <h3 id="stats-export-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Export stats avancé</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-5">Mode léger (sans images/logos) + plage de dates pour export ciblé.</p>
 
