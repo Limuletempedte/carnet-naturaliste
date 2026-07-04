@@ -74,7 +74,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
                 aria-label="Menu utilisateur"
-                className="flex items-center gap-2 p-1.5 pr-4 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover active:scale-95 transition-all duration-300 group"
+                className="flex items-center gap-2 p-1.5 pr-4 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover active:scale-95 transition-all duration-300 group"
             >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-nature-green to-emerald-600 flex items-center justify-center text-white font-bold shadow-sm">
                     {initial}

@@ -41,7 +41,7 @@ const TABS: TabDefinition[] = [
 
 const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentView, onViewChange }) => {
     // EE-4 : réfraction Liquid Glass sur les bords de la barre (Chromium uniquement).
-    const glassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 16 });
+    const glassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 22, scale: 48 });
     return (
         <nav ref={glassRef} aria-label="Navigation principale" className="fixed bottom-0 left-0 right-0 liquid-glass liquid-glass-sheen border-x-0 border-b-0 pb-safe pt-2 px-4 z-50">
             <div role="tablist" aria-label="Vues" className="flex justify-around items-center">

@@ -99,8 +99,9 @@ const App: React.FC = () => {
     const [isDarkMode, setIsDarkMode] = useState(() => safeGet('darkMode') === 'true');
     // EE-4 : réfraction Liquid Glass (Chromium) sur le header mobile et le
     // dialogue de suppression de compte.
-    const headerGlassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 16 });
+    const headerGlassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 22, scale: 48 });
     const deleteDialogGlassRef = useLiquidGlassRefraction<HTMLDivElement>();
+    const desktopTabsGlassRef = useLiquidGlassRefraction<HTMLDivElement>({ bezelWidth: 18 });
     const closeDeleteAccountDialog = useCallback(() => { setIsDeleteAccountOpen(false); setDeleteConfirmText(''); }, []);
     const { dialogRef: deleteAccountDialogRef, dialogProps: deleteAccountDialogProps } = useAccessibleDialog({ isOpen: isDeleteAccountOpen, onClose: closeDeleteAccountDialog, titleId: 'delete-account-dialog-title' });
 
@@ -767,7 +768,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleOpenSyncCenter}
-                            className="relative p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
+                            className="relative p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
                             aria-label="Centre de synchronisation"
                         >
@@ -781,7 +782,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsAdvancedFilterOpen(true)}
-                            className="p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
                             aria-label="Filtres avancés"
                         >
@@ -790,7 +791,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleRefresh}
-                            className="p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
                             aria-label="Actualiser les données"
                         >
@@ -799,7 +800,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
-                            className="p-3 rounded-full liquid-glass liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
                             aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
@@ -922,7 +923,7 @@ const App: React.FC = () => {
                 {/* Navigation Tabs - Desktop Only */}
                 {!isMobileView && view !== View.FORM && (
                     <nav aria-label="Navigation principale" className="flex justify-center mb-10 sticky top-4 z-40">
-                        <div role="tablist" aria-label="Vues" className="bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-xl rounded-full p-1.5 shadow-ios border border-white/20 dark:border-white/5 flex gap-1 overflow-x-auto max-w-full">
+                        <div ref={desktopTabsGlassRef} role="tablist" aria-label="Vues" className="liquid-glass liquid-glass-sheen rounded-full p-1.5 flex gap-1 overflow-x-auto max-w-full">
                             {[
                                 {
                                     id: View.LIST, label: 'Liste',
@@ -1028,7 +1029,7 @@ const App: React.FC = () => {
                             <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
                                 <button
                                     onClick={handleAddObservation}
-                                    className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
                                 >
                                     {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
                                 </button>
@@ -1072,7 +1073,7 @@ const App: React.FC = () => {
                             <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
                                 <button
                                     onClick={handleAddObservation}
-                                    className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
                                 >
                                     {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
                                 </button>

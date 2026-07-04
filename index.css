@@ -227,8 +227,10 @@ body {
 
 .glass-input {
     background: rgba(255, 255, 255, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.45);
     backdrop-filter: blur(10px);
+    /* EE-4 : liseré spéculaire léger, cohérent avec le Liquid Glass. */
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6);
 }
 
 .dark .glass-input {
@@ -237,51 +239,92 @@ body {
 }
 
 /* ===== Lot 8 (EE-4) — Liquid Glass iOS 26 =====
-   Verre translucide « chrome » : flou fort + saturation, liseré spéculaire
-   (inset haut/bas) et reflet diagonal (sheen). La réfraction des bords est
-   ajoutée en plus par components/LiquidGlass.tsx sur Chromium uniquement. */
+   Verre « bulle d'eau » : centre relativement clair (flou modéré + saturation
+   + éclaircissement), RIM spéculaire brillant sur tout le pourtour, reflet de
+   goutte incurvé en haut (sheen). La réfraction réelle des bords est ajoutée
+   en plus par components/LiquidGlass.tsx sur Chromium. */
 /* Positionnement : :where() = spécificité nulle, pour que les utilitaires
    Tailwind (.fixed, .absolute, .sticky) posés sur l'élément gardent toujours
    la main — le pseudo-élément sheen a juste besoin d'un ancêtre positionné. */
-:where(.liquid-glass, .liquid-glass-opaque) {
+:where(.liquid-glass, .liquid-glass-clear, .liquid-glass-green, .liquid-glass-opaque) {
     position: relative;
 }
 
+/* Barres et menus (texte dense au-dessus) : bulle lisible. */
 .liquid-glass {
-    background: rgba(255, 255, 255, 0.4);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.28);
+    backdrop-filter: blur(12px) saturate(180%) brightness(1.08);
+    -webkit-backdrop-filter: blur(12px) saturate(180%) brightness(1.08);
+    border: 1px solid rgba(255, 255, 255, 0.55);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.55),
-        inset 0 -1px 0 rgba(255, 255, 255, 0.15),
-        0 8px 24px rgba(31, 38, 60, 0.12);
+        inset 0 1px 1px rgba(255, 255, 255, 0.75),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.30),
+        inset 1px 0 1px rgba(255, 255, 255, 0.25),
+        inset -1px 0 1px rgba(255, 255, 255, 0.25),
+        0 8px 24px rgba(31, 38, 60, 0.16);
 }
 
 .dark .liquid-glass {
-    background: rgba(28, 28, 30, 0.45);
-    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(28, 28, 30, 0.38);
+    border-color: rgba(255, 255, 255, 0.18);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.18),
-        inset 0 -1px 0 rgba(255, 255, 255, 0.04),
-        0 8px 24px rgba(0, 0, 0, 0.45);
+        inset 0 1px 1px rgba(255, 255, 255, 0.25),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.08),
+        0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
-/* Reflet diagonal — pseudo-élément, aucun DOM supplémentaire. */
+/* Pilules et boutons (contenu court et gras) : bulle quasi transparente. */
+.liquid-glass-clear {
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(6px) saturate(190%) brightness(1.1);
+    -webkit-backdrop-filter: blur(6px) saturate(190%) brightness(1.1);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow:
+        inset 0 1px 1px rgba(255, 255, 255, 0.8),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.3),
+        inset 1px 0 1px rgba(255, 255, 255, 0.3),
+        inset -1px 0 1px rgba(255, 255, 255, 0.3),
+        0 6px 18px rgba(31, 38, 60, 0.18);
+}
+
+.dark .liquid-glass-clear {
+    background: rgba(28, 28, 30, 0.3);
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow:
+        inset 0 1px 1px rgba(255, 255, 255, 0.28),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.08),
+        0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+/* Boutons d'action verts (FAB « Ajouter ») : verre teinté nature-green. */
+.liquid-glass-green {
+    background: rgba(52, 199, 89, 0.72);
+    backdrop-filter: blur(10px) saturate(180%) brightness(1.05);
+    -webkit-backdrop-filter: blur(10px) saturate(180%) brightness(1.05);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow:
+        inset 0 1px 1px rgba(255, 255, 255, 0.6),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.15),
+        0 8px 24px rgba(27, 138, 47, 0.35);
+}
+
+/* Reflet de goutte : lumière incurvée en haut + léger retour diagonal,
+   comme la lumière sur une bulle d'eau. Pseudo-élément, aucun DOM en plus. */
 .liquid-glass-sheen::before {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    background: linear-gradient(115deg,
-            rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.05) 30%,
-            rgba(255, 255, 255, 0) 50%, rgba(255, 255, 255, 0.18) 100%);
-    opacity: 0.6;
+    background:
+        radial-gradient(120% 70% at 50% -20%,
+            rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.12) 45%, rgba(255, 255, 255, 0) 62%),
+        linear-gradient(115deg,
+            rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0.12) 100%);
 }
 
 .dark .liquid-glass-sheen::before {
-    opacity: 0.25;
+    opacity: 0.35;
 }
 
 /* Panneaux denses (dialogues avec beaucoup de contenu) : verre plus opaque,
@@ -372,6 +415,8 @@ body {
     .glass-panel,
     .glass-input,
     .liquid-glass,
+    .liquid-glass-clear,
+    .liquid-glass-green,
     .liquid-glass-opaque,
     [class*="backdrop-blur"] {
         backdrop-filter: none !important;
@@ -381,13 +426,19 @@ body {
     /* Repli opaque : le !important écrase aussi le style inline posé par le
        hook de réfraction (components/LiquidGlass.tsx) — double sécurité. */
     .liquid-glass,
+    .liquid-glass-clear,
     .liquid-glass-opaque {
         background: rgba(255, 255, 255, 0.95) !important;
     }
 
     .dark .liquid-glass,
+    .dark .liquid-glass-clear,
     .dark .liquid-glass-opaque {
         background: rgba(28, 28, 30, 0.97) !important;
+    }
+
+    .liquid-glass-green {
+        background: #34C759 !important;
     }
 
     .liquid-glass-sheen::before {

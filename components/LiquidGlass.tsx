@@ -33,6 +33,8 @@ export interface LiquidGlassRefractionOptions {
     blur?: number;
     /** Saturation du fond derrière le verre. */
     saturate?: number;
+    /** Éclaircissement du fond derrière le verre (aspect « lumineux » iOS 26). */
+    brightness?: number;
     /** Permet de désactiver l'effet (ex. selon un état). */
     enabled?: boolean;
 }
@@ -151,7 +153,7 @@ const buildDisplacementMapUrl = (
 export function useLiquidGlassRefraction<T extends HTMLElement>(
     options: LiquidGlassRefractionOptions = {}
 ): (node: T | null) => void {
-    const { scale = 32, bezelWidth = 14, blur = 3, saturate = 1.8, enabled = true } = options;
+    const { scale = 56, bezelWidth = 20, blur = 3, saturate = 1.8, brightness = 1.08, enabled = true } = options;
     // useId peut contenir « : » ou « « » » selon la version de React → assainir pour url(#…).
     const rawId = useId();
     const filterId = `lg-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -220,7 +222,7 @@ export function useLiquidGlassRefraction<T extends HTMLElement>(
             feImage.setAttribute('href', mapUrl);
             feImage.setAttribute('width', String(width));
             feImage.setAttribute('height', String(height));
-            node.style.backdropFilter = `url(#${filterId}) blur(${blur}px) saturate(${saturate})`;
+            node.style.backdropFilter = `url(#${filterId}) blur(${blur}px) saturate(${saturate}) brightness(${brightness})`;
         };
 
         const scheduleRender = () => {
@@ -242,5 +244,5 @@ export function useLiquidGlassRefraction<T extends HTMLElement>(
             svg.remove();
             node.style.backdropFilter = '';
         };
-    }, [enabled, scale, bezelWidth, blur, saturate, filterId]);
+    }, [enabled, scale, bezelWidth, blur, saturate, brightness, filterId]);
 }
