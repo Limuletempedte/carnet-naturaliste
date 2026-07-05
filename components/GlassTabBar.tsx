@@ -65,6 +65,14 @@ const GlassTabBar: React.FC<GlassTabBarProps> = ({ tabs, activeId, onChange, var
     // La transition ne s'active qu'après le premier positionnement, sinon la
     // bulle « arriverait » du coin haut-gauche à l'apparition de la barre.
     const hasPositionedRef = useRef(false);
+    // Drag de la bulle (iOS 26) : on reste appuyé sur l'onglet actif et la
+    // bulle suit le doigt/curseur le long de la barre ; au lâcher elle
+    // s'aimante à l'onglet le plus proche, qui devient la vue courante.
+    const [dragX, setDragX] = useState<number | null>(null); // centre de la bulle pendant le drag
+    const dragStateRef = useRef<{ pointerId: number; originX: number; moved: boolean } | null>(null);
+    // Après un drag, le navigateur émet quand même un click sur l'onglet
+    // d'origine (celui qui a capturé le pointeur) — il ne doit pas re-naviguer.
+    const suppressNextClickRef = useRef(false);
 
     // Verre de la barre elle-même (réfraction des bords, Chromium uniquement).
     const barGlassRef = useLiquidGlassRefraction<HTMLDivElement>(
@@ -73,7 +81,7 @@ const GlassTabBar: React.FC<GlassTabBarProps> = ({ tabs, activeId, onChange, var
     // La bulle : petite lentille très bombée — réfraction forte, flou minimal
     // (le fond doit rester net et magnifié), reflet spéculaire marqué.
     const bubbleGlassRef = useLiquidGlassRefraction<HTMLSpanElement>({
-        scale: 72, bezelWidth: 13, blur: 1, saturate: 1.9, brightness: 1.12,
+        scale: 72, bezelWidth: 13, blur: 1, saturate: 1.9, brightness: 1.06,
         specularStrength: 1.1, specularShininess: 48
     });
 
@@ -112,6 +120,72 @@ const GlassTabBar: React.FC<GlassTabBarProps> = ({ tabs, activeId, onChange, var
 
     const animate = hasPositionedRef.current;
 
+    /** Onglet dont le centre est le plus proche d'une abscisse de la barre. */
+    const nearestTabId = useCallback((x: number): View => {
+        let best = activeId;
+        let bestDist = Infinity;
+        buttonRefs.current.forEach((btn, id) => {
+            const center = btn.offsetLeft + btn.offsetWidth / 2;
+            const dist = Math.abs(center - x);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = id;
+            }
+        });
+        return best;
+    }, [activeId]);
+
+    /** Abscisse du pointeur dans le repère de la barre (scroll compris). */
+    const pointerToBarX = (e: React.PointerEvent): number => {
+        const container = containerRef.current;
+        if (!container) return 0;
+        return e.clientX - container.getBoundingClientRect().left + container.scrollLeft;
+    };
+
+    const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>, tabId: View) => {
+        if (tabId !== activeId || !bubble) return; // on n'attrape que la bulle
+        dragStateRef.current = { pointerId: e.pointerId, originX: e.clientX, moved: false };
+        // Capture : les pointermove/up suivants restent adressés à ce bouton
+        // même si le doigt sort de la barre. Best effort (absent de jsdom).
+        try {
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+        } catch { /* pointeur factice ou API absente : le drag marche sans capture */ }
+    };
+
+    const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+        const state = dragStateRef.current;
+        if (!state || state.pointerId !== e.pointerId || !bubble) return;
+        if (!state.moved && Math.abs(e.clientX - state.originX) < 4) return; // seuil anti-tap
+        state.moved = true;
+        const container = containerRef.current;
+        if (!container) return;
+        const half = bubble.w / 2;
+        setDragX(Math.min(Math.max(pointerToBarX(e), half), container.scrollWidth - half));
+    };
+
+    const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+        const state = dragStateRef.current;
+        if (!state || state.pointerId !== e.pointerId) return;
+        dragStateRef.current = null;
+        if (!state.moved) return; // simple tap : le click habituel s'en charge
+        suppressNextClickRef.current = true;
+        setDragX(null);
+        const target = nearestTabId(pointerToBarX(e));
+        if (target !== activeId) {
+            onChange(target);
+            navigator.vibrate?.(8); // léger retour haptique au lâcher (Android Chrome)
+        }
+    };
+
+    const handlePointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+        if (dragStateRef.current?.pointerId !== e.pointerId) return;
+        dragStateRef.current = null;
+        setDragX(null); // geste interrompu : la bulle retourne sur l'onglet actif
+    };
+
+    // Pendant le drag, l'onglet sous la bulle se teinte (aperçu de la cible).
+    const hoverId = dragX !== null ? nearestTabId(dragX) : null;
+
     return (
         <div
             ref={setContainerRef}
@@ -128,13 +202,20 @@ const GlassTabBar: React.FC<GlassTabBarProps> = ({ tabs, activeId, onChange, var
                     style={{
                         width: bubble.w,
                         height: bubble.h,
-                        transform: `translate(${bubble.x}px, ${bubble.y}px)`,
-                        ...(animate ? {} : { transition: 'none' })
+                        // Pendant le drag : suit le pointeur en direct (sans
+                        // transition) avec un léger écrasement « gelée ».
+                        transform: dragX !== null
+                            ? `translate(${dragX - bubble.w / 2}px, ${bubble.y}px) scale(1.08, 0.92)`
+                            : `translate(${bubble.x}px, ${bubble.y}px)`,
+                        ...(dragX !== null || !animate ? { transition: 'none' } : {})
                     }}
                 />
             )}
             {tabs.map((tab) => {
                 const isActive = activeId === tab.id;
+                // Pendant le drag, c'est l'onglet sous la bulle qui est mis en
+                // avant (aperçu de la sélection au lâcher).
+                const isHighlighted = hoverId !== null ? hoverId === tab.id : isActive;
                 return (
                     <button
                         key={tab.id}
@@ -144,14 +225,28 @@ const GlassTabBar: React.FC<GlassTabBarProps> = ({ tabs, activeId, onChange, var
                         }}
                         role="tab"
                         aria-selected={isActive}
-                        onClick={() => onChange(tab.id)}
-                        className={isMobile
-                            ? `relative flex flex-col items-center justify-center min-w-[56px] min-h-[48px] px-2 py-1.5 rounded-full transition-colors duration-300 ${isActive
+                        onClick={() => {
+                            if (suppressNextClickRef.current) {
+                                suppressNextClickRef.current = false;
+                                return;
+                            }
+                            onChange(tab.id);
+                        }}
+                        onPointerDown={(e) => handlePointerDown(e, tab.id)}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onPointerCancel={handlePointerCancel}
+                        // touch-action:none sur l'onglet actif seulement : le
+                        // navigateur laisse le geste horizontal au drag de la
+                        // bulle au lieu de le transformer en scroll.
+                        style={isActive ? { touchAction: 'none' } : undefined}
+                        className={`select-none ${isActive ? 'cursor-grab active:cursor-grabbing' : ''} ${isMobile
+                            ? `relative flex flex-col items-center justify-center min-w-[56px] min-h-[48px] px-2 py-1.5 rounded-full transition-colors duration-300 ${isHighlighted
                                 ? 'text-nature-green-text dark:text-nature-green'
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`
-                            : `relative px-5 py-2.5 rounded-full text-sm font-semibold transition-colors duration-300 flex items-center gap-2 whitespace-nowrap ${isActive
+                            : `relative px-5 py-2.5 rounded-full text-sm font-semibold transition-colors duration-300 flex items-center gap-2 whitespace-nowrap ${isHighlighted
                                 ? 'text-nature-dark dark:text-white'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5'}`}
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5'}`}`}
                     >
                         <span aria-hidden="true" className={isMobile ? 'mb-0.5' : ''}>{tab.icon(isMobile ? 'w-5 h-5' : 'w-4 h-4')}</span>
                         <span className={isMobile ? 'text-[10px] font-medium uppercase tracking-wide' : ''}>{tab.label}</span>
