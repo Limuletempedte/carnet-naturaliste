@@ -14,7 +14,8 @@ import { buildImportPersistencePlan, ImportConflictMode } from '../services/impo
 import { logger } from '../utils/logger';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from '../utils/chunkLoadError';
 import { useLiquidGlassRefraction } from './LiquidGlass';
-import { SpinnerIcon, SearchIcon, PlusIcon } from './icons';
+import { SpinnerIcon, PlusIcon } from './icons';
+import EmptyState from './EmptyState';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -524,9 +525,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 />
                             ))
                         ) : (
-                            <div className="text-center py-10 text-gray-400">
-                                <p>Aucune observation trouvée.</p>
-                            </div>
+                            <EmptyState variant="search" title="Aucune observation trouvée." className="py-10" />
                         )}
                     </div>
                 </div>
@@ -775,11 +774,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={8} className="text-center p-16 text-gray-400 font-medium">
-                                            <div className="flex flex-col items-center gap-4">
-                                                <SearchIcon className="w-10 h-10 opacity-50" />
-                                                <p>Aucune observation trouvée pour les filtres sélectionnés.</p>
-                                            </div>
+                                        <td colSpan={8} className="p-8">
+                                            <EmptyState variant="search" title="Aucune observation trouvée pour les filtres sélectionnés." />
                                         </td>
                                     </tr>
                                 )}

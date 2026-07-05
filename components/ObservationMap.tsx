@@ -35,10 +35,11 @@ interface ObservationMapProps {
 
 import { isSafeImageUrl } from '../utils/urlUtils';
 
-const buildPopupContent = (obs: Observation, isDark: boolean, onView?: (id: string) => void): HTMLElement => {
+// 8c : plus de couleur inline selon isDark — la popup est en verre stylé par
+// .leaflet-popup-content-wrapper (index.css), la cascade .dark s'en charge.
+const buildPopupContent = (obs: Observation, onView?: (id: string) => void): HTMLElement => {
     const root = document.createElement('div');
     root.style.minWidth = '200px';
-    root.style.color = isDark ? '#e5e7eb' : '#1f2937';
 
     const imageSrc = obs.photo || obs.wikipediaImage;
     if (imageSrc && isSafeImageUrl(imageSrc)) {
@@ -95,7 +96,7 @@ const buildPopupContent = (obs: Observation, isDark: boolean, onView?: (id: stri
         btn.style.backgroundColor = 'var(--map-accent, #5D7B45)';
         btn.style.color = 'white';
         btn.style.border = 'none';
-        btn.style.borderRadius = '8px';
+        btn.style.borderRadius = '9999px'; // 8c : pilule, comme les boutons de l'app
         btn.style.cursor = 'pointer';
         btn.style.fontWeight = '600';
         btn.style.fontSize = '13px';
@@ -122,7 +123,7 @@ const buildAddHerePopupContent = (onAdd: () => void): HTMLElement => {
     btn.style.backgroundColor = 'var(--map-accent, #5D7B45)';
     btn.style.color = 'white';
     btn.style.border = 'none';
-    btn.style.borderRadius = '8px';
+    btn.style.borderRadius = '9999px'; // 8c : pilule, comme les boutons de l'app
     btn.style.cursor = 'pointer';
     btn.style.fontWeight = '600';
     btn.style.fontSize = '13px';
@@ -147,10 +148,8 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
 
     const tileLayerRef = useRef<L.TileLayer | null>(null);
     const onViewRef = useRef(onView);
-    const isDarkModeRef = useRef(isDarkMode);
     const onAddAtLocationRef = useRef(onAddAtLocation);
     onViewRef.current = onView;
-    isDarkModeRef.current = isDarkMode;
     onAddAtLocationRef.current = onAddAtLocation;
 
     const [userAccuracy, setUserAccuracy] = React.useState<number | null>(null);
@@ -280,7 +279,9 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
 
                 // Custom cluster icon styling to match app theme
                 return L.divIcon({
-                    html: `<div style="background-color: rgba(93, 123, 69, 0.9); color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.2);"><span>${count}</span></div>`,
+                    // 8c : la classe .cluster-marker (index.css) suit --map-accent,
+                    // donc le mode sombre — fini le vert codé en dur.
+                    html: `<div class="cluster-marker"><span>${count}</span></div>`,
                     className: 'custom-cluster-icon',
                     iconSize: new L.Point(40, 40)
                 });
@@ -316,7 +317,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
 
                 const marker = L.marker([obs.gps.lat, obs.gps.lon], { icon: customIcon });
                 // PE-22: Lazy popup — DOM created only when popup is opened
-                marker.bindPopup(() => buildPopupContent(obs, isDarkModeRef.current, onViewRef.current));
+                marker.bindPopup(() => buildPopupContent(obs, onViewRef.current));
 
                 // Hover effect
                 marker.on('mouseover', function (this: L.Marker) {

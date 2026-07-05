@@ -3,7 +3,8 @@ import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
 import { isSafeImageUrl } from '../utils/urlUtils';
-import { PhotoIcon, CameraIcon } from './icons';
+import { CameraIcon } from './icons';
+import EmptyState from './EmptyState';
 
 interface ObservationGalleryProps {
     observations: Observation[];
@@ -28,11 +29,12 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
     // UIA-13 : état vide explicite (la grille vide laissait un écran blanc).
     if (observations.length === 0) {
         return (
-            <div className={`text-center py-16 text-gray-400 dark:text-gray-500 ${isMobileView ? 'pb-24' : ''}`}>
-                <PhotoIcon className="w-14 h-14 mx-auto mb-3" />
-                <p className="font-medium">Aucune photo à afficher.</p>
-                <p className="text-sm mt-1">Modifiez vos filtres ou ajoutez une observation avec une photo.</p>
-            </div>
+            <EmptyState
+                variant="photos"
+                title="Aucune photo à afficher."
+                hint="Modifiez vos filtres ou ajoutez une observation avec une photo."
+                className={isMobileView ? 'pb-24' : ''}
+            />
         );
     }
 

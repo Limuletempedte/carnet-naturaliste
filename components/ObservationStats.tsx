@@ -9,6 +9,7 @@ import Badges from './Badges';
 import { buildStatsReportData } from '../utils/statsReportData';
 import { computeCurrentStreak, computeLongestStreak } from '../utils/observationStatsUtils';
 import { SpinnerIcon, ArchiveBoxIcon, FlameIcon, MedalIcon } from './icons';
+import EmptyState from './EmptyState';
 
 const useCountUp = (target: number, duration = 800): number => {
     const [value, setValue] = useState(0);
@@ -110,10 +111,12 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
 
     if (observations.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400">
-                <p className="text-lg font-medium">Aucune observation</p>
-                <p className="text-sm mt-1">Ajoutez des observations pour voir les statistiques.</p>
-            </div>
+            <EmptyState
+                variant="stats"
+                title="Aucune observation"
+                hint="Ajoutez des observations pour voir les statistiques."
+                className="py-16"
+            />
         );
     }
 

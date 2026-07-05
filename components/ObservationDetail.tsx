@@ -5,7 +5,7 @@ import { isoToFrDisplay } from '../utils/dateUtils';
 import { isSafeImageUrl } from '../utils/urlUtils';
 import { formatAtlasCode } from '../utils/atlasCodes';
 import { fetchSpeciesInfo, SpeciesInfo } from '../services/speciesService';
-import { ChevronLeftIcon, PawIcon } from './icons';
+import { ChevronLeftIcon, PawIcon, PencilIcon, TrashIcon } from './icons';
 
 // Leaflet chargé uniquement si la vue détail affiche une carte (GPS présent).
 const DetailMiniMap = lazy(() => import('./DetailMiniMap'));
@@ -120,13 +120,13 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
         : undefined;
 
     return (
-        <div className={`space-y-6 animate-fadeIn ${isMobileView ? 'pb-24' : ''}`}>
-            {/* Barre d'actions */}
-            <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className={`space-y-6 stagger-children ${isMobileView ? 'pb-24' : ''}`}>
+            {/* Barre d'actions : pilule de verre, collante sous le header en mobile. */}
+            <div className={`liquid-glass liquid-glass-sheen rounded-full px-2.5 py-2 flex items-center justify-between flex-wrap gap-2 ${isMobileView ? 'sticky top-20 z-30' : ''}`}>
                 <button
                     type="button"
                     onClick={onBack}
-                    className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white/70 dark:bg-white/10 rounded-full shadow-sm hover:bg-white dark:hover:bg-white/20 transition-colors min-h-[44px] inline-flex items-center gap-1.5"
+                    className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 rounded-full hover:bg-white/60 dark:hover:bg-white/10 transition-colors min-h-[44px] inline-flex items-center gap-1.5"
                 >
                     <ChevronLeftIcon className="w-4 h-4" /> Retour
                 </button>
@@ -134,16 +134,16 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
                     <button
                         type="button"
                         onClick={() => onEdit(observation.id)}
-                        className="px-6 py-2.5 rounded-full shadow-ios font-semibold text-white bg-nature-green hover:bg-green-600 transition-colors min-h-[44px]"
+                        className="px-5 py-2.5 rounded-full shadow-ios font-semibold text-white bg-nature-green hover:bg-green-600 transition-colors min-h-[44px] inline-flex items-center gap-1.5"
                     >
-                        Modifier
+                        <PencilIcon className="w-4 h-4" /> Modifier
                     </button>
                     <button
                         type="button"
                         onClick={() => onDelete(observation.id)}
-                        className="px-6 py-2.5 rounded-full font-semibold text-red-500 bg-red-500/10 hover:bg-red-500/20 transition-colors min-h-[44px]"
+                        className="px-5 py-2.5 rounded-full font-semibold text-red-500 bg-red-500/10 hover:bg-red-500/20 transition-colors min-h-[44px] inline-flex items-center gap-1.5"
                     >
-                        Supprimer
+                        <TrashIcon className="w-4 h-4" /> Supprimer
                     </button>
                 </div>
             </div>
@@ -151,7 +151,7 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
             {/* En-tête : photo + identité de l'espèce */}
             <section className="bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 p-6">
                 <div className="flex flex-col sm:flex-row gap-6">
-                    <div className="w-full sm:w-64 h-48 rounded-2xl overflow-hidden flex-shrink-0 bg-gray-100 dark:bg-black/20">
+                    <div className="w-full sm:w-64 h-48 rounded-2xl overflow-hidden flex-shrink-0 bg-gray-100 dark:bg-black/20 ring-1 ring-black/5 dark:ring-white/10">
                         {heroImageSrc ? (
                             <img src={heroImageSrc} alt={observation.speciesName} className="w-full h-full object-cover" />
                         ) : (

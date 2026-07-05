@@ -387,6 +387,57 @@ body {
         0 20px 50px rgba(0, 0, 0, 0.6);
 }
 
+/* ===== Lot 8c — Carte Leaflet en verre ===== */
+/* Popups : verre dépoli au lieu du blanc opaque par défaut de Leaflet.
+   La couleur du texte est portée ici (plus de style inline isDark dans
+   ObservationMap : la cascade .dark suffit). */
+.leaflet-popup-content-wrapper {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 16px;
+    color: #1f2937;
+    box-shadow:
+        0 0 0 1px rgba(31, 38, 60, 0.05),
+        0 8px 24px rgba(31, 38, 60, 0.18);
+}
+
+.dark .leaflet-popup-content-wrapper {
+    background: rgba(28, 28, 30, 0.78);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #e5e7eb;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.leaflet-popup-tip {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.dark .leaflet-popup-tip {
+    background: rgba(28, 28, 30, 0.85);
+}
+
+.dark .leaflet-popup-close-button {
+    color: #9ca3af;
+}
+
+/* Clusters de marqueurs : suivent --map-accent (mode sombre compris) au lieu
+   du vert codé en dur dans le HTML inline d'ObservationMap. */
+.cluster-marker {
+    background-color: var(--map-accent, #5D7B45);
+    color: white;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border: 2px solid white;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+}
+
 /* Accessibilite — indicateur focus global */
 *:focus-visible {
     outline: 2px solid #1B8A2F;
@@ -459,9 +510,18 @@ body {
     .liquid-glass-green,
     .liquid-glass-bubble,
     .liquid-glass-opaque,
+    .leaflet-popup-content-wrapper,
     [class*="backdrop-blur"] {
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
+    }
+
+    .leaflet-popup-content-wrapper {
+        background: rgba(255, 255, 255, 0.97) !important;
+    }
+
+    .dark .leaflet-popup-content-wrapper {
+        background: rgba(28, 28, 30, 0.97) !important;
     }
 
     /* La bulle d'onglet actif reste un marqueur visible sans transparence :
