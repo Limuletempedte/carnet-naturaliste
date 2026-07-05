@@ -6,6 +6,7 @@ import { Observation } from '../types';
 import ObservationRow from './ObservationRow';
 import { dateToIsoLocal } from '../utils/dateUtils';
 import { CalendarIcon } from './icons';
+import EmptyState from './EmptyState';
 
 interface ObservationCalendarProps {
     observations: Observation[];
@@ -104,10 +105,11 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
                             </table>
                         </div>
                     ) : (
-                        <div className="text-center py-12 bg-gray-50/50 dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">
-                            <p className="text-gray-500 dark:text-gray-400 font-medium">Aucune observation pour cette date.</p>
-                            <p className="text-sm text-gray-400 mt-1">Sélectionnez une autre date ou ajoutez une observation.</p>
-                        </div>
+                        <EmptyState
+                            variant="calendar"
+                            title="Aucune observation pour cette date."
+                            hint="Sélectionnez une autre date ou ajoutez une observation."
+                        />
                     )}
                 </div>
             )}
