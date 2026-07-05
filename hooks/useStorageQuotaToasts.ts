@@ -29,7 +29,7 @@ export function useStorageQuotaToasts(pushToast: PushToast): void {
             if (!strippedCount || strippedCount < 1) return;
             pushToast(
                 'warning',
-                `⚠️ ${strippedCount} photo(s)/son(s) non disponibles hors-ligne (trop volumineuses pour le cache local).`,
+                `${strippedCount} photo(s)/son(s) non disponibles hors-ligne (trop volumineuses pour le cache local).`,
                 8000,
             );
         };
@@ -41,7 +41,7 @@ export function useStorageQuotaToasts(pushToast: PushToast): void {
                 : 'Données locales';
             pushToast(
                 'error',
-                `⚠️ ${label} corrompu(e) — réinitialisé(e). Reconnectez-vous pour recharger depuis le serveur.`,
+                `${label} corrompu(e) — réinitialisé(e). Reconnectez-vous pour recharger depuis le serveur.`,
                 0,
             );
         };

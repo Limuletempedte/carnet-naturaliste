@@ -5,6 +5,7 @@ import { isoToFrDisplay } from '../utils/dateUtils';
 import { isSafeImageUrl } from '../utils/urlUtils';
 import { formatAtlasCode } from '../utils/atlasCodes';
 import { fetchSpeciesInfo, SpeciesInfo } from '../services/speciesService';
+import { ChevronLeftIcon, PawIcon } from './icons';
 
 // Leaflet chargé uniquement si la vue détail affiche une carte (GPS présent).
 const DetailMiniMap = lazy(() => import('./DetailMiniMap'));
@@ -125,9 +126,9 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
                 <button
                     type="button"
                     onClick={onBack}
-                    className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white/70 dark:bg-white/10 rounded-full shadow-sm hover:bg-white dark:hover:bg-white/20 transition-colors min-h-[44px]"
+                    className="px-4 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white/70 dark:bg-white/10 rounded-full shadow-sm hover:bg-white dark:hover:bg-white/20 transition-colors min-h-[44px] inline-flex items-center gap-1.5"
                 >
-                    ← Retour
+                    <ChevronLeftIcon className="w-4 h-4" /> Retour
                 </button>
                 <div className="flex gap-2">
                     <button
@@ -157,7 +158,7 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
                             <div className="w-full h-full flex items-center justify-center">
                                 {taxonLogo
                                     ? <img src={taxonLogo} alt={observation.taxonomicGroup} className="w-20 h-20 opacity-50" />
-                                    : <span className="text-5xl opacity-50" aria-hidden="true">🐾</span>}
+                                    : <PawIcon className="w-14 h-14 opacity-50 text-gray-500 dark:text-gray-400" />}
                             </div>
                         )}
                     </div>

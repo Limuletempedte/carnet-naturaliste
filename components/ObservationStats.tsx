@@ -8,6 +8,7 @@ import { Observation } from '../types';
 import Badges from './Badges';
 import { buildStatsReportData } from '../utils/statsReportData';
 import { computeCurrentStreak, computeLongestStreak } from '../utils/observationStatsUtils';
+import { SpinnerIcon, ArchiveBoxIcon, FlameIcon, MedalIcon } from './icons';
 
 const useCountUp = (target: number, duration = 800): number => {
     const [value, setValue] = useState(0);
@@ -128,7 +129,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                         disabled={isExportingStats}
                         className="flex items-center gap-2 px-5 py-3 rounded-full bg-white/85 dark:bg-nature-dark-surface/88 backdrop-blur-md shadow-ios border border-white/25 dark:border-white/10 text-nature-dark dark:text-white font-semibold text-sm transition-all duration-300 hover:shadow-ios-hover hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
                     >
-                        <span>{isExportingStats ? '⏳' : '📦'}</span>
+                        {isExportingStats ? <SpinnerIcon className="w-5 h-5 animate-spin" /> : <ArchiveBoxIcon className="w-5 h-5" />}
                         {isExportingStats ? 'Export en cours...' : 'Exporter Stats (ZIP: PDF statique + HTML interactif)'}
                     </button>
                 </div>
@@ -166,14 +167,14 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                 </div>
                 <div className="flex items-center gap-6">
                     <div className="text-center">
-                        <div className="text-3xl font-bold text-nature-dark dark:text-white">
-                            <span aria-hidden="true">🔥</span> {currentStreak}
+                        <div className="text-3xl font-bold text-nature-dark dark:text-white flex items-center justify-center gap-1.5">
+                            <FlameIcon className="w-7 h-7 text-orange-500" /> {currentStreak}
                         </div>
                         <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1">Série actuelle</div>
                     </div>
                     <div className="text-center">
-                        <div className="text-3xl font-bold text-nature-dark dark:text-white">
-                            <span aria-hidden="true">🏅</span> {longestStreak}
+                        <div className="text-3xl font-bold text-nature-dark dark:text-white flex items-center justify-center gap-1.5">
+                            <MedalIcon className="w-7 h-7 text-amber-500" /> {longestStreak}
                         </div>
                         <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1">Meilleure série</div>
                     </div>

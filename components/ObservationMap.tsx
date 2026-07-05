@@ -115,7 +115,7 @@ const buildAddHerePopupContent = (onAdd: () => void): HTMLElement => {
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = '➕ Ajouter une observation ici';
+    btn.textContent = 'Ajouter une observation ici';
     btn.style.width = '100%';
     btn.style.padding = '8px 12px';
     // CO-23 : couleur adaptée au mode sombre via la variable CSS partagée --map-accent.

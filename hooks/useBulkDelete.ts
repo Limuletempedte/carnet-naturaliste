@@ -53,7 +53,7 @@ export const useBulkDelete = ({
                 // Toast persistant de progression : le modal se ferme immédiatement
                 // (cf. ConfirmationDialog), l'utilisateur a besoin d'un feedback pendant
                 // que les N suppressions tournent.
-                const progressToastId = onToast('info', `⏳ Suppression de ${ids.length} observation(s)…`, 0);
+                const progressToastId = onToast('info', `Suppression de ${ids.length} observation(s)…`, 0);
                 try {
                     const results = await Promise.allSettled(ids.map(id => deleteObservation(id)));
                     const successIds: string[] = [];

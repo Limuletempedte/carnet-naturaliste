@@ -14,6 +14,7 @@ import { buildImportPersistencePlan, ImportConflictMode } from '../services/impo
 import { logger } from '../utils/logger';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from '../utils/chunkLoadError';
 import { useLiquidGlassRefraction } from './LiquidGlass';
+import { SpinnerIcon, SearchIcon, PlusIcon } from './icons';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -335,7 +336,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 {selectedIds.size > 0 && (
                                     <button onClick={handleDeleteSelected} disabled={isBulkDeleting} aria-label={`Supprimer la sélection (${selectedIds.size})`} title="Supprimer la sélection" className="bg-red-500 text-white p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full shadow-lg disabled:opacity-50">
                                         {isBulkDeleting ? (
-                                            <span className="animate-spin block w-6 h-6" aria-hidden="true">⏳</span>
+                                            <SpinnerIcon className="animate-spin w-6 h-6" />
                                         ) : (
                                             <svg aria-hidden="true" className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                         )}
@@ -538,7 +539,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                         className="fixed bottom-28 right-4 z-40 w-14 h-14 liquid-glass-green liquid-glass-sheen text-white rounded-full flex items-center justify-center text-3xl hover:scale-110 active:scale-95 hover:brightness-110 transition-all duration-200 animate-fade-in"
                         title="Ajouter une observation"
                     >
-                        +
+                        <PlusIcon className="w-7 h-7" />
                     </button>
                 )}
                 <ImportPreviewDialog
@@ -776,7 +777,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                     <tr>
                                         <td colSpan={8} className="text-center p-16 text-gray-400 font-medium">
                                             <div className="flex flex-col items-center gap-4">
-                                                <span className="text-4xl opacity-50">🔍</span>
+                                                <SearchIcon className="w-10 h-10 opacity-50" />
                                                 <p>Aucune observation trouvée pour les filtres sélectionnés.</p>
                                             </div>
                                         </td>

@@ -40,12 +40,13 @@ describe('ObservationGallery — FO-50 image cassée', () => {
         const img = screen.getByAltText('Mésange bleue') as HTMLImageElement;
         expect(img).toBeTruthy();
         // Pas de placeholder tant que l'image n'a pas échoué.
-        expect(screen.queryByText('📷')).toBeNull();
+        expect(screen.queryByTestId('broken-image-placeholder')).toBeNull();
 
         fireEvent.error(img);
 
-        // Après l'échec : l'image disparaît, le placeholder 📷 prend sa place.
+        // Après l'échec : l'image disparaît, le placeholder (icône appareil
+        // photo, 8b : emoji 📷 remplacé par une icône SVG) prend sa place.
         expect(screen.queryByAltText('Mésange bleue')).toBeNull();
-        expect(screen.getByText('📷')).toBeTruthy();
+        expect(screen.getByTestId('broken-image-placeholder')).toBeTruthy();
     });
 });

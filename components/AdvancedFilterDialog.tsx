@@ -1,6 +1,7 @@
 import React from 'react';
 import { SortDirection, SortKey } from '../hooks/useObservationFilters';
 import { useAccessibleDialog } from '../hooks/useAccessibleDialog';
+import { WarningIcon } from './icons';
 
 export interface AdvancedFilterDialogState {
     geoMode: 'none' | 'radius' | 'bbox';
@@ -146,7 +147,7 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
                                     <p role="alert" className="text-xs text-red-500 mt-1">Coordonnées hors limites (lat : −90/90, lon : −180/180).</p>
                                 )}
                                 {(swapped || swappedLon) && (
-                                    <p className="text-xs text-amber-500 dark:text-amber-400 mt-1">⚠ Les bornes {swapped ? 'lat' : ''}{swapped && swappedLon ? ' et ' : ''}{swappedLon ? 'lon' : ''} ont été inversées automatiquement.</p>
+                                    <p className="text-xs text-amber-500 dark:text-amber-400 mt-1"><WarningIcon className="w-3.5 h-3.5 inline align-[-2px] mr-1" />Les bornes {swapped ? 'lat' : ''}{swapped && swappedLon ? ' et ' : ''}{swappedLon ? 'lon' : ''} ont été inversées automatiquement.</p>
                                 )}
                             </div>
                         );
