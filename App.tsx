@@ -988,12 +988,12 @@ const App: React.FC = () => {
                                 onAddAtLocation={handleAddObservationAtLocation}
                             />
 
-                            <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
+                            <div className={`flex justify-end ${isMobileView ? 'fixed bottom-28 right-4 z-50' : ''}`}>
                                 <button
                                     onClick={handleAddObservation}
-                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-16 h-16 flex items-center justify-center p-0' : ''}`}
                                 >
-                                    {isMobileView ? <PlusIcon className="w-7 h-7" /> : 'Ajouter une observation'}
+                                    {isMobileView ? <PlusIcon className="w-8 h-8" strokeWidth={2.5} /> : 'Ajouter une observation'}
                                 </button>
                             </div>
                         </div>
@@ -1032,12 +1032,12 @@ const App: React.FC = () => {
                                 onView={handleViewObservation}
                                 isMobileView={isMobileView}
                             />
-                            <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
+                            <div className={`flex justify-end ${isMobileView ? 'fixed bottom-28 right-4 z-50' : ''}`}>
                                 <button
                                     onClick={handleAddObservation}
-                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-16 h-16 flex items-center justify-center p-0' : ''}`}
                                 >
-                                    {isMobileView ? <PlusIcon className="w-7 h-7" /> : 'Ajouter une observation'}
+                                    {isMobileView ? <PlusIcon className="w-8 h-8" strokeWidth={2.5} /> : 'Ajouter une observation'}
                                 </button>
                             </div>
                         </div>
