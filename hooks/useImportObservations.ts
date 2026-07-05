@@ -47,7 +47,7 @@ export const useImportObservations = ({
             }
 
             setIsImporting(true);
-            importToastId = onToast('info', "⏳ Import en cours...", 0);
+            importToastId = onToast('info', "Import en cours...", 0);
 
             const mergedById = new Map(observations.map(obs => [obs.id, obs] as [string, Observation]));
             const failureReasons = new Map<string, number>();
@@ -151,7 +151,7 @@ export const useImportObservations = ({
             );
 
             if (failedCount > 0 && failureSummary) {
-                onToast('error', `⚠️ Échecs : ${failureSummary}`, 10000);
+                onToast('error', `Échecs : ${failureSummary}`, 10000);
             }
 
             if (importResult.report.warnings.length > 0) {

@@ -5,6 +5,7 @@ import '../calendar.css';
 import { Observation } from '../types';
 import ObservationRow from './ObservationRow';
 import { dateToIsoLocal } from '../utils/dateUtils';
+import { CalendarIcon } from './icons';
 
 interface ObservationCalendarProps {
     observations: Observation[];
@@ -74,7 +75,7 @@ const ObservationCalendar: React.FC<ObservationCalendarProps> = ({ observations,
             {date instanceof Date && (
                 <div className={`bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-3xl shadow-ios border border-white/20 dark:border-white/5 ${isMobileView ? 'p-4' : 'p-8'}`}>
                     <h3 className="text-xl font-bold text-nature-dark dark:text-white mb-6 pb-4 border-b border-gray-100 dark:border-white/5 flex items-center gap-2">
-                        <span className="text-2xl">📅</span>
+                        <CalendarIcon className="w-6 h-6" />
                         {isMobileView ? (
                             <span>{date.toLocaleDateString('fr-FR')}</span>
                         ) : (

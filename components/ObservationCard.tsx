@@ -3,6 +3,7 @@ import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
 import { isSafeImageUrl } from '../utils/urlUtils';
+import { PawIcon, MapPinIcon, CalendarIcon } from './icons';
 
 interface ObservationCardProps {
     observation: Observation;
@@ -59,7 +60,7 @@ const ObservationCard: React.FC<ObservationCardProps> = React.memo(({ observatio
                             <div className="w-full h-full flex items-center justify-center text-3xl opacity-50">
                                 {TAXON_LOGOS[observation.taxonomicGroup] ? (
                                     <img src={TAXON_LOGOS[observation.taxonomicGroup]} alt={observation.taxonomicGroup} loading="lazy" className="w-10 h-10 opacity-50" />
-                                ) : <span aria-hidden="true">🐾</span>}
+                                ) : <PawIcon className="w-8 h-8" />}
                             </div>
                         )}
                         <div className="absolute top-0 right-0 bg-nature-green text-white text-[10px] font-bold px-1.5 py-0.5 rounded-bl-lg">
@@ -81,11 +82,11 @@ const ObservationCard: React.FC<ObservationCardProps> = React.memo(({ observatio
 
                         <div className="mt-2 space-y-1">
                             <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
-                                <span className="mr-1" aria-hidden="true">📍</span>
+                                <MapPinIcon className="w-3.5 h-3.5 mr-1 shrink-0" />
                                 <span className="truncate">{observation.location}</span>
                             </div>
                             <div className="flex items-center text-xs text-gray-600 dark:text-gray-300">
-                                <span className="mr-1" aria-hidden="true">📅</span>
+                                <CalendarIcon className="w-3.5 h-3.5 mr-1 shrink-0" />
                                 <span>{isoToFrDisplay(observation.date, { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
                             </div>
                         </div>

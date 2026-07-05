@@ -3,6 +3,7 @@ import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
 import { isSafeImageUrl } from '../utils/urlUtils';
+import { PhotoIcon, CameraIcon } from './icons';
 
 interface ObservationGalleryProps {
     observations: Observation[];
@@ -28,7 +29,7 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
     if (observations.length === 0) {
         return (
             <div className={`text-center py-16 text-gray-400 dark:text-gray-500 ${isMobileView ? 'pb-24' : ''}`}>
-                <div className="text-5xl mb-3" aria-hidden="true">🖼️</div>
+                <PhotoIcon className="w-14 h-14 mx-auto mb-3" />
                 <p className="font-medium">Aucune photo à afficher.</p>
                 <p className="text-sm mt-1">Modifiez vos filtres ou ajoutez une observation avec une photo.</p>
             </div>
@@ -64,7 +65,9 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
                                 />
                             ) : (
                                 <div className="w-full h-full bg-nature-beige dark:bg-white/5 flex items-center justify-center text-gray-300 dark:text-gray-600">
-                                    <span className="text-5xl filter grayscale opacity-50" aria-hidden="true">📷</span>
+                                    <span data-testid="broken-image-placeholder" aria-hidden="true">
+                                        <CameraIcon className="w-12 h-12 opacity-60" />
+                                    </span>
                                 </div>
                             )}
                             <div className="absolute top-3 right-3 bg-white/90 dark:bg-nature-dark-surface/90 rounded-full p-1.5 shadow-sm backdrop-blur-md">

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLiquidGlassRefraction } from './LiquidGlass';
+import { CheckCircleIcon, XCircleIcon, InfoIcon, WarningIcon, XMarkIcon } from './icons';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -22,6 +23,15 @@ const toneClass: Record<ToastType, string> = {
     warning: 'bg-amber-100/70 border-amber-300/60 text-amber-900 dark:bg-amber-900/50 dark:border-amber-700/50 dark:text-amber-100'
 };
 
+// 8b : icône de ton devant le message — remplace les emojis ⏳/⚠️ qui
+// préfixaient les chaînes (le ton reste lisible sans dépendre de la couleur).
+const toneIcon: Record<ToastType, React.ReactNode> = {
+    success: <CheckCircleIcon className="w-5 h-5 shrink-0" />,
+    error: <XCircleIcon className="w-5 h-5 shrink-0" />,
+    info: <InfoIcon className="w-5 h-5 shrink-0" />,
+    warning: <WarningIcon className="w-5 h-5 shrink-0" />
+};
+
 // Carte de notification individuelle — composant dédié pour que chaque toast
 // ait sa propre réfraction Liquid Glass (un hook par élément).
 const ToastCard: React.FC<{ toast: ToastItem; onDismiss: (id: string) => void }> = ({ toast, onDismiss }) => {
@@ -33,14 +43,15 @@ const ToastCard: React.FC<{ toast: ToastItem; onDismiss: (id: string) => void }>
             className={`border backdrop-blur-xl rounded-xl shadow-md px-4 py-3 animate-toastIn ${toneClass[toast.type]}`}
         >
             <div className="flex items-start justify-between gap-3">
-                <p className="text-sm font-medium leading-snug break-words">{toast.message}</p>
+                <span aria-hidden="true" className="mt-0.5">{toneIcon[toast.type]}</span>
+                <p className="text-sm font-medium leading-snug break-words flex-1">{toast.message}</p>
                 <button
                     type="button"
                     onClick={() => onDismiss(toast.id)}
-                    className="text-current/80 hover:text-current text-xs font-bold"
+                    className="text-current/80 hover:text-current"
                     aria-label="Fermer la notification"
                 >
-                    ✕
+                    <XMarkIcon className="w-4 h-4" />
                 </button>
             </div>
         </div>

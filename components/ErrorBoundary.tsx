@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { logger } from '../utils/logger';
+import { WarningIcon } from './icons';
 
 interface ErrorBoundaryProps {
     children: ReactNode;
@@ -42,7 +43,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         return (
             <div className="flex items-center justify-center p-8">
                 <div className="bg-white dark:bg-nature-dark-surface border border-red-300 dark:border-red-700 rounded-xl shadow-lg p-6 max-w-md w-full text-center space-y-4">
-                    <div className="text-red-500 text-4xl">⚠</div>
+                    <WarningIcon className="w-10 h-10 mx-auto text-red-500" />
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                         Erreur dans {label}
                     </h2>

@@ -16,6 +16,7 @@ import { useSpeciesLookup } from '../hooks/useSpeciesLookup';
 import { ToastType } from './ToastContainer';
 import FieldTooltip from './FieldTooltip';
 import FormSection from './FormSection';
+import { MapPinIcon, XMarkIcon } from './icons';
 
 const MapInput = lazy(() => import('./MapInput'));
 
@@ -591,7 +592,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                         <FormSection title="Localisation">
                             <div className="col-span-full">
                                 <button type="button" onClick={() => setShowMap(!showMap)} className={`w-full py-3 px-6 rounded-xl font-semibold text-white transition-all duration-300 transform hover:scale-[1.02] active:scale-95 shadow-md ${showMap ? 'bg-gray-500 hover:bg-gray-600' : 'bg-nature-green hover:bg-green-600 animate-pulse-once'}`}>
-                                    {showMap ? 'Masquer la carte' : <><span aria-hidden="true">📍</span> Localiser sur la carte (recommandé)</>}
+                                    {showMap ? 'Masquer la carte' : <><MapPinIcon className="w-4 h-4 inline align-[-2px] mr-1" />Localiser sur la carte (recommandé)</>}
                                 </button>
                                 {showMap && (
                                     <div className="mt-4 rounded-2xl overflow-hidden shadow-inner ring-1 ring-black/5">
@@ -796,7 +797,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                                     aria-label={`Retirer ${name}`}
                                                     className="ml-1 w-4 h-4 inline-flex items-center justify-center rounded-full hover:bg-nature-green/30"
                                                 >
-                                                    ×
+                                                    <XMarkIcon className="w-3 h-3" />
                                                 </button>
                                             </span>
                                         ))}

@@ -6,6 +6,7 @@ import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
 import GlassTabBar, { VIEW_TABS } from './components/GlassTabBar';
+import { SignalOffIcon, PlusIcon } from './components/icons';
 import FullScreenLoader from './components/FullScreenLoader';
 import { useLiquidGlassRefraction } from './components/LiquidGlass';
 import { fetchSpeciesInfo } from './services/speciesService';
@@ -513,7 +514,7 @@ const App: React.FC = () => {
     const handleConfirmStatsExport = async () => {
         if (isExportingStats) return;
         setIsExportingStats(true);
-        const toastId = pushToast('info', '⏳ Export Stats en cours...', 0);
+        const toastId = pushToast('info', 'Export Stats en cours...', 0);
         try {
             const { exportStatsBundle } = await import('./services/statsExportService');
             const result = await exportStatsBundle({
@@ -642,7 +643,7 @@ const App: React.FC = () => {
                         {/* EE-5 : logo de l'app au-dessus du titre */}
                         <img src="/logo.svg" alt="" aria-hidden="true" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-sm" />
                         <h1 className="text-3xl font-bold mb-2 text-nature-dark dark:text-white">Carnet Naturaliste</h1>
-                        <div className="text-6xl mb-4" aria-hidden="true">📡</div>
+                        <SignalOffIcon className="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
                         <p className="text-gray-600 dark:text-gray-400 mb-4">Vous êtes hors-ligne. Connectez-vous à Internet pour vous identifier.</p>
                         <p className="text-sm text-gray-400 dark:text-gray-500">Une fois connecté, vos données seront disponibles hors-ligne.</p>
                     </div>
@@ -992,7 +993,7 @@ const App: React.FC = () => {
                                     onClick={handleAddObservation}
                                     className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
                                 >
-                                    {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
+                                    {isMobileView ? <PlusIcon className="w-7 h-7" /> : 'Ajouter une observation'}
                                 </button>
                             </div>
                         </div>
@@ -1036,7 +1037,7 @@ const App: React.FC = () => {
                                     onClick={handleAddObservation}
                                     className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
                                 >
-                                    {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
+                                    {isMobileView ? <PlusIcon className="w-7 h-7" /> : 'Ajouter une observation'}
                                 </button>
                             </div>
                         </div>
