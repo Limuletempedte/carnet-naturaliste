@@ -536,10 +536,10 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 {showFab && (
                     <button
                         onClick={onAdd}
-                        className="fixed bottom-28 right-4 z-40 w-14 h-14 liquid-glass-green liquid-glass-sheen text-white rounded-full flex items-center justify-center text-3xl hover:scale-110 active:scale-95 hover:brightness-110 transition-all duration-200 animate-fade-in"
+                        className="fixed bottom-28 right-4 z-40 w-16 h-16 liquid-glass-green liquid-glass-sheen text-white rounded-full flex items-center justify-center hover:scale-110 active:scale-95 hover:brightness-110 transition-all duration-200 animate-fade-in"
                         title="Ajouter une observation"
                     >
-                        <PlusIcon className="w-7 h-7" />
+                        <PlusIcon className="w-8 h-8" strokeWidth={2.5} />
                     </button>
                 )}
                 <ImportPreviewDialog
