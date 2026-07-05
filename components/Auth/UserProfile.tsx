@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getOfflineQueueSnapshot } from '../../services/storageService';
+import { useLiquidGlassRefraction } from '../LiquidGlass';
 
 interface UserProfileProps {
     onExportData?: () => void;
@@ -14,6 +15,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
     const { user, signOut } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    // EE-4 : réfraction Liquid Glass sur le menu déroulant (Chromium uniquement).
+    const menuGlassRef = useLiquidGlassRefraction<HTMLDivElement>();
 
     // Audit v2 (H7) : signOut purge la file offline scopée. Avertir avant toute
     // perte définitive d'observations saisies hors-ligne et non synchronisées.
@@ -71,7 +74,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
                 aria-label="Menu utilisateur"
-                className="flex items-center gap-2 p-1.5 pr-4 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 border border-white/20 dark:border-white/10 group"
+                className="flex items-center gap-2 p-1.5 pr-4 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover active:scale-95 transition-all duration-300 group"
             >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-nature-green to-emerald-600 flex items-center justify-center text-white font-bold shadow-sm">
                     {initial}
@@ -90,7 +93,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
             </button>
 
             {isOpen && (
-                <div role="menu" aria-label="Options du compte" className="absolute left-0 mt-2 w-64 bg-white/90 dark:bg-nature-dark-surface/90 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 dark:border-white/10 overflow-hidden animate-fadeIn origin-top-left">
+                <div ref={menuGlassRef} role="menu" aria-label="Options du compte" className="absolute left-0 mt-2 w-64 liquid-glass liquid-glass-sheen rounded-2xl overflow-hidden animate-scaleIn origin-top-left">
                     <div className="p-4 border-b border-gray-100 dark:border-gray-700">
                         <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Connecté en tant que</p>
                         <p className="text-sm font-bold text-nature-dark dark:text-white truncate" title={email}>{email}</p>

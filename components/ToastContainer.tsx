@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLiquidGlassRefraction } from './LiquidGlass';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
@@ -13,11 +14,37 @@ interface ToastContainerProps {
     onDismiss: (id: string) => void;
 }
 
+// EE-4 : tons translucides (verre) + variantes sombres (absentes jusqu'ici).
 const toneClass: Record<ToastType, string> = {
-    success: 'bg-emerald-100 border-emerald-300 text-emerald-800',
-    error: 'bg-red-100 border-red-300 text-red-800',
-    info: 'bg-blue-100 border-blue-300 text-blue-800',
-    warning: 'bg-amber-100 border-amber-300 text-amber-900'
+    success: 'bg-emerald-100/70 border-emerald-300/60 text-emerald-900 dark:bg-emerald-900/50 dark:border-emerald-700/50 dark:text-emerald-100',
+    error: 'bg-red-100/70 border-red-300/60 text-red-900 dark:bg-red-900/50 dark:border-red-700/50 dark:text-red-100',
+    info: 'bg-blue-100/70 border-blue-300/60 text-blue-900 dark:bg-blue-900/50 dark:border-blue-700/50 dark:text-blue-100',
+    warning: 'bg-amber-100/70 border-amber-300/60 text-amber-900 dark:bg-amber-900/50 dark:border-amber-700/50 dark:text-amber-100'
+};
+
+// Carte de notification individuelle — composant dédié pour que chaque toast
+// ait sa propre réfraction Liquid Glass (un hook par élément).
+const ToastCard: React.FC<{ toast: ToastItem; onDismiss: (id: string) => void }> = ({ toast, onDismiss }) => {
+    const glassRef = useLiquidGlassRefraction<HTMLDivElement>({ scale: 40, bezelWidth: 12, blur: 4, saturate: 1.6 });
+    return (
+        <div
+            ref={glassRef}
+            role="alert"
+            className={`border backdrop-blur-xl rounded-xl shadow-md px-4 py-3 animate-toastIn ${toneClass[toast.type]}`}
+        >
+            <div className="flex items-start justify-between gap-3">
+                <p className="text-sm font-medium leading-snug break-words">{toast.message}</p>
+                <button
+                    type="button"
+                    onClick={() => onDismiss(toast.id)}
+                    className="text-current/80 hover:text-current text-xs font-bold"
+                    aria-label="Fermer la notification"
+                >
+                    ✕
+                </button>
+            </div>
+        </div>
+    );
 };
 
 const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
@@ -26,23 +53,7 @@ const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) =>
     return (
         <div className="fixed top-[max(1rem,env(safe-area-inset-top))] right-4 z-[100] w-[90vw] max-w-sm space-y-2" aria-live="polite" aria-relevant="additions">
             {toasts.map(toast => (
-                <div
-                    key={toast.id}
-                    role="alert"
-                    className={`border backdrop-blur-md rounded-xl shadow-md px-4 py-3 ${toneClass[toast.type]}`}
-                >
-                    <div className="flex items-start justify-between gap-3">
-                        <p className="text-sm font-medium leading-snug break-words">{toast.message}</p>
-                        <button
-                            type="button"
-                            onClick={() => onDismiss(toast.id)}
-                            className="text-current/80 hover:text-current text-xs font-bold"
-                            aria-label="Fermer la notification"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                </div>
+                <ToastCard key={toast.id} toast={toast} onDismiss={onDismiss} />
             ))}
         </div>
     );

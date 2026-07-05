@@ -5,6 +5,9 @@ import { getObservations, saveObservation, updateObservation, deleteObservation,
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
+import GlassTabBar, { VIEW_TABS } from './components/GlassTabBar';
+import FullScreenLoader from './components/FullScreenLoader';
+import { useLiquidGlassRefraction } from './components/LiquidGlass';
 import { fetchSpeciesInfo } from './services/speciesService';
 import FilterBar from './components/FilterBar';
 import ToastContainer, { ToastItem, ToastType } from './components/ToastContainer';
@@ -95,6 +98,10 @@ const App: React.FC = () => {
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
     const [isDarkMode, setIsDarkMode] = useState(() => safeGet('darkMode') === 'true');
+    // EE-4 : réfraction Liquid Glass (Chromium) sur le header mobile et le
+    // dialogue de suppression de compte.
+    const headerGlassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 22, scale: 48 });
+    const deleteDialogGlassRef = useLiquidGlassRefraction<HTMLDivElement>();
     const closeDeleteAccountDialog = useCallback(() => { setIsDeleteAccountOpen(false); setDeleteConfirmText(''); }, []);
     const { dialogRef: deleteAccountDialogRef, dialogProps: deleteAccountDialogProps } = useAccessibleDialog({ isOpen: isDeleteAccountOpen, onClose: closeDeleteAccountDialog, titleId: 'delete-account-dialog-title' });
 
@@ -617,7 +624,7 @@ const App: React.FC = () => {
     }
 
     if (authLoading) {
-        return <div role="status" className="flex items-center justify-center h-screen"><p>Chargement de la session...</p></div>;
+        return <FullScreenLoader label="Chargement de la session..." />;
     }
 
     // H13 : retour du lien « mot de passe oublié » — priorité sur tout le reste,
@@ -631,7 +638,7 @@ const App: React.FC = () => {
         if (isOffline) {
             return (
                 <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
-                    <div className="w-full max-w-md bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl rounded-2xl shadow-ios p-8 border border-white/20 text-center">
+                    <div className="w-full max-w-md liquid-glass-opaque rounded-2xl p-8 text-center">
                         {/* EE-5 : logo de l'app au-dessus du titre */}
                         <img src="/logo.svg" alt="" aria-hidden="true" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-sm" />
                         <h1 className="text-3xl font-bold mb-2 text-nature-dark dark:text-white">Carnet Naturaliste</h1>
@@ -646,7 +653,7 @@ const App: React.FC = () => {
     }
 
     if (isLoading) {
-        return <div role="status" className="flex items-center justify-center h-screen"><p>Chargement des données...</p></div>;
+        return <FullScreenLoader label="Chargement des données..." />;
     }
 
     const statusColorClass = connectionStatus === 'offline'
@@ -691,7 +698,7 @@ const App: React.FC = () => {
 
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
-                <header className="fixed top-0 left-0 right-0 z-50 px-4 py-2 bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-md border-b border-white/20 dark:border-white/5 shadow-sm flex items-center justify-between transition-all duration-300">
+                <header ref={headerGlassRef} className="fixed top-0 left-0 right-0 z-50 px-4 py-2 liquid-glass liquid-glass-sheen border-x-0 border-t-0 flex items-center justify-between transition-all duration-300">
                     <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     <div className="flex items-center gap-1.5">
                         {/* Server Status Mobile — pastille + libellé accessible (UIA-05) */}
@@ -716,7 +723,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsAdvancedFilterOpen(true)}
-                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
                             aria-label="Filtres avancés"
                         >
@@ -725,7 +732,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleRefresh}
-                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
                             aria-label="Actualiser les données"
                         >
@@ -734,7 +741,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
-                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 transition-all text-gray-500 dark:text-gray-400"
+                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? 'Mode Clair' : 'Mode Sombre'}
                             aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
@@ -753,7 +760,7 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
-                        <div role="status" className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-sm transition-all ${statusBadgeClass}`} title={statusTitle}>
+                        <div role="status" className={`flex items-center gap-2 px-3 py-1.5 rounded-full liquid-glass transition-all ${statusBadgeClass}`} title={statusTitle}>
                             <div aria-hidden="true" className={`w-2 h-2 rounded-full ${statusColorClass}`}></div>
                             <span className="text-xs font-bold hidden md:inline">{statusLabel}</span>
                             <span className="sr-only">{statusTitle}</span>
@@ -761,7 +768,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleOpenSyncCenter}
-                            className="relative p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="relative p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Centre de synchronisation"
                             aria-label="Centre de synchronisation"
                         >
@@ -775,7 +782,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsAdvancedFilterOpen(true)}
-                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Filtres avancés"
                             aria-label="Filtres avancés"
                         >
@@ -784,7 +791,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={handleRefresh}
-                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title="Actualiser les données"
                             aria-label="Actualiser les données"
                         >
@@ -793,7 +800,7 @@ const App: React.FC = () => {
 
                         <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
-                            className="p-3 rounded-full bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md shadow-ios hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 border border-white/20 dark:border-white/10 text-gray-500 dark:text-gray-400"
+                            className="p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
                             aria-label={isDarkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
                         >
@@ -817,7 +824,11 @@ const App: React.FC = () => {
             )}
             {isDeleteAccountOpen && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
-                    <div ref={deleteAccountDialogRef} {...deleteAccountDialogProps} className="bg-white/80 dark:bg-nature-dark-surface/90 backdrop-blur-md rounded-xl shadow-2xl p-8 w-full max-w-md">
+                    <div
+                        ref={(node) => { deleteAccountDialogRef.current = node; deleteDialogGlassRef(node); }}
+                        {...deleteAccountDialogProps}
+                        className="liquid-glass liquid-glass-sheen animate-scaleIn rounded-2xl p-8 w-full max-w-md"
+                    >
                         <h3 id="delete-account-dialog-title" className="text-2xl font-serif font-bold text-red-600">Supprimer mon compte</h3>
                         <p className="mt-4 text-gray-700 dark:text-gray-300">
                             Cette action est <strong>irréversible</strong>. Toutes vos observations, photos et données seront définitivement supprimées.
@@ -912,46 +923,7 @@ const App: React.FC = () => {
                 {/* Navigation Tabs - Desktop Only */}
                 {!isMobileView && view !== View.FORM && (
                     <nav aria-label="Navigation principale" className="flex justify-center mb-10 sticky top-4 z-40">
-                        <div role="tablist" aria-label="Vues" className="bg-white/70 dark:bg-nature-dark-surface/70 backdrop-blur-xl rounded-full p-1.5 shadow-ios border border-white/20 dark:border-white/5 flex gap-1 overflow-x-auto max-w-full">
-                            {[
-                                {
-                                    id: View.LIST, label: 'Liste',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                                },
-                                {
-                                    id: View.MAP, label: 'Carte',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                                },
-                                {
-                                    id: View.STATS, label: 'Stats',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                                },
-                                {
-                                    id: View.CALENDAR, label: 'Calendrier',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                },
-                                {
-                                    id: View.GALLERY, label: 'Galerie',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                },
-                            ].map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    role="tab"
-                                    aria-selected={view === tab.id}
-                                    onClick={() => handleViewChange(tab.id)}
-                                    className={`
-                                        px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 whitespace-nowrap
-                                        ${view === tab.id
-                                            ? 'bg-white dark:bg-nature-dark-bg text-nature-dark dark:text-white shadow-sm scale-105'
-                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5'}
-                                    `}
-                                >
-                                    <span aria-hidden="true">{tab.icon}</span>
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
+                        <GlassTabBar tabs={VIEW_TABS} activeId={view} onChange={handleViewChange} variant="desktop" ariaLabel="Vues" />
                     </nav>
                 )}
 
@@ -1018,7 +990,7 @@ const App: React.FC = () => {
                             <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
                                 <button
                                     onClick={handleAddObservation}
-                                    className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
                                 >
                                     {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
                                 </button>
@@ -1062,7 +1034,7 @@ const App: React.FC = () => {
                             <div className={`flex justify-end ${isMobileView ? 'fixed bottom-24 right-4 z-50' : ''}`}>
                                 <button
                                     onClick={handleAddObservation}
-                                    className={`px-6 py-2 rounded-full shadow-lg font-semibold text-white transition-all duration-200 transform hover:scale-105 bg-nature-green hover:bg-nature-dark ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
+                                    className={`px-6 py-2 rounded-full font-semibold text-white transition-all duration-200 transform hover:scale-105 active:scale-95 hover:brightness-110 liquid-glass-green liquid-glass-sheen ${isMobileView ? 'w-14 h-14 flex items-center justify-center p-0' : ''}`}
                                 >
                                     {isMobileView ? <span className="text-2xl">+</span> : 'Ajouter une observation'}
                                 </button>

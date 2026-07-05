@@ -67,7 +67,7 @@ const SyncCenterDialog: React.FC<SyncCenterDialogProps> = ({
 
     return (
         <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
-            <div ref={dialogRef} {...dialogProps} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white dark:bg-nature-dark-surface rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 p-6">
+            <div ref={dialogRef} {...dialogProps} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto liquid-glass-opaque animate-scaleIn rounded-2xl p-6">
                 <div className="flex items-center justify-between gap-4 mb-4">
                     <div>
                         <h3 id="sync-center-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white">Centre de synchronisation</h3>

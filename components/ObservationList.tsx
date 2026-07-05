@@ -13,6 +13,7 @@ import { ObservationExportType, runObservationExport } from '../services/observa
 import { buildImportPersistencePlan, ImportConflictMode } from '../services/importPolicy';
 import { logger } from '../utils/logger';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from '../utils/chunkLoadError';
+import { useLiquidGlassRefraction } from './LiquidGlass';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -89,6 +90,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
     const [mobileExportMenuPos, setMobileExportMenuPos] = React.useState<{ top: number; right: number } | null>(null);
     const exporterButtonRef = React.useRef<HTMLButtonElement>(null);
     const mobileExportMenuRef = React.useRef<HTMLDivElement>(null);
+    // EE-4 : réfraction Liquid Glass sur le menu d'export (Chromium uniquement).
+    const exportMenuGlassRef = useLiquidGlassRefraction<HTMLDivElement>();
 
     // Click-outside custom qui couvre à la fois le bouton Exporter ET le menu rendu dans le portail.
     React.useEffect(() => {
@@ -432,9 +435,9 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             un stacking context, empêchant un z-index local de dépasser les cartes. */}
                         {showMobileExportMenu && mobileExportMenuPos && createPortal(
                             <div
-                                ref={mobileExportMenuRef}
+                                ref={(node) => { mobileExportMenuRef.current = node; exportMenuGlassRef(node); }}
                                 role="menu"
-                                className="fixed z-[9999] w-48 bg-white dark:bg-nature-dark-surface rounded-xl shadow-xl ring-1 ring-black/10 dark:ring-white/10 overflow-hidden"
+                                className="fixed z-[9999] w-48 liquid-glass liquid-glass-sheen animate-scaleIn rounded-xl overflow-hidden"
                                 style={{ top: mobileExportMenuPos.top, right: mobileExportMenuPos.right }}
                             >
                                 {([
@@ -532,7 +535,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 {showFab && (
                     <button
                         onClick={onAdd}
-                        className="fixed bottom-28 right-4 z-40 w-14 h-14 bg-nature-green text-white rounded-full shadow-xl flex items-center justify-center text-3xl hover:scale-110 active:scale-95 transition-all duration-200 animate-fade-in"
+                        className="fixed bottom-28 right-4 z-40 w-14 h-14 liquid-glass-green liquid-glass-sheen text-white rounded-full flex items-center justify-center text-3xl hover:scale-110 active:scale-95 hover:brightness-110 transition-all duration-200 animate-fade-in"
                         title="Ajouter une observation"
                     >
                         +
