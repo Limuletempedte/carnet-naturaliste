@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { supportsLiquidGlassRefraction, useLiquidGlassRefraction } from '../components/LiquidGlass';
 
 // Élément témoin : applique le hook sur un simple div.
-const Probe: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
-    const glassRef = useLiquidGlassRefraction<HTMLDivElement>({ enabled });
+const Probe: React.FC<{ enabled?: boolean; specular?: boolean }> = ({ enabled = true, specular = true }) => {
+    const glassRef = useLiquidGlassRefraction<HTMLDivElement>({ enabled, specular });
     return <div data-testid="glass" ref={glassRef} />;
 };
 
@@ -103,6 +103,33 @@ describe('useLiquidGlassRefraction — réfraction Liquid Glass (EE-4)', () => {
         render(<Probe enabled={false} />);
 
         expect(document.body.querySelector('svg filter')).toBeNull();
+    });
+
+    it('construit l\'étage spéculaire : deux lumières, masque et composition', () => {
+        setUserAgentData(CHROMIUM_UA);
+        render(<Probe />);
+
+        const filter = document.body.querySelector('svg filter');
+        expect(filter?.querySelectorAll('feSpecularLighting')).toHaveLength(2);
+        expect(filter?.querySelectorAll('feDistantLight')).toHaveLength(2);
+        // Les deux feImage (displacement + carte de hauteur) reçoivent leur carte.
+        const images = Array.from(filter?.querySelectorAll('feImage') ?? []);
+        expect(images).toHaveLength(2);
+        images.forEach((img) => expect(img.getAttribute('href')).toContain('data:image/png'));
+        // Éclat masqué à la forme (operator=in) puis posé sur le fond réfracté (operator=over).
+        const operators = Array.from(filter?.querySelectorAll('feComposite') ?? []).map((c) => c.getAttribute('operator'));
+        expect(operators).toContain('in');
+        expect(operators).toContain('over');
+    });
+
+    it('specular: false — le filtre se réduit à la seule réfraction', () => {
+        setUserAgentData(CHROMIUM_UA);
+        render(<Probe specular={false} />);
+
+        const filter = document.body.querySelector('svg filter');
+        expect(filter?.querySelector('feDisplacementMap')).not.toBeNull();
+        expect(filter?.querySelector('feSpecularLighting')).toBeNull();
+        expect(filter?.querySelectorAll('feImage')).toHaveLength(1);
     });
 
     it('ne plante pas si le canvas est indisponible (getContext null)', () => {

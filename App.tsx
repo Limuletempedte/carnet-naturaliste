@@ -5,6 +5,7 @@ import { getObservations, saveObservation, updateObservation, deleteObservation,
 import ObservationList from './components/ObservationList';
 import ConfirmationDialog from './components/ConfirmationDialog';
 import BottomNavigation from './components/BottomNavigation';
+import GlassTabBar, { VIEW_TABS } from './components/GlassTabBar';
 import FullScreenLoader from './components/FullScreenLoader';
 import { useLiquidGlassRefraction } from './components/LiquidGlass';
 import { fetchSpeciesInfo } from './services/speciesService';
@@ -101,7 +102,6 @@ const App: React.FC = () => {
     // dialogue de suppression de compte.
     const headerGlassRef = useLiquidGlassRefraction<HTMLElement>({ bezelWidth: 22, scale: 48 });
     const deleteDialogGlassRef = useLiquidGlassRefraction<HTMLDivElement>();
-    const desktopTabsGlassRef = useLiquidGlassRefraction<HTMLDivElement>({ bezelWidth: 18 });
     const closeDeleteAccountDialog = useCallback(() => { setIsDeleteAccountOpen(false); setDeleteConfirmText(''); }, []);
     const { dialogRef: deleteAccountDialogRef, dialogProps: deleteAccountDialogProps } = useAccessibleDialog({ isOpen: isDeleteAccountOpen, onClose: closeDeleteAccountDialog, titleId: 'delete-account-dialog-title' });
 
@@ -923,46 +923,7 @@ const App: React.FC = () => {
                 {/* Navigation Tabs - Desktop Only */}
                 {!isMobileView && view !== View.FORM && (
                     <nav aria-label="Navigation principale" className="flex justify-center mb-10 sticky top-4 z-40">
-                        <div ref={desktopTabsGlassRef} role="tablist" aria-label="Vues" className="liquid-glass liquid-glass-sheen rounded-full p-1.5 flex gap-1 overflow-x-auto max-w-full">
-                            {[
-                                {
-                                    id: View.LIST, label: 'Liste',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                                },
-                                {
-                                    id: View.MAP, label: 'Carte',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                                },
-                                {
-                                    id: View.STATS, label: 'Stats',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                                },
-                                {
-                                    id: View.CALENDAR, label: 'Calendrier',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                },
-                                {
-                                    id: View.GALLERY, label: 'Galerie',
-                                    icon: <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                },
-                            ].map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    role="tab"
-                                    aria-selected={view === tab.id}
-                                    onClick={() => handleViewChange(tab.id)}
-                                    className={`
-                                        px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-300 flex items-center gap-2 whitespace-nowrap
-                                        ${view === tab.id
-                                            ? 'bg-white dark:bg-nature-dark-bg text-nature-dark dark:text-white shadow-sm scale-105'
-                                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/30 dark:hover:bg-white/5'}
-                                    `}
-                                >
-                                    <span aria-hidden="true">{tab.icon}</span>
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
+                        <GlassTabBar tabs={VIEW_TABS} activeId={view} onChange={handleViewChange} variant="desktop" ariaLabel="Vues" />
                     </nav>
                 )}
 
