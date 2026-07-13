@@ -410,7 +410,7 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                                     </Pie>
                                     <Tooltip
                                         contentStyle={tooltipStyle}
-                                        formatter={(value: number, name: string) => [`${value} observation(s)`, name]}
+                                        formatter={(value, name) => [`${value} observation(s)`, name]}
                                     />
                                 </PieChart>
                             </ResponsiveContainer>
