@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { logger } from '../utils/logger';
+import { reportError } from '../services/errorReportingService';
+
+vi.mock('../services/errorReportingService', () => ({
+    reportError: vi.fn(),
+}));
 
 describe('logger', () => {
     let debugSpy: ReturnType<typeof vi.spyOn>;
@@ -30,6 +35,12 @@ describe('logger', () => {
         const err = new Error('boom');
         logger.error('failed', err);
         expect(errorSpy).toHaveBeenCalledWith('failed', err);
+    });
+
+    it('error() remonte ses arguments au reporteur externe (Sentry)', () => {
+        const err = new Error('boom');
+        logger.error('failed', err);
+        expect(vi.mocked(reportError)).toHaveBeenCalledWith(['failed', err]);
     });
 
     it('debug() et info() s appellent en mode dev (DEV=true dans Vitest)', () => {

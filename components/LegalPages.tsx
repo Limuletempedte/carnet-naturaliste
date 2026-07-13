@@ -31,7 +31,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 
 export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
     <LegalPageWrapper title="Politique de confidentialite" onBack={onBack}>
-        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 19 juin 2026</p>
+        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 13 juillet 2026</p>
 
         <Section title="1. Responsable du traitement">
             <p>Eliot SERIVE — editeur particulier (service non commercial). Contact : carnetnaturaliste.app@gmail.com</p>
@@ -68,6 +68,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
             <ul className="list-disc pl-5 space-y-1">
                 <li><strong>Supabase</strong> (hebergement base de donnees et fichiers) — donnees hebergees dans l'UE (Francfort, eu-central-1)</li>
                 <li><strong>Vercel</strong> (hebergement frontend) — fichiers statiques distribues via CDN mondial ; aucune donnee personnelle stockee</li>
+                <li><strong>Sentry</strong> (suivi des erreurs techniques) — recoit uniquement les rapports d'erreur du navigateur (message, trace technique, type d'appareil), jamais vos observations ni votre email. Donnees hebergees dans l'UE. Finalite : fiabilite du service (interet legitime, art. 6.1.f RGPD).</li>
                 <li><strong>Aucun partage actif</strong> de vos donnees vers des tiers. Les appels vers iNaturalist, GBIF et Nominatim sont en lecture seule (autocomplete) et ne transmettent pas vos observations.</li>
             </ul>
         </Section>

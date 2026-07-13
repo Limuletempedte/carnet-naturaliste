@@ -3,8 +3,13 @@ import ReactDOM from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { AuthProvider } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
+import { initErrorReporting } from './services/errorReportingService';
 import App from './App';
 import './index.css';
+
+// Suivi des erreurs (Sentry) — no-op si VITE_SENTRY_DSN est absente.
+// Initialise avant tout le reste pour capter aussi les erreurs de demarrage.
+initErrorReporting();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
