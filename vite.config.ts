@@ -223,6 +223,10 @@ export default defineConfig(({ mode }) => {
               return 'vendor-html2canvas';
             }
 
+            if (id.includes('/@sentry/') || id.includes('/@sentry-internal/')) {
+              return 'vendor-sentry';
+            }
+
             // PE-10: Additional vendor chunks for better cache invalidation
             if (id.includes('/recharts/') || id.includes('/d3-')) {
               return 'vendor-recharts';

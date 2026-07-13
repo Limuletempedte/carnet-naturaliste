@@ -25,6 +25,7 @@
     ]
   },
   "dependencies": {
+    "@sentry/react": "^10.65.0",
     "@supabase/supabase-js": "^2.86.0",
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",

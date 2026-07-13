@@ -7,12 +7,13 @@
  *   afin d'eviter de polluer la console utilisateur ou d'exposer des details
  *   d'implementation.
  *
- * Point d'extension : pour brancher un reporteur externe (Sentry, Bugsnag...),
- * modifier `logger.error` uniquement. Le reste de l'app n'a pas besoin de
- * changer.
+ * Point d'extension : `logger.error` remonte aussi a Sentry via
+ * `services/errorReportingService` (no-op si `VITE_SENTRY_DSN` est absente).
+ * Pour changer de reporteur externe, modifier `logger.error` uniquement.
  */
 
 import { pushEvent } from './eventLog';
+import { reportError } from '../services/errorReportingService';
 
 type Level = 'debug' | 'info' | 'warn' | 'error';
 
@@ -49,8 +50,9 @@ export const logger = {
     },
     error: (...args: unknown[]): void => {
         pushEvent('error', args);
+        reportError(args);
         if (shouldLog('error')) {
-             
+
             console.error(...args);
         }
     },

@@ -14,6 +14,10 @@ Configurer `.env.local`:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `VITE_SENTRY_DSN` *(optionnelle)* : DSN Sentry pour le suivi des erreurs en
+  production. Sans cette variable, le suivi d'erreurs est totalement inactif
+  (aucune donnée envoyée). Erreurs uniquement : pas de tracing performance ni
+  de replay de session.
 
 ## Configuration MCP locale (optionnel)
 
