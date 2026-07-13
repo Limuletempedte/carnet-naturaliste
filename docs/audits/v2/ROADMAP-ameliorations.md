@@ -1,5 +1,10 @@
 # ROADMAP — Améliorations en réserve (suite du lot E)
 
+> ✅ **STATUT 2026-07-13 : lots 0 → 8 de cette roadmap TOUS livrés et mergés sur `main`.**
+> Feuille de route **bouclée**. La suite (ménage deps/sécu, bucket « réserve »,
+> finition design finale) est cadrée dans
+> [`SESSION-recap-2026-07-13.md`](./SESSION-recap-2026-07-13.md) — document de suivi vivant.
+>
 > **Créé le 2026-06-20.** Feuille de route priorisée des évolutions restantes après le
 > lot E. Source du backlog : [`lot-e-futures-ameliorations.md`](./lot-e-futures-ameliorations.md)
 > et [`RECAP-lot-E.md`](./RECAP-lot-E.md).
