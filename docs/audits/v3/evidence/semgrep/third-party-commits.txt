@@ -1,0 +1,6 @@
+# Third-party Semgrep rulesets pinned for audit v3
+# Cloned with gh repo clone -- --depth 1 on 2026-07-10
+
+https://github.com/trailofbits/semgrep-rules 31390b3a99c04c81522d1b37c8d1900aa2dd4094
+https://github.com/elttam/semgrep-rules 27c8bd2a20a8632b884f8f72758aea23669bd078
+https://github.com/apiiro/malicious-code-ruleset a21246b666f34db899f0e33add7237ed70fab790
