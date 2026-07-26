@@ -91,16 +91,28 @@ jobs:
           # piege du client PostgreSQL 16 preinstalle sur le runner (un pg_dump
           # plus ancien que le serveur refuse de s'executer).
           for tentative in 1 2 3; do
-            if supabase db dump --db-url "${URL_BASE}" --role-only -f sauvegarde/roles.sql; then
+            if supabase db dump --db-url "${URL_BASE}" --role-only -f sauvegarde/roles.sql 2> erreur.log; then
               break
             fi
-            if [ "${tentative}" -eq 3 ]; then
-              echo "::error::Export des roles impossible apres 3 tentatives."
+            cat erreur.log
+
+            # Une chaine de connexion invalide ne guerira pas toute seule :
+            # inutile de reessayer, et le message doit dire quoi corriger.
+            # Cas verifie : un mot de passe contenant #, ? ou % casse l'analyse
+            # de l'URL (un @ passe, lui).
+            if grep -q 'failed to parse connection string' erreur.log; then
+              echo "::error::Le secret SUPABASE_DB_URL n'a pas pu etre analyse. Cause la plus frequente : le mot de passe de la base contient un caractere special (#, ?, %, /). Corrigez en reinitialisant le mot de passe Supabase avec des lettres et des chiffres uniquement, puis mettez le secret a jour. Voir docs/ops/RUNBOOK-sauvegarde-restauration.md, section « Mise en service »."
               exit 1
             fi
-            echo "Tentative ${tentative} echouee (telechargement de l'image Docker ?), nouvelle tentative dans 30 s."
+
+            if [ "${tentative}" -eq 3 ]; then
+              echo "::error::Export des roles impossible apres 3 tentatives. Voir le detail de l'erreur ci-dessus."
+              exit 1
+            fi
+            echo "Tentative ${tentative} echouee, nouvelle tentative dans 30 s (telechargement de l'image Docker ou reseau)."
             sleep 30
           done
+          rm -f erreur.log
 
           supabase db dump --db-url "${URL_BASE}" -f sauvegarde/schema.sql
           supabase db dump --db-url "${URL_BASE}" --data-only -f sauvegarde/data.sql
