@@ -35,12 +35,18 @@ vérifiée, chiffrée, puis conservée 35 jours dans l'onglet *Actions* de GitHu
 > Le workflow vérifie ces trois points au démarrage et affiche un message clair
 > si la chaîne ne convient pas.
 
-**Mot de passe oublié ?** Le réinitialiser dans *Project Settings → Database →
-Database password*. C'est sans risque : ce mot de passe n'est utilisé nulle part
-ailleurs (l'application n'utilise que `VITE_SUPABASE_URL` et
-`VITE_SUPABASE_ANON_KEY`). Choisir un mot de passe **uniquement composé de
-lettres et de chiffres** : les caractères comme `@`, `/`, `#` ou `%` doivent
-sinon être encodés dans l'adresse, source d'erreurs difficiles à diagnostiquer.
+> 🔴 **Le mot de passe doit être composé uniquement de lettres et de chiffres.**
+> Vérifié en conditions réelles : un mot de passe contenant `#`, `?` ou `%`
+> fait échouer l'export avec le message `failed to parse connection string`
+> (un `@` passe, lui — d'où le piège). Ces caractères devraient sinon être
+> encodés à la main dans l'adresse, ce qui est une source d'erreurs.
+
+**Mot de passe oublié, ou contenant des caractères spéciaux ?** Le réinitialiser
+via le bouton *Reset database password* de la fenêtre *Connect* (ou dans
+*Project Settings → Database*). C'est sans risque : ce mot de passe n'est
+utilisé nulle part ailleurs — l'application n'utilise que `VITE_SUPABASE_URL` et
+`VITE_SUPABASE_ANON_KEY`. Après réinitialisation, **penser à mettre à jour le
+secret `SUPABASE_DB_URL`** avec la nouvelle chaîne.
 
 ### Étape B — Créer la clé de chiffrement
 
