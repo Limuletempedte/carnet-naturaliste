@@ -1,0 +1,204 @@
+name: Sauvegarde de la base
+
+# Sauvegarde hebdomadaire de la base Supabase (l'offre gratuite n'en fournit
+# aucune). Le resultat est chiffre puis conserve en artefact GitHub.
+# Mode d'emploi complet, restauration comprise :
+# docs/ops/RUNBOOK-sauvegarde-restauration.md
+
+on:
+  schedule:
+    # Tous les dimanches a 03h17 UTC. Minute volontairement decalee : les crons
+    # "ronds" (0 3 * * 0) sont massivement utilises et GitHub peut retarder,
+    # voire abandonner, les executions planifiees aux heures de pointe.
+    - cron: '17 3 * * 0'
+  # Permet de lancer une sauvegarde a la demande depuis l'onglet Actions.
+  workflow_dispatch:
+
+# Ce job ne lit pas le code du depot et n'y ecrit rien : aucun droit necessaire.
+permissions: {}
+
+concurrency:
+  group: sauvegarde-base
+  cancel-in-progress: false
+
+jobs:
+  sauvegarde:
+    name: Export chiffre de la base Supabase
+    # Version epinglee volontairement : un job hebdomadaire ne doit pas casser
+    # le jour ou `ubuntu-latest` bascule vers une nouvelle image.
+    runs-on: ubuntu-24.04
+    # Large : la CLI telecharge une image Docker PostgreSQL a chaque execution.
+    timeout-minutes: 30
+
+    steps:
+      - name: Verifier la configuration
+        env:
+          URL_BASE: ${{ secrets.SUPABASE_DB_URL }}
+          CLE_PUBLIQUE: ${{ vars.BACKUP_AGE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          erreur=0
+
+          if [ -z "${URL_BASE}" ]; then
+            echo "::error::Le secret SUPABASE_DB_URL est absent. Voir docs/ops/RUNBOOK-sauvegarde-restauration.md, section « Mise en service »."
+            erreur=1
+          elif [ "${URL_BASE#*pooler.supabase.com}" = "${URL_BASE}" ]; then
+            # Garde-fou : les runners GitHub sont IPv4 uniquement, alors que la
+            # connexion directe Supabase (db.<ref>.supabase.co) est en IPv6.
+            # Sans cette verification, l'erreur serait un « Network is
+            # unreachable » difficile a interpreter.
+            echo "::error::SUPABASE_DB_URL ne pointe pas vers le pooler Supabase. Utilisez la chaine « Session pooler » (hote en .pooler.supabase.com, port 5432), pas la connexion directe."
+            erreur=1
+          elif [ "${URL_BASE#*:6543}" != "${URL_BASE}" ]; then
+            echo "::error::SUPABASE_DB_URL utilise le port 6543 (mode transaction), incompatible avec un export. Utilisez la chaine « Session pooler », port 5432."
+            erreur=1
+          fi
+
+          if [ -z "${CLE_PUBLIQUE}" ]; then
+            echo "::error::La variable BACKUP_AGE_PUBLIC_KEY est absente. Sans elle, la sauvegarde contiendrait des donnees personnelles en clair : le job s'arrete volontairement."
+            erreur=1
+          fi
+
+          if [ "${erreur}" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Configuration valide."
+
+      - name: Installer la CLI Supabase
+        uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          # Version figee = meme resultat chaque semaine. Elle suit celle du
+          # package.json, donc Dependabot la fait remonter avec le reste.
+          version: 2.109.1
+
+      - name: Installer age (chiffrement)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y age
+
+      - name: Exporter la base
+        env:
+          URL_BASE: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p sauvegarde
+
+          # Trois exports distincts, tels que recommandes par Supabase : les
+          # roles et le schema d'abord, les donnees ensuite. L'ordre compte a la
+          # restauration (voir le runbook).
+          # La CLI passe par une image Docker PostgreSQL 17, ce qui evite le
+          # piege du client PostgreSQL 16 preinstalle sur le runner (un pg_dump
+          # plus ancien que le serveur refuse de s'executer).
+          for tentative in 1 2 3; do
+            if supabase db dump --db-url "${URL_BASE}" --role-only -f sauvegarde/roles.sql; then
+              break
+            fi
+            if [ "${tentative}" -eq 3 ]; then
+              echo "::error::Export des roles impossible apres 3 tentatives."
+              exit 1
+            fi
+            echo "Tentative ${tentative} echouee (telechargement de l'image Docker ?), nouvelle tentative dans 30 s."
+            sleep 30
+          done
+
+          supabase db dump --db-url "${URL_BASE}" -f sauvegarde/schema.sql
+          supabase db dump --db-url "${URL_BASE}" --data-only -f sauvegarde/data.sql
+
+          ls -lh sauvegarde/
+
+      - name: Verifier le contenu de la sauvegarde
+        run: |
+          set -euo pipefail
+
+          # PIEGE VERIFIE : quand l'export echoue, la CLI laisse malgre tout un
+          # fichier de 0 octet derriere elle. Constater que « le fichier existe »
+          # ne prouve donc rien du tout — il faut regarder ce qu'il contient.
+          verifier_taille() {
+            fichier="$1"
+            minimum="$2"
+            taille=$(stat -c%s "${fichier}")
+            if [ "${taille}" -lt "${minimum}" ]; then
+              echo "::error::${fichier} ne fait que ${taille} octets (minimum attendu : ${minimum}). L'export a echoue ou la base est vide."
+              exit 1
+            fi
+            echo "${fichier} : ${taille} octets"
+          }
+
+          verifier_taille sauvegarde/roles.sql 100
+          verifier_taille sauvegarde/schema.sql 2000
+          verifier_taille sauvegarde/data.sql 10000
+
+          # Le schema doit decrire la table applicative.
+          if ! grep -q 'observations' sauvegarde/schema.sql; then
+            echo "::error::La table observations est absente du schema exporte."
+            exit 1
+          fi
+
+          # Les donnees doivent contenir des observations ET des comptes : si
+          # les droits d'acces filtraient silencieusement les lignes, le fichier
+          # aurait l'air correct tout en etant inexploitable.
+          if ! grep -q 'COPY public.observations' sauvegarde/data.sql; then
+            echo "::error::Aucun bloc de donnees pour public.observations."
+            exit 1
+          fi
+          if ! grep -q 'COPY auth.users' sauvegarde/data.sql; then
+            echo "::error::Aucun bloc de donnees pour auth.users (comptes)."
+            exit 1
+          fi
+
+          # Comptage indicatif, a comparer avec le tableau de bord Supabase.
+          observations=$(awk '/^COPY public.observations/{drapeau=1; next} /^\\\.$/{drapeau=0} drapeau{compteur++} END{print compteur+0}' sauvegarde/data.sql)
+          comptes=$(awk '/^COPY auth.users/{drapeau=1; next} /^\\\.$/{drapeau=0} drapeau{compteur++} END{print compteur+0}' sauvegarde/data.sql)
+
+          if [ "${observations}" -lt 1 ]; then
+            echo "::error::La sauvegarde ne contient aucune observation."
+            exit 1
+          fi
+
+          echo "Contenu verifie : ${observations} observations, ${comptes} comptes."
+
+          # Recapitulatif lisible sur la page de l'execution. Purement cosmetique :
+          # il ne doit jamais faire echouer une sauvegarde par ailleurs valide.
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### Sauvegarde du $(date -u '+%d/%m/%Y')"
+              echo ""
+              echo "- Observations : **${observations}**"
+              echo "- Comptes : **${comptes}**"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Chiffrer la sauvegarde
+        env:
+          CLE_PUBLIQUE: ${{ vars.BACKUP_AGE_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          horodatage=$(date -u '+%Y-%m-%d')
+          echo "HORODATAGE=${horodatage}" >> "${GITHUB_ENV}"
+
+          # Chiffrement APRES les verifications : une fois chiffre, plus rien
+          # n'est lisible, y compris pour nous.
+          tar -czf "sauvegarde-${horodatage}.tar.gz" -C sauvegarde .
+          age -r "${CLE_PUBLIQUE}" -o "sauvegarde-${horodatage}.tar.gz.age" "sauvegarde-${horodatage}.tar.gz"
+
+          # Ne laisser aucune version en clair sur le runner.
+          rm -f "sauvegarde-${horodatage}.tar.gz"
+          rm -rf sauvegarde
+
+          ls -lh "sauvegarde-${horodatage}.tar.gz.age"
+
+      - name: Deposer l'archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # Nom lisible : le jour d'un incident on cherche une date, pas un
+          # identifiant d'execution.
+          name: sauvegarde-base-${{ env.HORODATAGE }}
+          path: sauvegarde-${{ env.HORODATAGE }}.tar.gz.age
+          # Le fichier est deja compresse et chiffre : pas de double emballage.
+          compression-level: 0
+          if-no-files-found: error
+          # Duree de conservation. A relire une fois la taille reelle connue
+          # (voir le runbook) : 90 jours est le maximum et reste tenable tant
+          # que l'archive pese quelques megaoctets.
+          retention-days: 35

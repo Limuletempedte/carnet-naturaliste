@@ -19,6 +19,13 @@ Configurer `.env.local`:
   (aucune donnée envoyée). Erreurs uniquement : pas de tracing performance ni
   de replay de session.
 
+## Sauvegarde de la base
+
+Une sauvegarde automatique hebdomadaire est en place
+(`.github/workflows/sauvegarde-base.yml`) : export chiffré de la base Supabase,
+conservé en artefact GitHub. Mise en service, surveillance et **procédure de
+restauration** : [`docs/ops/RUNBOOK-sauvegarde-restauration.md`](docs/ops/RUNBOOK-sauvegarde-restauration.md).
+
 ## Configuration MCP locale (optionnel)
 
 - Copier `.mcp.example.json` vers `.mcp.json`.
