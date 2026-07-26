@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-06-20
+**Date de mise a jour** : 2026-07-26
 
 ---
 
@@ -12,9 +12,9 @@
 | Finalite | Creer et gerer les comptes utilisateurs |
 | Base legale | Execution du contrat (CGU) |
 | Donnees collectees | Email, mot de passe (hashe par Supabase Auth) |
-| Duree de conservation | Duree du compte + 30 jours apres suppression |
+| Duree de conservation | Duree du compte. Suppression immediate en base ; voir Traitement 7 pour les sauvegardes. |
 | Destinataires | Supabase Inc. (sous-traitant, hebergeur auth + BDD) |
-| Transfert hors UE | Non — Supabase heberge dans l'UE (eu-central-1, Francfort). |
+| Transfert hors UE | Non pour l'exploitation courante — Supabase heberge dans l'UE (eu-central-1, Francfort). **Voir Traitement 7** pour les sauvegardes techniques (chiffrees, hebergees hors UE). |
 
 ## Traitement 2 : Observations naturalistes
 
@@ -25,7 +25,7 @@
 | Donnees collectees | Espece, date, heure, lieu-dit, coordonnees GPS, altitude, commune, departement, pays, commentaire, photos, protocole, conditions meteo |
 | Duree de conservation | Duree du compte. Cache local : 90 jours (TTL). |
 | Destinataires | Supabase Inc. (BDD PostgreSQL), Vercel Inc. (CDN/hosting) |
-| Transfert hors UE | Non — Supabase heberge dans l'UE (eu-central-1, Francfort). Vercel : frontend statique public (CDN mondial), aucune donnee personnelle. |
+| Transfert hors UE | Non pour l'exploitation courante — Supabase heberge dans l'UE (eu-central-1, Francfort). Vercel : frontend statique public (CDN mondial), aucune donnee personnelle. **Voir Traitement 7** pour les sauvegardes techniques. |
 
 ## Traitement 3 : Geolocalisation (GPS)
 
@@ -73,6 +73,20 @@
 | Destinataires | Aucun — donnees locales uniquement |
 | Transfert hors UE | Non |
 
+## Traitement 7 : Sauvegarde technique de la base
+
+| Champ | Valeur |
+|---|---|
+| Finalite | Continuite de service : pouvoir restaurer la base apres un incident (l'offre gratuite Supabase ne fournit aucune sauvegarde) |
+| Base legale | Interet legitime (art. 6.1.f) — securite et disponibilite du service |
+| Donnees collectees | Copie complete de la base : comptes (email, mot de passe hashe) et observations. **Les fichiers photos/sons ne sont pas inclus.** |
+| Duree de conservation | 35 jours — suppression automatique de l'archive par GitHub a l'expiration |
+| Destinataires | GitHub Inc. (Microsoft), sous-traitant, stockage de l'archive |
+| Transfert hors UE | **Oui** — les artefacts GitHub sont heberges aux Etats-Unis (la residence des donnees en UE n'existe que sur l'offre Enterprise Cloud). |
+| Mesures | Archive **chiffree** (age, chiffrement asymetrique) avant tout depot : GitHub ne detient que du contenu chiffre, la cle privee reste chez le responsable de traitement. Depot prive, workflow sans droit d'ecriture. |
+
+> Procedure d'exploitation : [`docs/ops/RUNBOOK-sauvegarde-restauration.md`](../ops/RUNBOOK-sauvegarde-restauration.md)
+
 ---
 
 ## Droits des personnes concernees
@@ -81,3 +95,12 @@ Les utilisateurs peuvent exercer leurs droits (acces, rectification, effacement,
 - **Export** : bouton "Exporter mes donnees" dans le menu profil
 - **Suppression** : bouton "Supprimer mon compte" (suppression cascade de toutes les donnees)
 - **Contact DPO** : carnetnaturaliste.app@gmail.com
+
+### Effacement et sauvegardes
+
+Une demande d'effacement est repercutee **immediatement** en base de production.
+Les sauvegardes techniques deja constituees (Traitement 7) continuent de
+contenir les donnees jusqu'a leur expiration automatique, soit **35 jours au
+plus**. Ces sauvegardes sont chiffrees et servent exclusivement a une
+restauration apres sinistre : elles ne sont jamais utilisees pour recreer un
+compte supprime.

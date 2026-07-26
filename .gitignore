@@ -55,3 +55,14 @@ supabase/.temp/
 # Captures d'écran de bugs / matériel de travail local (ne JAMAIS committer)
 bug-screenshots-local/
 Photos-*.zip
+
+# Sauvegardes de base téléchargées ou testées en local (ne JAMAIS committer).
+# Motifs ciblés : surtout pas *.sql, qui ignorerait supabase/migrations/.
+sauvegarde/
+sauvegarde-*.tar.gz
+sauvegarde-*.tar.gz.age
+*.age
+roles-*.sql
+schema-*.sql
+data-*.sql
+cle-sauvegarde-privee.txt

@@ -58,7 +58,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
 
         <Section title="4. Durees de conservation">
             <ul className="list-disc pl-5 space-y-1">
-                <li><strong>Compte et observations</strong> : conserves tant que le compte est actif. Supprimes a la demande de suppression du compte.</li>
+                <li><strong>Compte et observations</strong> : conserves tant que le compte est actif. Supprimes immediatement a la demande de suppression du compte ; les sauvegardes techniques deja constituees expirent au plus tard sous 35 jours.</li>
                 <li><strong>Cache local (navigateur)</strong> : 90 jours maximum, renouvele a chaque synchronisation.</li>
                 <li><strong>Photos et sons</strong> : conserves tant que l'observation associee existe.</li>
             </ul>
@@ -69,6 +69,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
                 <li><strong>Supabase</strong> (hebergement base de donnees et fichiers) — donnees hebergees dans l'UE (Francfort, eu-central-1)</li>
                 <li><strong>Vercel</strong> (hebergement frontend) — fichiers statiques distribues via CDN mondial ; aucune donnee personnelle stockee</li>
                 <li><strong>Sentry</strong> (suivi des erreurs techniques) — recoit uniquement les rapports d'erreur du navigateur (message, trace technique, type d'appareil), jamais vos observations ni votre email. Donnees hebergees dans l'UE. Finalite : fiabilite du service (interet legitime, art. 6.1.f RGPD).</li>
+                <li><strong>GitHub</strong> (sauvegarde technique hebdomadaire) — recoit une copie <strong>chiffree</strong> de la base, conservee 35 jours puis supprimee automatiquement. Elle sert uniquement a restaurer le service apres un incident. GitHub heberge cette archive aux Etats-Unis mais ne peut pas la lire : la cle de dechiffrement n'est detenue que par l'editeur.</li>
                 <li><strong>Aucun partage actif</strong> de vos donnees vers des tiers. Les appels vers iNaturalist, GBIF et Nominatim sont en lecture seule (autocomplete) et ne transmettent pas vos observations.</li>
             </ul>
         </Section>
