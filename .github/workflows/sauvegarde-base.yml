@@ -115,7 +115,10 @@ jobs:
           rm -f erreur.log
 
           supabase db dump --db-url "${URL_BASE}" -f sauvegarde/schema.sql
-          supabase db dump --db-url "${URL_BASE}" --data-only -f sauvegarde/data.sql
+          # --use-copy : forme documentee par Supabase pour l'export de donnees.
+          # Sans ce drapeau, la CLI produit des INSERT ligne a ligne — beaucoup
+          # plus volumineux et bien plus lents a restaurer que des blocs COPY.
+          supabase db dump --db-url "${URL_BASE}" --use-copy --data-only -f sauvegarde/data.sql
 
           ls -lh sauvegarde/
 
@@ -150,18 +153,31 @@ jobs:
           # Les donnees doivent contenir des observations ET des comptes : si
           # les droits d'acces filtraient silencieusement les lignes, le fichier
           # aurait l'air correct tout en etant inexploitable.
-          if ! grep -q 'COPY public.observations' sauvegarde/data.sql; then
-            echo "::error::Aucun bloc de donnees pour public.observations."
-            exit 1
-          fi
-          if ! grep -q 'COPY auth.users' sauvegarde/data.sql; then
-            echo "::error::Aucun bloc de donnees pour auth.users (comptes)."
-            exit 1
-          fi
+          #
+          # On accepte les DEUX formats que la CLI sait produire — blocs COPY
+          # (avec --use-copy, ce que fait ce workflow) ou INSERT ligne a ligne —
+          # pour que le controle survive a un changement de comportement.
+          compter_lignes() {
+            table="$1"
+            awk -v t="${table}" '
+              # Ouverture d un bloc COPY pour la table visee.
+              $0 ~ "^COPY [\"]?[a-z_]+[\"]?[.][\"]?" t "[\"]?" { dans_copy = 1; next }
+              # Fin de bloc COPY.
+              dans_copy && /^\\\.$/ { dans_copy = 0; next }
+              dans_copy { n++; next }
+              # Format INSERT.
+              $0 ~ "^INSERT INTO [\"]?[a-z_]+[\"]?[.][\"]?" t "[\"]?" { n++ }
+              END { print n + 0 }
+            ' sauvegarde/data.sql
+          }
 
-          # Comptage indicatif, a comparer avec le tableau de bord Supabase.
-          observations=$(awk '/^COPY public.observations/{drapeau=1; next} /^\\\.$/{drapeau=0} drapeau{compteur++} END{print compteur+0}' sauvegarde/data.sql)
-          comptes=$(awk '/^COPY auth.users/{drapeau=1; next} /^\\\.$/{drapeau=0} drapeau{compteur++} END{print compteur+0}' sauvegarde/data.sql)
+          observations=$(compter_lignes observations)
+          comptes=$(compter_lignes users)
+
+          if [ "${comptes}" -lt 1 ]; then
+            echo "::error::Aucune donnee de compte (auth.users) dans la sauvegarde."
+            exit 1
+          fi
 
           if [ "${observations}" -lt 1 ]; then
             echo "::error::La sauvegarde ne contient aucune observation."
