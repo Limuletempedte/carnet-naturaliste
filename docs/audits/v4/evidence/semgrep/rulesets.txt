@@ -1,0 +1,28 @@
+Packs de regles semgrep utilises - audit v4, 2026-09-04
+Version semgrep : 1.176.0 (installee via pip pour cet audit)
+
+Ces packs sont ceux dont l'audit v3 (2026-07-10) n'avait conserve aucune sortie.
+
+  p/security-audit
+  p/owasp-top-ten
+  p/react
+  p/typescript
+  p/secrets
+
+Commande exacte :
+
+  semgrep scan \
+    --config=p/security-audit \
+    --config=p/owasp-top-ten \
+    --config=p/react \
+    --config=p/typescript \
+    --config=p/secrets \
+    --exclude=node_modules --exclude=dist --exclude=coverage --exclude=.playwright-mcp \
+    --json -o app-scan.json --metrics=off
+
+Resultat : 166 regles sur 207 fichiers, 3 constats (tous en infrastructure CI,
+zero sur le code applicatif). Detail dans ../baseline.md.
+
+Note : les packs sont resolus depuis le registry semgrep au moment du scan et ne
+sont pas epingles par version. Pour une reproduction a l'identique, se referer
+aux identifiants de regles presents dans app-scan.json.
