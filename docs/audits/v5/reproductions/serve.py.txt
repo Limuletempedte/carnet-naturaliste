@@ -1,0 +1,16 @@
+"""Serve built audit copy on loopback with Vercel headers and local API exception."""
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+import json
+ROOT=Path(__file__).parent/'repo'
+headers=json.loads((ROOT/'vercel.json').read_text())['headers'][0]['headers']
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT/'dist'),**kw)
+    def end_headers(self):
+        for h in headers:
+            val=h['value']
+            if h['key']=='Content-Security-Policy':
+                val=val.replace("connect-src 'self'", "connect-src 'self' http://127.0.0.1:54321 ws://127.0.0.1:54321")
+            self.send_header(h['key'],val)
+        super().end_headers()
+ThreadingHTTPServer(('127.0.0.1',3000),Handler).serve_forever()

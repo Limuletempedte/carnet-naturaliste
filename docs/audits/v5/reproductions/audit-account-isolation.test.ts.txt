@@ -1,0 +1,255 @@
+/**
+ * SECURITY AUDIT REPRODUCTIONS — current commit 0041b1c.
+ * These assertions describe the CURRENT vulnerable behavior; they are not fixes.
+ * Only synthetic A/B data is used. No network request can leave this process.
+ * Supabase-client mocks establish deterministic identity/response scheduling only.
+ * They prove client state/cache behavior, never backend JWT or RLS security.
+ * The SDK test runs locked auth-js code with an in-memory HTTP 503 transport.
+ * Run: npm run test:run -- tests/audit-account-isolation.test.ts --reporter=verbose
+ */
+import React from 'react';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GoTrueClient, type AuthChangeEvent, type Session, type User } from '@supabase/auth-js';
+import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { getObservations, setStorageNamespace } from '../services/storageService';
+import { createBackup } from '../services/backupService';
+import { mapToRow } from '../services/storage/storageMappers';
+import { createEmptyFormData } from '../utils/observationFormHelpers';
+import { TaxonomicGroup, type Observation } from '../types';
+import { __resetEventLogForTests, getEventLog, EVENT_LOG_STORAGE_KEY } from '../utils/eventLog';
+import SyncCenterDialog from '../components/SyncCenterDialog';
+
+const harness = vi.hoisted(() => ({
+    getUser: vi.fn(),
+    getSession: vi.fn(),
+    signOut: vi.fn(),
+    range: vi.fn(),
+    eq: vi.fn(),
+    saveAs: vi.fn(),
+    listener: null as null | ((event: AuthChangeEvent, session: Session | null) => void),
+}));
+
+vi.mock('../supabaseClient', () => ({
+    isSupabaseConfigured: true,
+    supabase: {
+        auth: {
+            getUser: harness.getUser,
+            getSession: harness.getSession,
+            signOut: harness.signOut,
+            onAuthStateChange: (listener: typeof harness.listener) => {
+                harness.listener = listener;
+                return { data: { subscription: { unsubscribe: () => { harness.listener = null; } } } };
+            },
+        },
+        from: () => ({
+            select: () => ({
+                eq: (key: string, value: string) => {
+                    harness.eq(key, value);
+                    return { order: () => ({ range: harness.range }) };
+                },
+            }),
+        }),
+    },
+}));
+vi.mock('file-saver', () => ({ saveAs: harness.saveAs }));
+
+const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const PHOTO_A = `https://audit-only.invalid/storage/v1/object/public/photos/${A}/photos/private-a.jpg`;
+const cacheKey = (id: string) => `local_observations_cache:${id}`;
+const queueKey = (id: string) => `offline_sync_queue:${id}`;
+
+const sessionFor = (id: string): Session => ({
+    access_token: 'synthetic-not-a-real-jwt',
+    refresh_token: 'synthetic-not-a-real-refresh-token',
+    token_type: 'bearer',
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: {
+        id, aud: 'authenticated', role: 'authenticated',
+        email: `${id === A ? 'a' : 'b'}@audit.invalid`,
+        app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z',
+    } as User,
+});
+
+const observationFor = (owner: string): Observation => ({
+    ...createEmptyFormData(TaxonomicGroup.BIRD),
+    id: owner === A ? '11111111-1111-4111-8111-111111111111' : '22222222-2222-4222-8222-222222222222',
+    speciesName: owner === A ? 'PRIVATE SPECIES A' : 'SPECIES B',
+    date: '2026-09-01',
+    count: 1,
+    maleCount: undefined, femaleCount: undefined, unidentifiedCount: undefined,
+    comment: owner === A ? 'PRIVATE COMMENT A' : 'COMMENT B',
+    gps: { lat: owner === A ? 48.12345 : 49, lon: 2.12345 },
+    photo: owner === A ? PHOTO_A : undefined,
+});
+
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((done) => { resolve = done; });
+    return { promise, resolve };
+}
+
+const wrapper = ({ children }: { children: React.ReactNode }) =>
+    React.createElement(AuthProvider, null, children);
+
+beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    localStorage.clear();
+    __resetEventLogForTests();
+    setStorageNamespace(null);
+    harness.listener = null;
+    harness.getUser.mockResolvedValue({ data: { user: sessionFor(A).user }, error: null });
+    harness.getSession.mockResolvedValue({ data: { session: sessionFor(A) }, error: null });
+    harness.range.mockResolvedValue({ data: [], error: null });
+    harness.signOut.mockImplementation(async () => {
+        harness.listener?.('SIGNED_OUT', null);
+        return { error: null };
+    });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    // Deny every ordinary fetch, including the synthetic private URL.
+    vi.stubGlobal('fetch', vi.fn(async () => {
+        throw new Error('AUDIT_NETWORK_DENIED: no external transport');
+    }));
+});
+
+afterEach(() => {
+    cleanup();
+    setStorageNamespace(null);
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+});
+
+describe('STATIC-03 — async cross-account cache (scheduling mocks, no backend claims)', () => {
+    it('owner control: a completed A read writes only the A cache', async () => {
+        const obsA = observationFor(A);
+        setStorageNamespace(A);
+        harness.range.mockResolvedValue({ data: [mapToRow(obsA, A)], error: null });
+        const result = await getObservations();
+        expect(result.observations[0].comment).toBe('PRIVATE COMMENT A');
+        expect(harness.eq).toHaveBeenCalledWith('user_id', A);
+        expect(localStorage.getItem(cacheKey(A))).toContain('PRIVATE COMMENT A');
+        expect(localStorage.getItem(cacheKey(B))).toBeNull();
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('CONFIRMED: a delayed A response overwrites the B cache and is readable offline as B', async () => {
+        const response = deferred<{ data: Record<string, unknown>[]; error: null }>();
+        const obsA = observationFor(A);
+        const obsB = observationFor(B);
+        setStorageNamespace(A);
+        harness.range.mockReturnValue(response.promise);
+        const aRequest = getObservations();
+        await waitFor(() => expect(harness.range).toHaveBeenCalledOnce());
+        expect(harness.eq).toHaveBeenCalledWith('user_id', A);
+
+        // Exact scheduling boundary: AuthContext changes this namespace when B signs in.
+        setStorageNamespace(B);
+        harness.getUser.mockResolvedValue({ data: { user: sessionFor(B).user }, error: null });
+        localStorage.setItem(cacheKey(B), JSON.stringify([obsB]));
+        response.resolve({ data: [mapToRow(obsA, A)], error: null });
+        await aRequest;
+
+        const poisonedCache = JSON.parse(localStorage.getItem(cacheKey(B)) || '[]');
+        expect(poisonedCache).toHaveLength(1);
+        expect(poisonedCache[0].id).toBe(obsA.id);
+        expect(poisonedCache[0].comment).toBe('PRIVATE COMMENT A');
+        expect(poisonedCache[0].photo).toBe(PHOTO_A);
+        expect(localStorage.getItem(cacheKey(A))).toBeNull();
+        Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+        const asB = await getObservations();
+        expect(asB.source).toBe('cache');
+        expect(asB.observations[0].gps.lat).toBe(48.12345);
+        expect(asB.observations[0].comment).toBe('PRIVATE COMMENT A');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+});
+
+describe('STATIC-05 — durable private log (real backup/logger/auth-context/dialog code)', () => {
+    it('CONFIRMED: failed A backup media URL survives sign-out and reload and appears in B Sync Center', async () => {
+        const { result } = renderHook(() => useAuth(), { wrapper });
+        await waitFor(() => expect(result.current.user?.id).toBe(A));
+        localStorage.setItem(cacheKey(A), JSON.stringify([observationFor(A)]));
+        localStorage.setItem(queueKey(A), '[]');
+
+        // Runs the real error-producing caller; the transport rejects without network I/O.
+        const backup = await createBackup([observationFor(A)]);
+        expect(backup.failedImages).toBe(1);
+        expect(globalThis.fetch).toHaveBeenCalledOnce();
+        expect(getEventLog().some((event) => event.msg.includes(PHOTO_A))).toBe(true);
+
+        await act(async () => { await result.current.signOut(); });
+        expect(result.current.user).toBeNull();
+        expect(localStorage.getItem(cacheKey(A))).toBeNull();
+        expect(localStorage.getItem(queueKey(A))).toBeNull();
+        expect(localStorage.getItem(EVENT_LOG_STORAGE_KEY)).toContain(PHOTO_A);
+
+        act(() => { harness.listener?.('SIGNED_IN', sessionFor(B)); });
+        expect(result.current.user?.id).toBe(B);
+        // Reset only the module's memory, preserving browser storage, as a reload would.
+        __resetEventLogForTests();
+        render(React.createElement(SyncCenterDialog, {
+            isOpen: true, queueItems: [], lastResult: null, isSyncing: false,
+            onClose: () => {}, onResyncAll: () => {}, onRetryItem: () => {},
+        }));
+        expect(screen.getByText((content) => content.includes(PHOTO_A)).textContent).toContain(PHOTO_A);
+    });
+});
+
+describe('AuthContext signOut — locked SDK control versus exceptional throw', () => {
+    it('PROTECTED: actual auth-js clears token and AuthContext user even when HTTP logout returns 503', async () => {
+        const sdkStorageKey = 'audit-sdk-session';
+        localStorage.setItem(sdkStorageKey, JSON.stringify(sessionFor(A)));
+        const syntheticTransport = vi.fn(async (input: RequestInfo | URL) => {
+            // In-memory response only. Never forwards to fetch or any socket.
+            expect(String(input)).toMatch(/^http:\/\/127\.0\.0\.1:1\/auth\/v1\/logout/);
+            return new Response(JSON.stringify({ message: 'synthetic unavailable' }), {
+                status: 503, headers: { 'Content-Type': 'application/json' },
+            });
+        });
+        const sdk = new GoTrueClient({
+            url: 'http://127.0.0.1:1/auth/v1',
+            storage: localStorage, storageKey: sdkStorageKey,
+            autoRefreshToken: false, persistSession: true, detectSessionInUrl: false,
+            fetch: syntheticTransport,
+        });
+        await sdk.initialize();
+        const { data: { subscription } } = sdk.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT') harness.listener?.(event, session);
+        });
+        harness.signOut.mockImplementation(() => sdk.signOut());
+        const { result } = renderHook(() => useAuth(), { wrapper });
+        await waitFor(() => expect(result.current.user?.id).toBe(A));
+        await act(async () => { await result.current.signOut(); });
+        expect(syntheticTransport).toHaveBeenCalledOnce();
+        const sdkResult = await harness.signOut.mock.results[0].value;
+        expect(sdkResult.error).not.toBeNull();
+        expect(result.current.user).toBeNull();
+        expect(result.current.session).toBeNull();
+        expect(localStorage.getItem(sdkStorageKey)).toBeNull();
+        expect(localStorage.getItem('cached_auth_session')).toBeNull();
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        subscription.unsubscribe();
+        sdk.stopAutoRefresh();
+    });
+
+    it('ROBUSTNESS ONLY: an injected exceptional throw removes fallback token but retains React user', async () => {
+        // This is NOT the ordinary HTTP/network failure of the locked SDK above.
+        // It only documents the application catch path, without a backend exploit claim.
+        vi.stubEnv('VITE_SUPABASE_URL', 'https://audit-only.supabase.co');
+        const tokenKey = 'sb-audit-only-auth-token';
+        localStorage.setItem(tokenKey, 'synthetic-token');
+        harness.signOut.mockRejectedValue(new Error('AUDIT_INJECTED_EXCEPTION'));
+        const { result } = renderHook(() => useAuth(), { wrapper });
+        await waitFor(() => expect(result.current.user?.id).toBe(A));
+        await act(async () => { await result.current.signOut(); });
+        expect(localStorage.getItem(tokenKey)).toBeNull();
+        expect(localStorage.getItem('cached_auth_session')).toBeNull();
+        expect(result.current.user?.id).toBe(A);
+        expect(result.current.session?.user.id).toBe(A);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+});

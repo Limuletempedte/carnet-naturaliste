@@ -1,0 +1,32 @@
+{
+  "scope": "Client-only deterministic reproduction. No backend JWT/RLS claim. Synthetic A/B records only.",
+  "network": "Ordinary fetch rejects all calls. Actual SDK uses an in-memory HTTP 503 response and never opens a socket.",
+  "tests": {
+    "passed": 5,
+    "failed": 0,
+    "duration_seconds": 2.51
+  },
+  "typecheck": "passed",
+  "confirmed": [
+    "STATIC-03: delayed A read overwrites B cache and is readable offline as B",
+    "STATIC-05: failed A media backup logs URL surviving sign-out and reloaded by B Sync Center"
+  ],
+  "protected": [
+    "Locked @supabase/auth-js 2.110.3 clears token and emits SIGNED_OUT after returned HTTP 503; real AuthContext follows this event and clears React user/session."
+  ],
+  "robustness_only": [
+    "Injected exceptional signOut throw leaves React user/session while fallback token/cache are removed. This is not the ordinary SDK HTTP/network error path and is not promoted to a confirmed security finding."
+  ],
+  "sdk_evidence": {
+    "file": "node_modules/@supabase/auth-js/src/GoTrueClient.ts",
+    "lines": "3999-4037,5145-5170",
+    "version": "2.110.3"
+  },
+  "test_file": "docs/audits/v5/reproductions/audit-account-isolation.test.ts",
+  "test_sha256": "bdb62c437cfa3b48cd38caa3d321f82657763768e92eeaf6ec4e770db901d2fb",
+  "logs": [
+    "work/audit/account-isolation-tests.log",
+    "work/audit/account-isolation-typecheck.log"
+  ],
+  "original_repository_modified": false
+}

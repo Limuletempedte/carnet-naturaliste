@@ -1,0 +1,77 @@
+npm notice run carnet-naturaliste@0.0.0 build
+npm notice run vite build
+vite v8.1.4 building client environment for production...
+[2K
+transforming...✓ 1311 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/manifest.webmanifest                          0.96 kB
+dist/index.html                                    3.68 kB │ gzip:   1.30 kB
+dist/assets/ObservationCalendar-Cy_pNmvS.css       1.63 kB │ gzip:   0.49 kB
+dist/assets/vendor-react-calendar-DbylKtPz.css     2.74 kB │ gzip:   0.76 kB
+dist/assets/vendor-leaflet-CfLfHNi7.css           16.05 kB │ gzip:   6.54 kB
+dist/assets/index-Bs8NBmri.css                    72.70 kB │ gzip:  13.25 kB
+dist/assets/textUtils-CQMq5Yo8.js                  0.11 kB │ gzip:   0.12 kB
+dist/assets/urlUtils-DelZaAuq.js                   0.15 kB │ gzip:   0.14 kB
+dist/assets/supabaseClient-CV629D3f.js             0.24 kB │ gzip:   0.24 kB
+dist/assets/accountService-HwOyEQCq.js             0.51 kB │ gzip:   0.37 kB
+dist/assets/safeStorage-CsvXV5Ue.js                0.55 kB │ gzip:   0.35 kB
+dist/assets/uuidUtils-CV5arDlX.js                  0.58 kB │ gzip:   0.33 kB
+dist/assets/dateUtils-CCu50d9f.js                  0.75 kB │ gzip:   0.42 kB
+dist/assets/rolldown-runtime-aKtaBQYM.js           1.08 kB │ gzip:   0.62 kB
+dist/assets/logger-CV3Pv22I.js                     1.08 kB │ gzip:   0.57 kB
+dist/assets/fetchUtils-Cj79vYsx.js                 1.10 kB │ gzip:   0.56 kB
+dist/assets/constants-6IcE2s5y.js                  1.23 kB │ gzip:   0.52 kB
+dist/assets/useAccessibleDialog-DPDEFI9T.js        1.24 kB │ gzip:   0.65 kB
+dist/assets/DetailMiniMap-foQCFoj-.js              1.26 kB │ gzip:   0.75 kB
+dist/assets/atlasCodes-CoQMz-M3.js                 1.50 kB │ gzip:   0.74 kB
+dist/assets/EmptyState-DYm8Urd2.js                 2.14 kB │ gzip:   0.95 kB
+dist/assets/badgeUtils-3k25-Umr.js                 2.58 kB │ gzip:   1.09 kB
+dist/assets/vendor-file-saver-D4jqnvsJ.js          2.69 kB │ gzip:   1.29 kB
+dist/assets/statsReportData-14WIis1e.js            3.39 kB │ gzip:   1.60 kB
+dist/assets/types-BOGrwzzV.js                      3.44 kB │ gzip:   1.65 kB
+dist/assets/locationService-BdZUjRxQ.js            3.72 kB │ gzip:   1.65 kB
+dist/assets/OnboardingTour-C5XPiMOx.js             3.89 kB │ gzip:   1.75 kB
+dist/assets/ObservationCalendar-D3s5GHUI.js        4.05 kB │ gzip:   1.37 kB
+dist/assets/ObservationGallery-2zrDfkj7.js         4.05 kB │ gzip:   1.73 kB
+dist/assets/csvUtils-e6Hyq2nE.js                   5.17 kB │ gzip:   2.32 kB
+dist/assets/HelpPage-DkEdH_po.js                   5.20 kB │ gzip:   2.22 kB
+dist/assets/icons-BpxhxBZS.js                      5.21 kB │ gzip:   1.49 kB
+dist/assets/ObservationRow-DNDbFhlU.js             5.52 kB │ gzip:   1.80 kB
+dist/assets/workbox-window.prod.es5-Bd17z0YL.js    5.65 kB │ gzip:   2.20 kB
+dist/assets/backupService-B23Pj3a0.js              8.91 kB │ gzip:   3.98 kB
+dist/assets/ObservationDetail-B3ptjMkz.js          8.93 kB │ gzip:   3.02 kB
+dist/assets/speciesService-RS25lIxy.js            10.51 kB │ gzip:   3.91 kB
+dist/assets/MapInput-B_sSWDlM.js                  12.27 kB │ gzip:   3.93 kB
+dist/assets/LegalPages-DV4F2P7S.js                12.45 kB │ gzip:   3.76 kB
+dist/assets/ObservationMap-BQMlomLr.js            14.22 kB │ gzip:   4.94 kB
+dist/assets/excelImportService-CU7JRn8c.js        15.01 kB │ gzip:   6.01 kB
+dist/assets/ObservationStats-D1bJfx6I.js          15.46 kB │ gzip:   4.34 kB
+dist/assets/userFacingError-BINvZ-yK.js           19.46 kB │ gzip:   6.71 kB
+dist/assets/statsExportService--51IDqjh.js        23.74 kB │ gzip:   6.64 kB
+dist/assets/vendor-react-calendar-B92dYnGD.js     25.80 kB │ gzip:   8.37 kB
+dist/assets/purify.es-Dx1xmS9-.js                 26.89 kB │ gzip:  10.46 kB
+dist/assets/ObservationForm-DJcHdLSC.js           37.53 kB │ gzip:  10.90 kB
+dist/assets/vendor-jszip-CS7rSj0o.js              95.93 kB │ gzip:  28.47 kB
+dist/assets/index.es-CNdHVT-H.js                 151.48 kB │ gzip:  48.93 kB
+dist/assets/index-D80yGCMq.js                    166.31 kB │ gzip:  42.53 kB
+dist/assets/vendor-leaflet-DovZos1t.js           186.11 kB │ gzip:  54.58 kB
+dist/assets/vendor-html2canvas-D3hDKc7W.js       199.58 kB │ gzip:  46.80 kB
+dist/assets/vendor-recharts-KjQDoNdo.js          368.77 kB │ gzip: 105.36 kB
+dist/assets/vendor-core-DB6yREsl.js              394.28 kB │ gzip: 111.53 kB
+dist/assets/vendor-jspdf-CWJOPmJY.js             401.24 kB │ gzip: 130.13 kB
+dist/assets/vendor-exceljs-B2KSkmVu.js           930.49 kB │ gzip: 256.61 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1.68s
+
+PWA v1.3.0
+mode      generateSW
+precache  72 entries (1702.67 KiB)
+files generated
+  dist/sw.js
+  dist/workbox-5d06b500.js

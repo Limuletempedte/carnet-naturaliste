@@ -1,0 +1,42 @@
+npm notice run carnet-naturaliste@0.0.0 test:run
+npm notice run vitest run tests/audit-account-isolation.test.ts --reporter=verbose
+
+ RUN  v3.2.7 <laboratoire>/repo
+
+ ✓ tests/audit-account-isolation.test.ts > STATIC-03 — async cross-account cache (scheduling mocks, no backend claims) > owner control: a completed A read writes only the A cache 11ms
+ ✓ tests/audit-account-isolation.test.ts > STATIC-03 — async cross-account cache (scheduling mocks, no backend claims) > CONFIRMED: a delayed A response overwrites the B cache and is readable offline as B 60ms
+stderr | tests/audit-account-isolation.test.ts > STATIC-05 — durable private log (real backup/logger/auth-context/dialog code) > CONFIRMED: failed A backup media URL survives sign-out and reload and appears in B Sync Center
+Failed to download image: https://audit-only.invalid/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/private-a.jpg Error: AUDIT_NETWORK_DENIED: no external transport
+    at <laboratoire>/repo/tests/audit-account-isolation.test.ts:114:15
+    at mockCall (file://<laboratoire>/repo/node_modules/@vitest/spy/dist/index.js:96:15)
+    at spy (file://<laboratoire>/repo/node_modules/tinyspy/dist/index.js:47:80)
+    at fetchWithTimeout (<laboratoire>/repo/utils/fetchUtils.ts:13:22)
+    at Array.<anonymous> (<laboratoire>/repo/services/backupService.ts:325:36)
+    at worker (<laboratoire>/repo/services/backupService.ts:121:37)
+    at <laboratoire>/repo/services/backupService.ts:125:93
+    at Function.from (<anonymous>)
+    at runWithConcurrency (<laboratoire>/repo/services/backupService.ts:125:29)
+    at Module.createBackup (<laboratoire>/repo/services/backupService.ts:343:11)
+
+ ✓ tests/audit-account-isolation.test.ts > STATIC-05 — durable private log (real backup/logger/auth-context/dialog code) > CONFIRMED: failed A backup media URL survives sign-out and reload and appears in B Sync Center 235ms
+ ✓ tests/audit-account-isolation.test.ts > AuthContext signOut — locked SDK control versus exceptional throw > PROTECTED: actual auth-js clears token and AuthContext user even when HTTP logout returns 503 66ms
+stderr | tests/audit-account-isolation.test.ts > AuthContext signOut — locked SDK control versus exceptional throw > ROBUSTNESS ONLY: an injected exceptional throw removes fallback token but retains React user
+signOut failed (likely offline): Error: AUDIT_INJECTED_EXCEPTION
+    at <laboratoire>/repo/tests/audit-account-isolation.test.ts:245:43
+    at file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11
+    at file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26
+    at file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)
+    at runTest (file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)
+    at runSuite (file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runSuite (file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)
+    at runFiles (file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:1787:3)
+
+ ✓ tests/audit-account-isolation.test.ts > AuthContext signOut — locked SDK control versus exceptional throw > ROBUSTNESS ONLY: an injected exceptional throw removes fallback token but retains React user 58ms
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  17:42:24
+   Duration  2.51s (transform 388ms, setup 0ms, collect 834ms, tests 433ms, environment 582ms, prepare 218ms)
+

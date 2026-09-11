@@ -1,0 +1,120 @@
+"""Local-only audit: python3 api-tests.py local-status.json results.json accounts.json.
+Creates disposable accounts and data only on loopback Supabase. Never prints keys.
+"""
+import base64, hashlib, hmac, json, os, sys, time, uuid
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.parse import urlencode, urlparse, quote
+from pathlib import Path
+
+cfg=json.loads(Path(sys.argv[1]).read_text())
+base=cfg['API_URL'].rstrip('/')
+assert urlparse(base).hostname in ('127.0.0.1','localhost','::1'), 'LOCAL TARGET REQUIRED'
+anon,service=cfg['ANON_KEY'],cfg['SERVICE_ROLE_KEY']
+out=[]
+def request(method,path,token=None,payload=None,raw=None,content_type='application/json'):
+    data=raw if raw is not None else (json.dumps(payload).encode() if payload is not None else None)
+    headers={'apikey':anon,'Content-Type':content_type,'Prefer':'return=representation'}
+    if token: headers['Authorization']='Bearer '+token
+    req=Request(base+path,data=data,method=method,headers=headers)
+    try:
+        with urlopen(req,timeout=15) as r: status=r.status; body=r.read()
+    except HTTPError as e: status=e.code; body=e.read()
+    try: value=json.loads(body)
+    except (ValueError,UnicodeDecodeError): value={'bytes':len(body)}
+    return status,value
+def check(name,condition,detail,classification='protection vérifiée'):
+    out.append({'test':name,'passed':bool(condition),'classification':classification,'detail':detail})
+    print(('PASS ' if condition else 'FAIL ')+name)
+def user(label):
+    email=f'audit-{label}-{uuid.uuid4().hex[:10]}@example.test'; password='Audit-'+uuid.uuid4().hex+'!'
+    s,d=request('POST','/auth/v1/admin/users',service,{'email':email,'password':password,'email_confirm':True})
+    assert s in (200,201),(s,d)
+    uid=d['id']
+    s,d=request('POST','/auth/v1/token?grant_type=password',None,{'email':email,'password':password})
+    assert s==200,(s,d)
+    return {'id':uid,'email':email,'password':password,'token':d['access_token']}
+A,B,C=user('a'),user('b'),user('delete')
+accounts={'A':A,'B':B,'C':C}
+Path(sys.argv[3]).write_text(json.dumps(accounts));os.chmod(sys.argv[3],0o600)
+def observation(u,label):
+    return {'id':str(uuid.uuid4()),'user_id':u['id'],'species_name':label,'date':'2026-09-11','time':'10:00',
+            'taxonomic_group':'Oiseaux','count':1,'location':'Bois fictif audit','gps_lat':48.1,'gps_lon':2.1,
+            'latin_name':'','municipality':'Commune fictive','department':'00','country':'France','atlas_code':'',
+            'comment':'SECRET_FICTIF_'+label,'status':'NE','protocol':'Opportuniste',
+            'sexe':'Non renseigné','age':'Non renseigné','observation_condition':'Non renseigné','comportement':'Non renseigné','weather_condition':'Non renseigné'}
+rows={}
+for label,u in [('A',A),('B',B),('C',C)]:
+    row=observation(u,'PRIVE_'+label);s,d=request('POST','/rest/v1/observations',u['token'],row)
+    assert s==201,(s,d); rows[label]=row
+    check('Insertion légitime '+label,s==201,{'status':s})
+accounts['rows']=rows;Path(sys.argv[3]).write_text(json.dumps(accounts))
+s,d=request('GET','/rest/v1/observations?select=id,user_id,species_name',None)
+check('Anonyme sans accès aux observations',s==200 and d==[],{'status':s,'rows':len(d) if isinstance(d,list) else None})
+s,d=request('GET','/rest/v1/observations?select=id,user_id',A['token'])
+check('A ne voit que ses lignes',s==200 and len(d)==1 and d[0]['user_id']==A['id'],{'status':s,'rows':len(d)})
+bp='/rest/v1/observations?id=eq.'+rows['B']['id']
+for method,payload in [('GET',None),('PATCH',{'comment':'ATTAQUE'}),('DELETE',None)]:
+    s,d=request(method,bp,A['token'],payload)
+    check(method+' cible B avec session A',s in (200,204) and (d==[] or d=={'bytes':0}),{'status':s,'result':d})
+s,d=request('POST','/rest/v1/observations',A['token'],observation(B,'FAUX_B'))
+check('INSERT propriétaire B falsifié',s in (401,403),{'status':s,'code':d.get('code')})
+s,d=request('PATCH','/rest/v1/observations?id=eq.'+rows['A']['id'],A['token'],{'user_id':B['id']})
+check('UPDATE transfert propriétaire refusé',s in (401,403),{'status':s,'code':d.get('code')})
+batch=[observation(A,'LOT_A'),observation(B,'LOT_B')]
+s,d=request('POST','/rest/v1/observations',A['token'],batch)
+check('Lot mixte A et B refusé',s in (401,403),{'status':s,'code':d.get('code')})
+inj="x'); DROP TABLE observations; --"
+ir=observation(A,inj);s,d=request('POST','/rest/v1/observations',A['token'],ir)
+check('Texte SQL stocké comme donnée',s==201 and d[0]['species_name']==inj,{'status':s})
+q=urlencode({'select':'id','species_name':'eq.'+inj})
+s,d=request('GET','/rest/v1/observations?'+q,A['token'])
+check('Filtre avec caractères SQL reste littéral',s==200 and [x['id'] for x in d]==[ir['id']],{'status':s,'rows':len(d)})
+for name,token in [('jeton invalide','not.a.jwt'),('signature falsifiée',A['token'][:-16]+'AAAAAAAAAAAAAAAA')]:
+    s,d=request('GET','/rest/v1/observations',token)
+    check(name,s==401,{'status':s})
+def b64(b):return base64.urlsafe_b64encode(b).rstrip(b'=')
+payload={'sub':A['id'],'role':'authenticated','aud':'authenticated','exp':int(time.time())-60,'iat':int(time.time())-3600}
+msg=b64(b'{"alg":"HS256","typ":"JWT"}')+b'.'+b64(json.dumps(payload).encode())
+expired=(msg+b'.'+b64(hmac.new(cfg['JWT_SECRET'].encode(),msg,hashlib.sha256).digest())).decode()
+s,d=request('GET','/rest/v1/observations',expired)
+check('Jeton local signé mais expiré',s==401,{'status':s})
+paths={}
+for label,u in [('A',A),('B',B),('C',C)]:
+    p=u['id']+'/photos/audit.jpg';paths[label]=p
+    s,d=request('POST','/storage/v1/object/photos/'+p,u['token'],raw=b'\xff\xd8\xffaudit fictif',content_type='image/jpeg')
+    check('Upload JPEG déclaré '+label,s in (200,201),{'status':s})
+s,d=request('GET','/storage/v1/object/public/photos/'+paths['A'])
+check('Média A accessible sans compte — reproduction',s==200,{'status':s,'bytes':d.get('bytes')},'faille confirmée')
+s,d=request('GET','/storage/v1/object/authenticated/photos/'+paths['A'],B['token'])
+check('Route média authentifiée isole B',s in (400,401,403,404),{'status':s})
+s,d=request('POST','/storage/v1/object/list/photos',A['token'],{'prefix':B['id'],'limit':100})
+check('Listing dossier B depuis A vide',s==200 and d==[],{'status':s})
+s,d=request('POST','/storage/v1/object/photos/'+B['id']+'/photos/forged.jpg',A['token'],raw=b'fake',content_type='image/jpeg')
+check('Upload vers dossier B interdit',s in (400,401,403),{'status':s})
+s,d=request('PUT','/storage/v1/object/photos/'+paths['B'],A['token'],raw=b'changed',content_type='image/jpeg')
+check('Remplacement média B interdit',s in (400,401,403,404),{'status':s})
+s,d=request('DELETE','/storage/v1/object/photos',A['token'],{'prefixes':[paths['B']]})
+after,_=request('GET','/storage/v1/object/public/photos/'+paths['B'])
+check('Suppression média B sans effet',after==200,{'status':s,'B_still_exists':after==200})
+for name,mime,raw in [('HTML interdit','text/html',b'<script>1</script>'),('Taille 20MiB+1 refusée','image/jpeg',b'x'*(20*1024*1024+1))]:
+    s,d=request('POST','/storage/v1/object/photos/'+A['id']+'/photos/'+uuid.uuid4().hex,A['token'],raw=raw,content_type=mime)
+    check(name,s in (400,403,413,415,422),{'status':s})
+s,d=request('POST','/storage/v1/object/photos/'+A['id']+'/photos/disguised.jpg',A['token'],raw=b'<script>window.auditMarker=1</script>',content_type='image/jpeg')
+check('MIME déclaré sans inspection binaire observé',s in (200,201),{'status':s},'risque à confirmer')
+sp=A['id']+'/sounds/audit.wav';s,d=request('POST','/storage/v1/object/photos/'+sp,A['token'],raw=b'RIFFaudit',content_type='audio/wav')
+check('Upload son propriétaire fonctionne',s in (200,201),{'status':s})
+s,d=request('GET','/storage/v1/object/public/photos/'+sp)
+check('Son public sans compte — reproduction',s==200,{'status':s},'faille confirmée')
+for name,token in [('absent',None),('falsifié','not.a.jwt'),('expiré',expired)]:
+    s,d=request('POST','/functions/v1/delete-account',token,{})
+    check('delete-account jeton '+name,s in (401,403),{'status':s})
+s,d=request('POST','/functions/v1/delete-account',C['token'],{'user_id':B['id']})
+sa,da=request('GET','/auth/v1/admin/users/'+C['id'],service)
+sb,db=request('GET','/auth/v1/admin/users/'+B['id'],service)
+check('Suppression cible JWT C malgré corps B',s==200 and sa==404 and sb==200,{'status':s,'C_status':sa,'B_status':sb})
+sm,_=request('GET','/storage/v1/object/public/photos/'+paths['C'])
+check('Médias C supprimés avec compte',sm in (400,404),{'status':sm})
+s,d=request('GET',bp,B['token']);check('B peut toujours lire sa donnée',s==200 and len(d)==1,{'status':s,'rows':len(d)})
+Path(sys.argv[2]).write_text(json.dumps({'target':'Supabase local uniquement','tests':out,'passed':sum(x['passed'] for x in out),'total':len(out)},ensure_ascii=False,indent=2))
+print('RESULT',sum(x['passed'] for x in out),'/',len(out))

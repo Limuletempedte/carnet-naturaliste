@@ -1,0 +1,37 @@
+PASS Insertion légitime A
+PASS Insertion légitime B
+PASS Insertion légitime C
+PASS Anonyme sans accès aux observations
+PASS A ne voit que ses lignes
+PASS GET cible B avec session A
+PASS PATCH cible B avec session A
+PASS DELETE cible B avec session A
+PASS INSERT propriétaire B falsifié
+PASS UPDATE transfert propriétaire refusé
+PASS Lot mixte A et B refusé
+PASS Texte SQL stocké comme donnée
+PASS Filtre avec caractères SQL reste littéral
+PASS jeton invalide
+PASS signature falsifiée
+PASS Jeton local signé mais expiré
+PASS Upload JPEG déclaré A
+PASS Upload JPEG déclaré B
+PASS Upload JPEG déclaré C
+PASS Média A accessible sans compte — reproduction
+FAIL Route média authentifiée isole B
+PASS Listing dossier B depuis A vide
+PASS Upload vers dossier B interdit
+PASS Remplacement média B interdit
+PASS Suppression média B sans effet
+PASS HTML interdit
+PASS Taille 20MiB+1 refusée
+PASS MIME déclaré sans inspection binaire observé
+PASS Upload son propriétaire fonctionne
+PASS Son public sans compte — reproduction
+PASS delete-account jeton absent
+PASS delete-account jeton falsifié
+PASS delete-account jeton expiré
+PASS Suppression cible JWT C malgré corps B
+PASS Médias C supprimés avec compte
+PASS B peut toujours lire sa donnée
+RESULT 35 / 36
