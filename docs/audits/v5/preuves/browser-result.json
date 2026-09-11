@@ -1,0 +1,70 @@
+{
+  "scenario": "A ouvre Modifier, se déconnecte ; B se connecte dans le même onglet",
+  "accountBMenu": "A\naudit-b-7df63461a8",
+  "leaked": true,
+  "fields": [
+    {
+      "name": "speciesName",
+      "id": "speciesName",
+      "value": "PRIVE_A"
+    },
+    {
+      "name": "latinName",
+      "id": "latinName",
+      "value": ""
+    },
+    {
+      "name": "date",
+      "id": "date",
+      "value": "2026-09-11"
+    },
+    {
+      "name": "time",
+      "id": "time",
+      "value": "10:00:00"
+    },
+    {
+      "name": "count",
+      "id": "count",
+      "value": "1"
+    },
+    {
+      "name": "maleCount",
+      "id": "maleCount",
+      "value": ""
+    },
+    {
+      "name": "femaleCount",
+      "id": "femaleCount",
+      "value": ""
+    },
+    {
+      "name": "unidentifiedCount",
+      "id": "unidentifiedCount",
+      "value": ""
+    },
+    {
+      "name": "",
+      "id": "observerInput",
+      "value": ""
+    },
+    {
+      "name": "comment",
+      "id": "comment",
+      "value": "SECRET_FICTIF_PRIVE_A"
+    },
+    {
+      "name": "photo",
+      "id": "photo",
+      "value": ""
+    }
+  ],
+  "externalMocked": [
+    "https://api.inaturalist.org",
+    "https://c.tile.openstreetmap.org",
+    "https://a.tile.openstreetmap.org",
+    "https://b.tile.openstreetmap.org",
+    "https://api.gbif.org"
+  ],
+  "serviceWorker": "bloqué pour ce scénario; état React testé sur le bundle réel"
+}

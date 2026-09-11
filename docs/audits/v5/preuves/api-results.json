@@ -1,0 +1,310 @@
+{
+  "target": "Supabase local uniquement",
+  "tests": [
+    {
+      "test": "Insertion légitime A",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "test": "Insertion légitime B",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "test": "Insertion légitime C",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "test": "Anonyme sans accès aux observations",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "rows": 0
+      }
+    },
+    {
+      "test": "A ne voit que ses lignes",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "rows": 1
+      }
+    },
+    {
+      "test": "GET cible B avec session A",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "result": []
+      }
+    },
+    {
+      "test": "PATCH cible B avec session A",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "result": []
+      }
+    },
+    {
+      "test": "DELETE cible B avec session A",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "result": []
+      }
+    },
+    {
+      "test": "INSERT propriétaire B falsifié",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 403,
+        "code": "42501"
+      }
+    },
+    {
+      "test": "UPDATE transfert propriétaire refusé",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 403,
+        "code": "42501"
+      }
+    },
+    {
+      "test": "Lot mixte A et B refusé",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 403,
+        "code": "42501"
+      }
+    },
+    {
+      "test": "Texte SQL stocké comme donnée",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 201
+      }
+    },
+    {
+      "test": "Filtre avec caractères SQL reste littéral",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "rows": 1
+      }
+    },
+    {
+      "test": "jeton invalide",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "test": "signature falsifiée",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "test": "Jeton local signé mais expiré",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "test": "Upload JPEG déclaré A",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "test": "Upload JPEG déclaré B",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "test": "Upload JPEG déclaré C",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "test": "Média A accessible sans compte — reproduction",
+      "passed": true,
+      "classification": "faille confirmée",
+      "detail": {
+        "status": 200,
+        "bytes": 15
+      }
+    },
+    {
+      "test": "Route média authentifiée isole B",
+      "passed": false,
+      "classification": "faille confirmée",
+      "detail": {
+        "status": 200,
+        "interpretation": "La route authenticated sert aussi le média à B car le bucket est public."
+      }
+    },
+    {
+      "test": "Listing dossier B depuis A vide",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "test": "Upload vers dossier B interdit",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 400
+      }
+    },
+    {
+      "test": "Remplacement média B interdit",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 400
+      }
+    },
+    {
+      "test": "Suppression média B sans effet",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "B_still_exists": true
+      }
+    },
+    {
+      "test": "HTML interdit",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 400
+      }
+    },
+    {
+      "test": "Taille 20MiB+1 refusée",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 400
+      }
+    },
+    {
+      "test": "MIME déclaré sans inspection binaire observé",
+      "passed": true,
+      "classification": "risque à confirmer",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "test": "Upload son propriétaire fonctionne",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "test": "Son public sans compte — reproduction",
+      "passed": true,
+      "classification": "faille confirmée",
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "test": "delete-account jeton absent",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "test": "delete-account jeton falsifié",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "test": "delete-account jeton expiré",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 401
+      }
+    },
+    {
+      "test": "Suppression cible JWT C malgré corps B",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "C_status": 404,
+        "B_status": 200
+      }
+    },
+    {
+      "test": "Médias C supprimés avec compte",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 400
+      }
+    },
+    {
+      "test": "B peut toujours lire sa donnée",
+      "passed": true,
+      "classification": "protection vérifiée",
+      "detail": {
+        "status": 200,
+        "rows": 1
+      }
+    }
+  ],
+  "passed": 35,
+  "total": 36
+}

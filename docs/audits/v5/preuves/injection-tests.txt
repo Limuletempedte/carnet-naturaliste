@@ -1,0 +1,73 @@
+
+ RUN  v3.2.7 <laboratoire>/repo
+
+stdout | tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > reproduit une expansion >8 Mio acceptée depuis une archive <32 Kio
+AUDIT_ZIP_EXPANSION {"compressedBytes":8636,"expandedChars":8389155,"ratio":971.4,"accepted":true,"elapsedMs":82,"limitation":"bounded fixture; no memory exhaustion or browser crash attempted"}
+
+stderr | tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > rejette un faux ZIP
+[backupService] ZIP illisible: Error: Can't find end of central directory : is this a zip file ? If it is, see https://stuk.github.io/jszip/documentation/howto/read_zip.html
+    at ZipEntries.readEndOfCentral (<laboratoire>/repo/node_modules/jszip/lib/zipEntries.js:167:23)
+    at ZipEntries.load (<laboratoire>/repo/node_modules/jszip/lib/zipEntries.js:255:14)
+    at <laboratoire>/repo/node_modules/jszip/lib/load.js:48:24
+    at Module.readBackupZip (<laboratoire>/repo/services/backupService.ts:469:15)
+    at <laboratoire>/repo/tests/audit-injections.test.ts:184:9
+    at file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+stderr | tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > rejette un data.json malformé
+[backupService] data.json corrompu: SyntaxError: Unexpected token 'b', "[broken" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at Module.readBackupZip (<laboratoire>/repo/services/backupService.ts:482:23)
+    at <laboratoire>/repo/tests/audit-injections.test.ts:192:9
+    at file://<laboratoire>/repo/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+
+ ✓ tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > reproduit une expansion >8 Mio acceptée depuis une archive <32 Kio 328ms
+ ✓ tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > restaure une sauvegarde légitime générée par la vraie API 19ms
+ ✓ tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > rejette un faux ZIP 9ms
+ ✓ tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > rejette une archive sans data.json 3ms
+ ✓ tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > rejette un data.json malformé 2ms
+ ✓ tests/audit-injections.test.ts > AUDIT ZIP — décompression bornée et contrôles positifs > rejette une racine JSON incorrecte 3ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > reconstruit les objets et retire les clés hostiles sans pollution globale 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté javascript:alert(1) de tous les champs média 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté java
+script:alert(1) de tous les champs média 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté data:text/html,<script>alert(1)</script> de tous les champs média 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté data:image/svg+xml,<svg onload="alert(1)"/> de tous les champs média 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté blob:https://example.invalid/id de tous les champs média 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté file:///tmp/private de tous les champs média 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté ftp://example.invalid/a de tous les champs média 2ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > retire le protocole non accepté /relative.png de tous les champs média 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > conserve le témoin URL https://example.invalid/photo.png sans le télécharger 2ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > conserve le témoin URL http://example.invalid/photo.png sans le télécharger 2ms
+ ✓ tests/audit-injections.test.ts > AUDIT JSON — clés inattendues, types et protocoles > rejette les objets à la place des chaînes et les nombres non valides 1ms
+ ✓ tests/audit-injections.test.ts > AUDIT exports — formules et délimiteurs > neutralise les formules CSV Darwin Core et conserve les séparateurs dans une seule cellule 2ms
+ ✓ tests/audit-injections.test.ts > AUDIT exports — formules et délimiteurs > neutralise aussi les formules dans le CSV du ZIP de sauvegarde 6ms
+stdout | tests/audit-injections.test.ts > AUDIT exports — formules et délimiteurs > sérialise les payloads XLSX comme chaînes, sans élément formule dans le XML
+AUDIT_XLSX_LITERAL {"payloads":8,"formulaElements":0}
+
+ ✓ tests/audit-injections.test.ts > AUDIT exports — formules et délimiteurs > sérialise les payloads XLSX comme chaînes, sans élément formule dans le XML 110ms
+stdout | tests/audit-injections.test.ts > AUDIT HTML — vraie construction du rapport et du sandbox PDF > garde le nom hostile en texte dans le DOM puis dans le HTML exporté
+AUDIT_HTML_ESCAPING {"htmlPayloadTextPreserved":true,"injectedElements":0,"pdfSectionsInspected":5,"limitation":"HTML/DOM and ZIP real; html2canvas and jsPDF raster output mocked"}
+
+stderr | tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > rejette l’en-tête hostile __proto__
+[security][excel-import] En-têtes potentiellement dangereux détectés, import rejeté.
+
+stderr | tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > rejette l’en-tête hostile constructor
+[security][excel-import] En-têtes potentiellement dangereux détectés, import rejeté.
+
+stderr | tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > rejette l’en-tête hostile prototype
+[security][excel-import] En-têtes potentiellement dangereux détectés, import rejeté.
+
+ ✓ tests/audit-injections.test.ts > AUDIT HTML — vraie construction du rapport et du sandbox PDF > garde le nom hostile en texte dans le DOM puis dans le HTML exporté 199ms
+ ✓ tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > accepte le témoin légitime et applique le fallback aux statuts inconnus 21ms
+ ✓ tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > rejette l’en-tête hostile __proto__ 13ms
+ ✓ tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > rejette l’en-tête hostile constructor 10ms
+stdout | tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > reproduit la lecture des propriétés héritées comme faux statuts sans pollution
+AUDIT_EXCEL_INHERITED_SYNONYMS {"protoStatusType":"object","constructorStatusType":"function","blockingErrors":0,"globalPrototypeMutated":false,"limitation":"parser anomaly confirmed; persistence and security impact not tested here"}
+
+ ✓ tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > rejette l’en-tête hostile prototype 12ms
+ ✓ tests/audit-injections.test.ts > AUDIT Excel — validation des clés et lecture héritée > reproduit la lecture des propriétés héritées comme faux statuts sans pollution 13ms
+
+ Test Files  1 passed (1)
+      Tests  27 passed (27)
+   Start at  17:43:27
+   Duration  2.22s (transform 272ms, setup 0ms, collect 663ms, tests 766ms, environment 416ms, prepare 74ms)

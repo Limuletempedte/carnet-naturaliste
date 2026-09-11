@@ -1,0 +1,20 @@
+HTTP/2 200
+accept-ranges: bytes
+access-control-allow-origin: *
+age: 99454
+cache-control: public, max-age=0, must-revalidate
+content-disposition: inline
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://*.inaturalist.org https://inaturalist-open-data.s3.amazonaws.com https://upload.wikimedia.org https://server.arcgisonline.com https://*.tile.openstreetmap.org https://*.tile.opentopomap.org https://*.basemaps.cartocdn.com; connect-src 'self' https://*.supabase.co https://api.inaturalist.org https://api.gbif.org https://fr.wikipedia.org https://nominatim.openstreetmap.org https://api.open-meteo.com https://*.ingest.de.sentry.io; font-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'
+content-type: text/html; charset=utf-8
+date: Fri, 11 Sep 2026 15:40:19 GMT
+etag: "48fafc9b328292a36562cc6e6e0967fc"
+last-modified: Thu, 10 Sep 2026 12:02:44 GMT
+permissions-policy: camera=(), microphone=(), geolocation=(self)
+referrer-policy: strict-origin-when-cross-origin
+server: Vercel
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-vercel-cache: HIT
+x-vercel-id: cdg1::t6brb-1789141218906-df2d76acc5d4
+content-length: 2486

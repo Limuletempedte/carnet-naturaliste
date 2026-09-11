@@ -1,0 +1,368 @@
+/**
+ * Audit ponctuel 0041b1c — LOCAL UNIQUEMENT.
+ * Les tests de reproduction verts décrivent le comportement actuel, y compris
+ * les faiblesses ; ils ne signifient pas que celles-ci sont corrigées.
+ * Aucun fichier de plus de 9 Mio décompressés, aucun épuisement mémoire.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
+import { parseJsonImport } from '../services/jsonImportValidation';
+import { parseExcel } from '../services/excelImportService';
+import { createBackup, readBackupZip } from '../services/backupService';
+import { buildDarwinCoreCsv, runObservationExport } from '../services/observationExportService';
+import { exportStatsBundleProgrammatic } from '../services/statsExportService';
+import {
+    Age, Comportement, Observation, ObservationCondition, Protocol, Sexe,
+    Status, TaxonomicGroup, WeatherCondition,
+} from '../types';
+
+const probes = vi.hoisted(() => ({
+    saveAs: vi.fn(),
+    downloadedBlobs: [] as Blob[],
+    pdfSections: [] as string[],
+    deniedFetch: vi.fn(async () => { throw new Error('AUDIT: external fetch forbidden'); }),
+}));
+
+vi.mock('file-saver', () => ({ saveAs: probes.saveAs }));
+// Seules les sorties graphiques sans support réel dans jsdom sont simulées.
+// La construction HTML, son insertion DOM et le ZIP utilisent les vraies API.
+vi.mock('html2canvas', () => ({
+    default: async (section: HTMLElement) => {
+        probes.pdfSections.push(section.outerHTML);
+        const canvas = document.createElement('canvas');
+        canvas.width = 2;
+        canvas.height = 2;
+        return canvas;
+    },
+}));
+vi.mock('jspdf', () => ({
+    jsPDF: class {
+        internal = { pageSize: { getWidth: () => 210, getHeight: () => 297 } };
+        addImage() { /* sortie raster simulée, non objet de ce test */ }
+        addPage() { /* sortie raster simulée */ }
+        output() { return new Blob(['audit-pdf-placeholder'], { type: 'application/pdf' }); }
+    },
+}));
+
+const UUID = '11111111-1111-4111-8111-111111111111';
+const makeObservation = (overrides: Partial<Observation> = {}): Observation => ({
+    id: UUID,
+    speciesName: 'Renard roux',
+    latinName: 'Vulpes vulpes',
+    taxonomicGroup: TaxonomicGroup.MAMMAL,
+    date: '2026-09-10',
+    time: '08:30',
+    count: 1,
+    location: 'Bois témoin',
+    gps: { lat: 48.12345, lon: 2.12345 },
+    municipality: 'Commune fictive',
+    department: '00',
+    country: 'France',
+    altitude: 50,
+    comment: 'Témoin positif',
+    status: Status.LC,
+    atlasCode: '',
+    protocol: Protocol.OPPORTUNIST,
+    sexe: Sexe.UNKNOWN,
+    age: Age.UNKNOWN,
+    observationCondition: ObservationCondition.UNKNOWN,
+    comportement: Comportement.UNKNOWN,
+    weather: WeatherCondition.UNKNOWN,
+    ...overrides,
+});
+
+const readBlob = (blob: Blob): Promise<ArrayBuffer> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(blob);
+});
+
+const zipFile = async (entries: Record<string, string>): Promise<File> => {
+    const archive = new JSZip();
+    for (const [path, value] of Object.entries(entries)) archive.file(path, value);
+    const blob = await archive.generateAsync({
+        type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 9 },
+    });
+    return new File([blob], 'audit-local.zip', { type: 'application/zip' });
+};
+
+const excelFile = async (headers: string[], rows: unknown[][]): Promise<File> => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Observations');
+    sheet.addRow(headers);
+    rows.forEach(row => sheet.addRow(row));
+    const bytes = await workbook.xlsx.writeBuffer();
+    return new File([bytes], 'audit-local.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+};
+
+const parseCsvForEvidence = (text: string): string[][] => {
+    // Petit lecteur indépendant RFC 4180 : garde les séparateurs et retours à
+    // la ligne à l'intérieur des cellules entre guillemets.
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < text.length; i += 1) {
+        const char = text[i];
+        if (char === '"') {
+            if (quoted && text[i + 1] === '"') { cell += '"'; i += 1; }
+            else quoted = !quoted;
+        } else if (!quoted && char === ',') { row.push(cell); cell = ''; }
+        else if (!quoted && char === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+        else cell += char;
+    }
+    expect(quoted).toBe(false);
+    row.push(cell);
+    rows.push(row);
+    return rows;
+};
+
+const originalURL = globalThis.URL;
+let prototypeBefore: PropertyDescriptorMap;
+beforeEach(() => {
+    probes.saveAs.mockClear();
+    probes.deniedFetch.mockClear();
+    probes.downloadedBlobs.length = 0;
+    probes.pdfSections.length = 0;
+    prototypeBefore = Object.getOwnPropertyDescriptors(Object.prototype);
+    vi.stubGlobal('fetch', probes.deniedFetch);
+    vi.stubGlobal('XMLHttpRequest', class { constructor() { throw new Error('AUDIT: XMLHttpRequest forbidden'); } });
+    vi.stubGlobal('WebSocket', class { constructor() { throw new Error('AUDIT: WebSocket forbidden'); } });
+    vi.stubGlobal('URL', class extends originalURL {
+        static createObjectURL(blob: Blob): string {
+            probes.downloadedBlobs.push(blob);
+            return 'blob:http://localhost/audit-local';
+        }
+        static revokeObjectURL() { /* aucun accès à une ressource externe */ }
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+    expect(probes.deniedFetch).not.toHaveBeenCalled();
+    expect(Object.getOwnPropertyDescriptors(Object.prototype)).toEqual(prototypeBefore);
+    document.body.replaceChildren();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+});
+
+describe('AUDIT ZIP — décompression bornée et contrôles positifs', () => {
+    it('reproduit une expansion >8 Mio acceptée depuis une archive <32 Kio', async () => {
+        const json = ' '.repeat(8 * 1024 * 1024) + JSON.stringify([makeObservation()]);
+        const file = await zipFile({ 'data.json': json });
+        expect(json.length).toBeGreaterThan(8 * 1024 * 1024);
+        expect(json.length).toBeLessThan(9 * 1024 * 1024);
+        expect(file.size).toBeLessThan(32 * 1024);
+        const started = performance.now();
+        const result = await readBackupZip(file);
+        expect(result.observations).toHaveLength(1);
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(result.observations[0].speciesName).toBe('Renard roux');
+        console.info('AUDIT_ZIP_EXPANSION', JSON.stringify({
+            compressedBytes: file.size, expandedChars: json.length,
+            ratio: Number((json.length / file.size).toFixed(1)),
+            accepted: true, elapsedMs: Math.round(performance.now() - started),
+            limitation: 'bounded fixture; no memory exhaustion or browser crash attempted',
+        }));
+    }, 20_000);
+
+    it('restaure une sauvegarde légitime générée par la vraie API', async () => {
+        const source = makeObservation();
+        const created = await createBackup([source], { includeImages: false, includeSounds: false });
+        expect(created.totalObservations).toBe(1);
+        const blob = probes.saveAs.mock.calls[0][0] as Blob;
+        const restored = await readBackupZip(new File([blob], 'legitime.zip'));
+        expect(restored.report.blockingErrors).toHaveLength(0);
+        expect(restored.observations[0]).toMatchObject(source);
+    });
+
+    it('rejette un faux ZIP', async () => {
+        await expect(readBackupZip(new File(['not a zip'], 'fake.zip'))).rejects.toThrow(/invalide|corrompue/);
+    });
+
+    it('rejette une archive sans data.json', async () => {
+        await expect(readBackupZip(await zipFile({ 'other.json': '[]' }))).rejects.toThrow(/data\.json manquant/);
+    });
+
+    it('rejette un data.json malformé', async () => {
+        await expect(readBackupZip(await zipFile({ 'data.json': '[broken' }))).rejects.toThrow(/data\.json corrompu/);
+    });
+
+    it('rejette une racine JSON incorrecte', async () => {
+        await expect(readBackupZip(await zipFile({ 'data.json': '{}' }))).rejects.toThrow(/tableau/);
+    });
+});
+
+describe('AUDIT JSON — clés inattendues, types et protocoles', () => {
+    it('reconstruit les objets et retire les clés hostiles sans pollution globale', () => {
+        const raw = JSON.parse(JSON.stringify(makeObservation()).slice(0, -1)
+            + ',"__proto__":{"auditPolluted":true},"constructor":{"prototype":{"auditPolluted":true}},"prototype":{"auditPolluted":true},"sourceUrl":"javascript:alert(1)"}');
+        raw.gps = JSON.parse('{"lat":48.12345,"lon":2.12345,"__proto__":{"auditPolluted":true},"constructor":{"prototype":{"auditPolluted":true}}}');
+        const result = parseJsonImport([raw]);
+        expect(result.report.blockingErrors).toHaveLength(0);
+        const observation = result.observations[0];
+        expect(observation.speciesName).toBe('Renard roux');
+        for (const value of [observation, observation.gps]) {
+            expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+            for (const key of ['__proto__', 'constructor', 'prototype', 'auditPolluted', 'sourceUrl']) {
+                expect(Object.prototype.hasOwnProperty.call(value, key)).toBe(false);
+            }
+        }
+        expect(Reflect.get({}, 'auditPolluted')).toBeUndefined();
+    });
+
+    it.each([
+        'javascript:alert(1)', 'java\nscript:alert(1)',
+        'data:text/html,<script>alert(1)</script>', 'data:image/svg+xml,<svg onload="alert(1)"/>',
+        'blob:https://example.invalid/id', 'file:///tmp/private', 'ftp://example.invalid/a', '/relative.png',
+    ])('retire le protocole non accepté %s de tous les champs média', (url) => {
+        const result = parseJsonImport([makeObservation({ photo: url, wikipediaImage: url, sound: url })]);
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(result.observations).toHaveLength(1);
+        expect(result.observations[0]).toMatchObject({ photo: undefined, wikipediaImage: undefined, sound: undefined });
+    });
+
+    it.each(['https://example.invalid/photo.png', 'http://example.invalid/photo.png'])('conserve le témoin URL %s sans le télécharger', (url) => {
+        const result = parseJsonImport([makeObservation({ photo: url, wikipediaImage: url, sound: url })]);
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(result.observations[0]).toMatchObject({ photo: url, wikipediaImage: url, sound: url });
+    });
+
+    it('rejette les objets à la place des chaînes et les nombres non valides', () => {
+        const result = parseJsonImport([
+            { ...makeObservation(), speciesName: { formula: '=1+1' } },
+            { ...makeObservation(), count: Number.POSITIVE_INFINITY },
+            { ...makeObservation(), taxonomicGroup: '<img src=x onerror=alert(1)>' },
+        ]);
+        expect(result.observations).toHaveLength(0);
+        expect(result.report.blockingErrors).toHaveLength(3);
+    });
+});
+
+const formulaPayloads = [
+    '=HYPERLINK("https://example.invalid/","lien")',
+    '+SUM(1,2)', '-1+2', '@SUM(1,2)', '\t=1+1', ' \r\n=1+1',
+];
+
+describe('AUDIT exports — formules et délimiteurs', () => {
+    it('neutralise les formules CSV Darwin Core et conserve les séparateurs dans une seule cellule', () => {
+        const delimiterPayload = 'oiseau",\n=HYPERLINK("https://example.invalid/","x")';
+        const allPayloads = [...formulaPayloads, delimiterPayload, 'Renard témoin'];
+        const csv = buildDarwinCoreCsv(allPayloads.map((speciesName, i) => makeObservation({ speciesName, id: `${UUID}-${i}` })));
+        const rows = parseCsvForEvidence(csv);
+        expect(rows).toHaveLength(allPayloads.length + 1);
+        const speciesColumn = rows[0].indexOf('vernacularName');
+        expect(speciesColumn).toBeGreaterThan(-1);
+        for (let i = 0; i < formulaPayloads.length; i += 1) {
+            expect(rows[i + 1][speciesColumn]).toBe("'" + formulaPayloads[i]);
+        }
+        expect(rows[formulaPayloads.length + 1][speciesColumn]).toBe(delimiterPayload);
+        expect(rows.at(-1)?.[speciesColumn]).toBe('Renard témoin');
+        rows.forEach(row => expect(row).toHaveLength(rows[0].length));
+    });
+
+    it('neutralise aussi les formules dans le CSV du ZIP de sauvegarde', async () => {
+        await createBackup(formulaPayloads.map(speciesName => makeObservation({ speciesName })), { includeImages: false, includeSounds: false });
+        const archive = await JSZip.loadAsync(probes.saveAs.mock.calls[0][0] as Blob);
+        const text = await archive.file('data.csv')!.async('string');
+        const rows = parseCsvForEvidence(text);
+        expect(rows).toHaveLength(formulaPayloads.length + 1);
+        formulaPayloads.forEach((payload, i) => expect(rows[i + 1][1]).toBe("'" + payload));
+    });
+
+    it('sérialise les payloads XLSX comme chaînes, sans élément formule dans le XML', async () => {
+        const payloads = [...formulaPayloads, '<img src=x onerror=alert(1)>', 'Renard témoin'];
+        await runObservationExport('excel', payloads.map(speciesName => makeObservation({ speciesName })));
+        expect(probes.downloadedBlobs).toHaveLength(1);
+        const bytes = await readBlob(probes.downloadedBlobs[0]);
+        const archive = await JSZip.loadAsync(bytes);
+        const sheetXml = await archive.file('xl/worksheets/sheet1.xml')!.async('string');
+        const xml = new DOMParser().parseFromString(sheetXml, 'application/xml');
+        expect(xml.querySelectorAll('parsererror')).toHaveLength(0);
+        expect(xml.getElementsByTagName('f')).toHaveLength(0);
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(bytes);
+        payloads.forEach((payload, i) => {
+            const cell = workbook.worksheets[0].getRow(i + 2).getCell(2);
+            expect(cell.type).toBe(ExcelJS.ValueType.String);
+            // Le parseur XML normalise CRLF en LF ; cela ne transforme pas
+            // la cellule String en formule (contrôle indépendant ci-dessus).
+            expect(cell.value).toBe(payload.replace(/\r\n/g, '\n'));
+        });
+        console.info('AUDIT_XLSX_LITERAL', JSON.stringify({ payloads: payloads.length, formulaElements: 0 }));
+    });
+});
+
+describe('AUDIT HTML — vraie construction du rapport et du sandbox PDF', () => {
+    it('garde le nom hostile en texte dans le DOM puis dans le HTML exporté', async () => {
+        const payload = '</span><img src="https://example.invalid/x" onerror="globalThis.auditExecuted=true"><script>globalThis.auditExecuted=true</script>&\'';
+        const result = await exportStatsBundleProgrammatic({
+            observations: [makeObservation({ speciesName: payload, count: 2 }), makeObservation({ id: '22222222-2222-4222-8222-222222222222' })],
+            statsRootElement: document.createElement('div'), isDarkMode: false,
+            includeVisualAssets: false, exportedAt: new Date('2026-09-11T12:00:00Z'),
+        });
+        const archive = await JSZip.loadAsync(result.zipBlob);
+        const html = await archive.file('stats-report.html')!.async('string');
+        const report = new DOMParser().parseFromString(html, 'text/html');
+        const renderedNames = Array.from(report.querySelectorAll('.species-name'), el => el.textContent);
+        expect(renderedNames).toContain(payload);
+        expect(renderedNames).toContain('Renard roux');
+        expect(report.querySelectorAll('img, [onerror], [onload], iframe, object')).toHaveLength(0);
+        expect(report.querySelectorAll('script')).toHaveLength(1); // script fixe d'infobulle prévu
+        expect(report.querySelector('script')?.textContent).not.toContain('auditExecuted');
+        expect(html).toContain('&lt;script&gt;globalThis.auditExecuted=true&lt;/script&gt;');
+        expect(Reflect.get(globalThis, 'auditExecuted')).toBeUndefined();
+        expect(probes.pdfSections.length).toBeGreaterThan(0);
+        const pdfDom = new DOMParser().parseFromString(probes.pdfSections.join(''), 'text/html');
+        expect(pdfDom.querySelectorAll('script, img, [onerror], [onload]')).toHaveLength(0);
+        expect(pdfDom.body.textContent).toContain(payload);
+        expect(document.querySelector('.pdf-root')).toBeNull();
+        console.info('AUDIT_HTML_ESCAPING', JSON.stringify({
+            htmlPayloadTextPreserved: true, injectedElements: 0,
+            pdfSectionsInspected: probes.pdfSections.length,
+            limitation: 'HTML/DOM and ZIP real; html2canvas and jsPDF raster output mocked',
+        }));
+    });
+});
+
+describe('AUDIT Excel — validation des clés et lecture héritée', () => {
+    it('accepte le témoin légitime et applique le fallback aux statuts inconnus', async () => {
+        const file = await excelFile(["Nom de l'espèce", 'Date', 'Statut'], [
+            ['Renard', '2026-09-10', 'LC'], ['Renard inconnu', '2026-09-10', 'unknown-audit'],
+        ]);
+        const result = await parseExcel(file);
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(result.observations.map(obs => obs.status)).toEqual([Status.LC, Status.NE]);
+        expect(result.report.warnings.some(warning => warning.field === 'Statut' && warning.original === 'unknown-audit')).toBe(true);
+    });
+
+    it.each(['__proto__', 'constructor', 'prototype'])('rejette l’en-tête hostile %s', async (header) => {
+        const file = await excelFile(["Nom de l'espèce", 'Date', header], [['Renard', '2026-09-10', 'payload']]);
+        const result = await parseExcel(file);
+        expect(result.observations).toHaveLength(0);
+        expect(result.report.blockingErrors[0]?.message).toMatch(/en-têtes non autorisés/);
+    });
+
+    it('reproduit la lecture des propriétés héritées comme faux statuts sans pollution', async () => {
+        const file = await excelFile(["Nom de l'espèce", 'Date', 'Statut'], [
+            ['Renard proto', '2026-09-10', '__proto__'], ['Renard ctor', '2026-09-10', 'constructor'],
+        ]);
+        const result = await parseExcel(file);
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(result.observations).toHaveLength(2);
+        expect(result.observations[0].status).toBe(Object.prototype);
+        expect(result.observations[1].status).toBe(Object);
+        expect(result.report.warnings.filter(warning => warning.field === 'Statut')).toHaveLength(0);
+        console.info('AUDIT_EXCEL_INHERITED_SYNONYMS', JSON.stringify({
+            protoStatusType: typeof result.observations[0].status,
+            constructorStatusType: typeof result.observations[1].status,
+            blockingErrors: result.report.blockingErrors.length,
+            globalPrototypeMutated: false,
+            limitation: 'parser anomaly confirmed; persistence and security impact not tested here',
+        }));
+    });
+});
