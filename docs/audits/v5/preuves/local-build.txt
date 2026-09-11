@@ -62,7 +62,7 @@ dist/assets/vendor-core-DB6yREsl.js              394.28 kB │ gzip: 111.53 kB
 dist/assets/vendor-jspdf-CWJOPmJY.js             401.24 kB │ gzip: 130.13 kB
 dist/assets/vendor-exceljs-B2KSkmVu.js           930.49 kB │ gzip: 256.61 kB
 
-[plugin builtin:vite-reporter] 
+[plugin builtin:vite-reporter]
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting

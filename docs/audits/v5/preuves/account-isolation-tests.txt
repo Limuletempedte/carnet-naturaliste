@@ -39,4 +39,3 @@ signOut failed (likely offline): Error: AUDIT_INJECTED_EXCEPTION
       Tests  5 passed (5)
    Start at  17:42:24
    Duration  2.51s (transform 388ms, setup 0ms, collect 834ms, tests 433ms, environment 582ms, prepare 218ms)
-

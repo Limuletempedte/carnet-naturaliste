@@ -1,4 +1,4 @@
-HTTP/2 200 
+HTTP/2 200
 accept-ranges: bytes
 access-control-allow-origin: *
 age: 99454
@@ -18,4 +18,3 @@ x-frame-options: DENY
 x-vercel-cache: HIT
 x-vercel-id: cdg1::t6brb-1789141218906-df2d76acc5d4
 content-length: 2486
-

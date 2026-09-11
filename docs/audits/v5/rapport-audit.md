@@ -1621,7 +1621,7 @@ Cette étape transmet ou conserve ces données jusqu’au consommateur suivant s
     warn: (...args: unknown[]): void => {
         pushEvent('warn', args);
         if (shouldLog('warn')) {
-             
+
             console.warn(...args);
         }
     },
@@ -1703,7 +1703,7 @@ Cette étape transmet ou conserve ces données jusqu’au consommateur suivant s
     warn: (...args: unknown[]): void => {
         pushEvent('warn', args);
         if (shouldLog('warn')) {
-             
+
             console.warn(...args);
         }
     },
@@ -1797,7 +1797,7 @@ Cette étape transmet ou conserve ces données jusqu’au consommateur suivant s
     warn: (...args: unknown[]): void => {
         pushEvent('warn', args);
         if (shouldLog('warn')) {
-             
+
             console.warn(...args);
         }
     },

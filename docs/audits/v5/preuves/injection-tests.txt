@@ -71,4 +71,3 @@ AUDIT_EXCEL_INHERITED_SYNONYMS {"protoStatusType":"object","constructorStatusTyp
       Tests  27 passed (27)
    Start at  17:43:27
    Duration  2.22s (transform 272ms, setup 0ms, collect 663ms, tests 766ms, environment 416ms, prepare 74ms)
-
