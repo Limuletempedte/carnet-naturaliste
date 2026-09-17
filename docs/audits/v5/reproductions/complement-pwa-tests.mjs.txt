@@ -1,0 +1,136 @@
+// Dedicated local integration test. Real compiled app and unmodified Workbox SW;
+// Auth/REST/media transport are fixtures, not proof about server authorization.
+// No TLS bypass: HTTPS fixture requests are fulfilled before any connection.
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const DIR=path.dirname(fileURLToPath(import.meta.url));
+const APP='http://127.0.0.1:3107';
+const API='https://audit.supabase.co';
+const CACHE='supabase-storage-cache';
+const idA='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',idB='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const users={A:{id:idA,email:'a@audit.invalid'},B:{id:idB,email:'b@audit.invalid'}};
+const media=(id,kind)=>`${API}/storage/v1/object/public/photos/${id}/${kind==='image'?'photos/fictive.png':'sounds/fictive.wav'}`;
+// Valid small PNG and PCM WAV; mime restrictions are outside this cache-only test.
+const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=','base64');
+const WAV=Buffer.alloc(46);WAV.write('RIFF');WAV.writeUInt32LE(38,4);WAV.write('WAVEfmt ',8);WAV.writeUInt32LE(16,16);WAV.writeUInt16LE(1,20);WAV.writeUInt16LE(1,22);WAV.writeUInt32LE(8000,24);WAV.writeUInt32LE(16000,28);WAV.writeUInt16LE(2,32);WAV.writeUInt16LE(16,34);WAV.write('data',36);WAV.writeUInt32LE(2,40);
+function jwt(id){return [Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url'),Buffer.from(JSON.stringify({sub:id,role:'authenticated',aud:'authenticated',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url'),'fictitious-local-signature-not-valid'].join('.');}
+function user(id){return {...Object.values(users).find(u=>u.id===id),aud:'authenticated',role:'authenticated',created_at:'2026-01-01T00:00:00Z',app_metadata:{provider:'email'},user_metadata:{}};}
+function session(id){return {access_token:jwt(id),refresh_token:'fixture-refresh-'+id,token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,user:user(id)};}
+function row(id){return {id:id===idA?'11111111-1111-4111-8111-111111111111':'22222222-2222-4222-8222-222222222222',user_id:id,species_name:id===idA?'MEDIA_A_PRIVE':'MEDIA_B_PRIVE',latin_name:'',taxonomic_group:'Oiseaux',date:'2026-09-17',time:'10:00:00',count:1,location:'Lieu fictif',municipality:'',department:'',country:'',comment:'Donnée fictive',status:'NE',protocol:'Opportuniste',sexe:'Non renseigné',age:'Non renseigné',observation_condition:'Non renseigné',comportement:'Non renseigné',weather_condition:'Non renseigné',atlas_code:'',gps_lat:null,gps_lon:null,altitude:null,photo_url:media(id,'image'),sound_url:media(id,'audio'),created_at:'2026-09-17T08:00:00Z',updated_at:'2026-09-17T08:00:00Z'};}
+const results=[],requests=[];let offline=false,context,page;
+function record(test,ok,evidence,category='control'){results.push({test,ok,evidence,category});console.log(JSON.stringify(results.at(-1)));if(!ok&&category==='control')throw new Error(test);}
+const fixtureHeaders={'access-control-allow-origin':'*','access-control-allow-headers':'authorization,apikey,content-type,x-client-info','cache-control':'no-store'};
+async function routeAll(route){
+ const req=route.request(),u=new URL(req.url());
+ const owner=req.serviceWorker()?'service-worker':'page';
+ if(offline){requests.push({url:u.href,owner,action:'aborted-offline'});return route.abort('internetdisconnected');}
+ if(u.origin===APP)return route.continue();
+ if(u.origin!==API){requests.push({url:u.origin,owner,action:'external-blocked'});return route.abort('blockedbyclient');}
+ requests.push({url:u.href,owner,action:'fixture'});
+ let id;
+ try{id=JSON.parse(Buffer.from((req.headers().authorization||'').split('.')[1]||'','base64url')).sub;}catch{}
+ const json=(status,data)=>route.fulfill({status,headers:fixtureHeaders,contentType:'application/json',body:JSON.stringify(data)});
+ if(req.method()==='OPTIONS')return route.fulfill({status:204,headers:fixtureHeaders});
+ if(u.pathname==='/auth/v1/token'){
+  const b=req.postDataJSON();id=b.email===users.A.email?idA:b.email===users.B.email?idB:b.refresh_token?.replace('fixture-refresh-','');
+  return [idA,idB].includes(id)?json(200,session(id)):json(400,{error:'invalid fixture login'});
+ }
+ if(u.pathname==='/auth/v1/user')return [idA,idB].includes(id)?json(200,user(id)):json(401,{message:'fixture unauthorized'});
+ if(u.pathname==='/auth/v1/logout')return route.fulfill({status:204,headers:fixtureHeaders});
+ if(u.pathname==='/rest/v1/observations')return [idA,idB].includes(id)?json(200,[row(id)]):json(401,{});
+ if(u.pathname.startsWith('/storage/v1/object/public/photos/')){
+  if(u.searchParams.has('uncached'))return json(404,{message:'uncached fixture'});
+  return route.fulfill({status:200,headers:fixtureHeaders,contentType:u.pathname.endsWith('.wav')?'audio/wav':'image/png',body:u.pathname.endsWith('.wav')?WAV:PNG});
+ }
+ return json(404,{message:'unknown fixture endpoint'});
+}
+const profile=fs.mkdtempSync(path.join(DIR,'browser-profile-'));
+async function launch(){
+ context=await chromium.launchPersistentContext(profile,{executablePath:process.env.CHROMIUM_PATH||undefined,headless:true,viewport:{width:1300,height:950},serviceWorkers:'allow',args:['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost']});
+ await context.route('**/*',routeAll);
+ await context.setOffline(offline);
+ page=context.pages()[0]||await context.newPage();page.setDefaultTimeout(12000);
+}
+async function login(label){
+ await page.locator('#login-email').fill(users[label].email);
+ await page.locator('#login-password').fill('Fictitious-password-only');
+ await page.locator('form button[type=submit]').click();
+ await page.getByRole('button',{name:'Menu utilisateur'}).waitFor();
+ await page.getByRole('button',{name:`Voir l'observation de MEDIA_${label}_PRIVE`,exact:true}).waitFor();
+}
+async function logout(){
+ await page.getByRole('button',{name:'Menu utilisateur'}).click();
+ await page.getByRole('menuitem',{name:'Se déconnecter',exact:true}).click();
+ await page.locator('#login-email').waitFor();
+}
+async function cacheInfo(){return page.evaluate(async name=>{const c=await caches.open(name);const keys=await c.keys();return {entries:await Promise.all(keys.map(async r=>{const v=await c.match(r);return {url:r.url,type:v.type,status:v.status};})),controlled:!!navigator.serviceWorker.controller,online:navigator.onLine};},CACHE);}
+async function readMedia(url){
+ const responsePromise=page.waitForResponse(r=>r.url()===url,{timeout:5000}).catch(()=>null);
+ const result=await page.evaluate(async url=>{try{const r=await fetch(url);const b=await r.arrayBuffer();const sum=[...new Uint8Array(await crypto.subtle.digest('SHA-256',b))].map(x=>x.toString(16).padStart(2,'0')).join('');return {status:r.status,bytes:b.byteLength,sha256:sum};}catch(e){return {error:e.name};}},url);
+ const response=await responsePromise;return {...result,fromServiceWorker:response?.fromServiceWorker()||false};
+}
+async function networkOff(){offline=true;await context.setOffline(true);}
+async function networkOn(){offline=false;await context.setOffline(false);}
+async function renderMedia(url,kind){
+ const responsePromise=page.waitForResponse(r=>r.url()===url,{timeout:4000}).catch(()=>null);
+ const v=await page.evaluate(async({url,kind})=>{
+  const old=document.getElementById('audit-media');if(old)old.remove();
+  const el=document.createElement(kind==='image'?'img':'audio');el.id='audit-media';
+  if(kind==='image'){el.alt='Sonde d’audit : image fictive de A, URL connue';el.width=140;el.height=140;}
+  else{el.controls=true;el.preload='metadata';}
+  const loaded=new Promise(resolve=>{const timer=setTimeout(()=>resolve(false),3000);el.addEventListener(kind==='image'?'load':'loadedmetadata',()=>{clearTimeout(timer);resolve(true);},{once:true});el.addEventListener('error',()=>{clearTimeout(timer);resolve(false);},{once:true});});
+  document.body.prepend(el);el.src=url;
+  return {loaded:await loaded,online:navigator.onLine,naturalWidth:kind==='image'?el.naturalWidth:undefined,readyState:kind==='audio'?el.readyState:undefined};
+ },{url,kind});
+ const response=await responsePromise;return {...v,fromServiceWorker:response?.fromServiceWorker()||false};
+}
+async function inspectMedia(id,kind){
+ if(kind==='image')return renderMedia(media(id,kind),kind);
+ const r=await readMedia(media(id,kind));return {...r,loaded:r.status===200&&r.sha256===hash(WAV),online:!offline,interpretation:'Audio bytes fetched; native playback is blocked by the unchanged CSP media-src fallback.'};
+}
+const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+try{
+ await launch();await page.goto(APP);
+ await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
+ await page.reload();
+ await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+ record('Worker de production actif',true,await cacheInfo());
+ await login('A');
+ const consent=page.getByRole('button',{name:'Compris',exact:true});if(await consent.isVisible())await consent.click();
+ for(const kind of ['image','audio']){
+  const r=await inspectMedia(idA,kind);record('Chargement A '+kind,r.loaded,r);
+ }
+ await page.waitForFunction(async({name,urls})=>{const c=await caches.open(name);return (await Promise.all(urls.map(u=>c.match(u)))).every(Boolean);},{name:CACHE,urls:[media(idA,'image'),media(idA,'audio')]});
+ record('Cache réellement rempli par Workbox',true,await cacheInfo());
+ record('Transport du service worker intercepté',requests.some(x=>x.owner==='service-worker'&&x.url===media(idA,'image')),requests.filter(x=>x.owner==='service-worker'));
+ await networkOff();
+ for(const kind of ['image','audio']){const r=await inspectMedia(idA,kind);record('A lit hors ligne '+kind,r.loaded,r);}
+ const uncached=await readMedia(media(idA,'image')+'?uncached=1');record('Témoin non mis en cache échoue hors ligne',!!uncached.error,uncached);
+ await networkOn();await logout();await networkOff();
+ const unauth=await renderMedia(media(idA,'image'),'image');record('Sans session média A encore lisible',unauth.loaded,unauth,'finding');
+ await networkOn();await login('B');
+ for(const kind of ['image','audio'])await inspectMedia(idB,kind);
+ await networkOff();
+ for(const kind of ['image','audio']){const r=await inspectMedia(idA,kind);record('B accède au média A hors ligne '+kind,r.loaded,r,'finding');}
+ const own=await renderMedia(media(idB,'image'),'image');record('Contrôle positif média B hors ligne',own.loaded,own);
+ await page.reload();
+ await page.getByRole('button',{name:'Menu utilisateur'}).waitFor();
+ const afterReload=await renderMedia(media(idA,'image'),'image');record('Image A après rechargement hors ligne de B',afterReload.loaded,afterReload,'finding');
+ await context.close();context=null;await launch();await page.goto(APP);
+ await page.getByRole('button',{name:'Menu utilisateur'}).waitFor();
+ for(const kind of ['image','audio']){const r=await inspectMedia(idA,kind);record('Média A après fermeture et réouverture du profil B '+kind,r.loaded&&r.fromServiceWorker,r,'finding');}
+ record('Identité visible après réouverture',/b@audit.invalid|\bb\b/.test(await page.getByRole('button',{name:'Menu utilisateur'}).innerText()),{menu:await page.getByRole('button',{name:'Menu utilisateur'}).innerText()});
+ // Show the known fixture URL through an ordinary img element, proving renderability.
+ await renderMedia(media(idA,'image'),'image');
+ await page.evaluate(()=>{const p=document.createElement('p');p.textContent='SONDE AUDIT : compte B hors ligne ; image fictive A disponible via une URL déjà connue.';document.body.prepend(p);});
+ await page.screenshot({path:path.join(DIR,'pwa-b-offline.png'),fullPage:true});
+ record('Octets A affichables par B hors ligne',true,{knownUrl:true,syntheticDiagnosticImage:true,...await cacheInfo()},'finding');
+}catch(e){results.push({test:'test-runner-error',ok:false,error:String(e.stack),category:'runner'});console.error(e.stack);process.exitCode=1;}
+finally{
+ if(context)await context.close();
+ const sw=fs.readFileSync(path.join(DIR,'../audit-complements/dist/sw.js'));
+ fs.writeFileSync(path.join(DIR,'pwa-results.json'),JSON.stringify({date:new Date().toISOString(),commit:'cf79cebd88efb6219a428a1522e528f58d842c07',sw_sha256:hash(sw),sourceUnmodified:true,transport:'Local static bundle. Auth/REST/media fixtures via browserContext.route including worker-owned requests; all other hosts blocked, DNS disabled except loopback. No TLS bypass.',scope:'Cache behavior only; no claim about real Auth or backend authorization. True browser offline state used; persistent profile reopened.',results,requests,profile:path.basename(profile)},null,2));
+}

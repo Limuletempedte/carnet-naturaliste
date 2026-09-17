@@ -2,6 +2,10 @@
 
 Audit du 11 septembre 2026, commit `0041b1c1964251cb6585ce69eef6f43ceb72bc4f`. Code applicatif et production inchangés pendant l’audit. Tests d’attaque exécutés uniquement sur une copie locale avec comptes et données fictifs.
 
+## Complément du 17 septembre 2026
+
+Les réglages Auth hébergés ont été relevés et le cache PWA a été testé avec service worker actif. Le défaut de conservation des médias entre comptes est confirmé. [Résultats, nuances et preuves](COMPLEMENT-2026-09-17.md). Les six constats ci-dessous décrivent l’audit initial ; aucun correctif n’est appliqué par ces documents.
+
 ## Résultat
 
 **Six failles confirmées : trois de gravité moyenne et trois de gravité faible.** Les problèmes principaux concernent la confidentialité des médias et le cloisonnement entre comptes dans le navigateur. Aucun contournement SQL, exécution JavaScript injectée ou suppression du compte d’autrui n’a été démontré dans les scénarios examinés. Ce résultat n’est pas une garantie d’absence de toute vulnérabilité.

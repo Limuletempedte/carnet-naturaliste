@@ -1,5 +1,7 @@
 # Matrice des scénarios de sécurité
 
+**Mise à jour du 17 septembre 2026 :** [complément Auth et PWA](COMPLEMENT-2026-09-17.md). Les autres lignes conservent les résultats de l’audit initial.
+
 Les essais actifs ciblent exclusivement le laboratoire loopback. « Protection vérifiée » signifie vérifiée dans le chemin et les conditions décrits, pas garantie universelle.
 
 | Surface | Scénario et contrôle positif | Résultat | Preuve / limite |
@@ -27,8 +29,8 @@ Les essais actifs ciblent exclusivement le laboratoire loopback. « Protection v
 | CSRF/CORS | Endpoint privilégié avec Authorization absent | Protection vérifiée sur ce contrôle | Bearer exigé ; wildcard CORS ne donne pas un jeton |
 | Secrets | Source, historique Git, bundle | Aucun secret confirmé par la méthode | Motifs connus ; exemples redacted ; formats inconnus/encodés non couverts |
 | Dépendances | npm audit, dépendances et appels réels | Risques à confirmer / durcissement | 11 paquets signalés, pas 11 exploits démontrés |
-| Auth hébergé | Minimum mot de passe, MFA, confirmation email, captcha, limites | Non testé / non vérifié | Advisors accessibles, paramètres complets non disponibles |
-| PWA | Isolation et purge du cache HTTP média | Non testé dynamiquement | Configuration analysée ; worker désactivé pour le test React |
+| Auth hébergé | Minimum mot de passe, MFA, confirmation email, CAPTCHA, sessions et limites | Réglages vérifiés en lecture seule le 17/09 | Minimum 6 ; email confirmé ; CAPTCHA absent ; TOTP disponible sans parcours applicatif ; voir complément pour valeurs et limites |
+| PWA | Isolation et purge du cache HTTP média | Défaut confirmé localement le 17/09 | 17 assertions, worker actif, réseau coupé, profil B rouvert ; médias A déjà connus restitués. Auth/API simulés ; aucune attaque de production |
 | Disponibilité partagée | Saturation/attaques distribuées | Non testé | Exclues en ligne ; aucun stress de production |
 | Injection shell/XXE/NoSQL/SSRF serveur | Absence de consommateur serveur correspondant | Non applicable aux chemins inspectés | Fonction serveur limitée à Auth/Storage; fetch médias côté navigateur |
 | Santé/fonctionnalités | Exhaustivité parcours, sauvegarde/restauration, performance générale | Hors mission | Audit ultérieur distinct |
