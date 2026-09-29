@@ -1,3 +1,4 @@
+import { setSessionIdentity } from '../services/sessionScope';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -41,6 +42,7 @@ class MockIntersectionObserver {
 
 describe('ObservationForm — position initiale (clic sur la carte, EE-1)', () => {
     beforeEach(() => {
+        setSessionIdentity('user-1');
         vi.clearAllMocks();
         Object.defineProperty(window, 'IntersectionObserver', { writable: true, value: MockIntersectionObserver });
         window.scrollTo = vi.fn();

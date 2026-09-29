@@ -78,9 +78,10 @@ const makeObservation = (id: string) => ({
     weather: WeatherCondition.UNKNOWN
 });
 
-beforeEach(() => {
+beforeEach(async () => {
     vi.resetModules();
     localStorage.clear();
+    (await import('../services/sessionScope')).setSessionIdentity('user-1');
 
     authGetUserMock.mockReset();
     authGetUserMock.mockResolvedValue({ data: { user: { id: 'user-1' } } });
@@ -1011,5 +1012,44 @@ describe('storageService.isDuplicateKeyError (SI-30)', () => {
         expect(isDuplicateKeyError({ code: '42703', message: 'column missing' })).toBe(false);
         expect(isDuplicateKeyError({ message: 'connection refused' })).toBe(false);
         expect(isDuplicateKeyError({ message: 'duplicate key on profiles' })).toBe(false);
+    });
+});
+
+describe('sécurité : résultats tardifs et propriétaire immuable', () => {
+    it('ne copie pas une lecture A dans le cache de B', async () => {
+        const service = await import('../services/storageService');
+        const { mapToRow } = await import('../services/storage/storageMappers');
+        service.setStorageNamespace('user-1');
+        let resolve!: (value: unknown) => void;
+        rangeMock.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+        const pending = service.getObservations();
+        const rejected = expect(pending).rejects.toThrow(/compte actif/);
+        await vi.waitFor(() => expect(rangeMock).toHaveBeenCalledOnce());
+        const b = { ...makeObservation('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), speciesName: 'B uniquement' };
+        localStorage.setItem('local_observations_cache:user-2', JSON.stringify([b]));
+        service.setStorageNamespace('user-2');
+        resolve({ data: [mapToRow({ ...makeObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), speciesName: 'Secret A' }, 'user-1')], error: null });
+        await rejected;
+        expect(JSON.parse(localStorage.getItem('local_observations_cache:user-2')!)).toEqual([b]);
+    });
+
+    it('refuse un propriétaire SDK différent du contexte avant insertion', async () => {
+        const service = await import('../services/storageService');
+        service.setStorageNamespace('user-1');
+        authGetUserMock.mockResolvedValue({ data: { user: { id: 'user-2' } } });
+        await expect(service.saveObservation(makeObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'))).rejects.toThrow(/compte actif/);
+        expect(insertMock).not.toHaveBeenCalled();
+    });
+
+    it('préserve la saisie hors ligne sans appel Auth réseau', async () => {
+        const service = await import('../services/storageService');
+        service.setStorageNamespace('user-1');
+        Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+        authGetUserMock.mockRejectedValue(new Error('réseau indisponible'));
+        try {
+            await service.saveObservation(makeObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'));
+            expect(service.getOfflineQueueSnapshot()).toHaveLength(1);
+            expect(authGetUserMock).not.toHaveBeenCalled();
+        } finally { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); }
     });
 });

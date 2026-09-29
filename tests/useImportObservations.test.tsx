@@ -1,3 +1,4 @@
+import { setSessionIdentity } from '../services/sessionScope';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { View, type Observation } from '../types';
@@ -42,6 +43,7 @@ const makeParams = () => ({
 
 describe('useImportObservations', () => {
     beforeEach(() => {
+        setSessionIdentity('user-1');
         vi.clearAllMocks();
         isDuplicateKeyErrorMock.mockReturnValue(false);
     });

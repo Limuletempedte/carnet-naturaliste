@@ -1,3 +1,4 @@
+import { setSessionIdentity } from '../services/sessionScope';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -58,6 +59,7 @@ const makeObservation = (overrides: Partial<Observation> = {}): Observation => (
 
 describe('ObservationForm — « Enregistrer et ajouter une autre »', () => {
     beforeEach(() => {
+        setSessionIdentity('user-1');
         vi.clearAllMocks();
         Object.defineProperty(window, 'IntersectionObserver', {
             writable: true,

@@ -1,3 +1,4 @@
+import { captureSessionContext, assertSessionContext, isSessionCurrent } from '../services/sessionScope';
 import { useState } from 'react';
 import {
     getObservations,
@@ -33,11 +34,13 @@ export const useSyncQueue = ({
     setConnectionStatus,
     onToast,
 }: UseSyncQueueParams) => {
+    const [context] = useState(() => { try { return captureSessionContext(); } catch { return null; } });
     const [lastSyncResult, setLastSyncResult] = useState<OfflineSyncResult | null>(null);
     const [isSyncingQueue, setIsSyncingQueue] = useState(false);
     const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
 
     const runQueueSync = async (itemIds?: string[]) => {
+        if (!context || !isSessionCurrent(context)) return;
         // BUG-11 : hors-ligne, processOfflineQueue renvoie {processed:0, failed:0}
         // et tombait dans la branche succès → faux toast vert « 0 action(s)
         // synchronisée(s) ». On avertit explicitement sans rien tenter.
@@ -49,20 +52,23 @@ export const useSyncQueue = ({
         setSyncProgress(null);
         try {
             const syncResult = await processOfflineQueue({
+                context,
                 ...(itemIds && itemIds.length > 0 ? { itemIds } : {}),
-                onProgress: (current, total) => setSyncProgress({ current, total })
+                onProgress: (current, total) => { if (isSessionCurrent(context)) setSyncProgress({ current, total }); }
             });
+            assertSessionContext(context);
             setLastSyncResult(syncResult);
             refreshOfflineQueueSnapshot();
 
             if (navigator.onLine) {
-                const loadResult = await getObservations();
+                const loadResult = await getObservations(context);
+                assertSessionContext(context);
                 setObservations(loadResult.observations);
             }
 
             if (syncResult.failed > 0) {
                 setConnectionStatus('degraded');
-                const queueSnapshot = getOfflineQueueSnapshot();
+                const queueSnapshot = getOfflineQueueSnapshot(context);
                 const remaining = queueSnapshot.length;
                 onToast('warning', `Sync partielle : ${syncResult.failed}/${syncResult.processed} échec(s).${remaining > 0 ? ` ${remaining} action(s) encore en file.` : ''}`, 7000);
             } else {
@@ -74,11 +80,11 @@ export const useSyncQueue = ({
                 }
             }
         } catch (syncError) {
+            if (!isSessionCurrent(context)) return;
             const message = syncError instanceof Error ? syncError.message : String(syncError);
             onToast('error', `Synchronisation impossible: ${message}`, 7000);
         } finally {
-            setIsSyncingQueue(false);
-            setSyncProgress(null);
+            if (isSessionCurrent(context)) { setIsSyncingQueue(false); setSyncProgress(null); }
         }
     };
 

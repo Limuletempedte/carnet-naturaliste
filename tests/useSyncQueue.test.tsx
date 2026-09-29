@@ -1,3 +1,4 @@
+import { setSessionIdentity } from '../services/sessionScope';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
@@ -22,6 +23,7 @@ const makeParams = () => ({
 
 describe('useSyncQueue', () => {
     beforeEach(() => {
+        setSessionIdentity('user-1');
         vi.clearAllMocks();
         getObservationsMock.mockResolvedValue({ observations: [] });
         getOfflineQueueSnapshotMock.mockReturnValue([]);

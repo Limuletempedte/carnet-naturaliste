@@ -1,3 +1,4 @@
+import { captureSessionContext, readAccountValue, writeAccountValue } from '../services/sessionScope';
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -162,8 +163,9 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
     const [searchResults, setSearchResults] = React.useState<SearchResult[]>([]);
     const [isSearching, setIsSearching] = React.useState(false);
     const [isFocused, setIsFocused] = React.useState(false);
+    const [historyContext] = React.useState(() => { try { return captureSessionContext(); } catch { return null; } });
     const [searchHistory, setSearchHistory] = React.useState<string[]>(() => {
-        try { return JSON.parse(localStorage.getItem('map_search_history') || '[]'); } catch { return []; }
+        try { return JSON.parse((historyContext ? readAccountValue('map-search-history-v2', historyContext) : null) || '[]'); } catch { return []; }
     });
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -178,7 +180,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
         if (trimmed.length < 3) return;
         const updated = [trimmed, ...searchHistory.filter(h => h !== trimmed)].slice(0, 5);
         setSearchHistory(updated);
-        localStorage.setItem('map_search_history', JSON.stringify(updated));
+        try { if (historyContext) writeAccountValue('map-search-history-v2', JSON.stringify(updated), historyContext); } catch { /* compte changé */ }
     };
 
     const doSearch = async (query: string) => {

@@ -1,4 +1,6 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { setSessionIdentity, SESSION_IDENTITY_KEY } from '../services/sessionScope';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -10,7 +12,7 @@ const {
     clearScopedOfflineDataMock
 } = vi.hoisted(() => ({
     getSessionMock: vi.fn(),
-    onAuthStateChangeMock: vi.fn(() => ({
+    onAuthStateChangeMock: vi.fn((_callback: (event: string, session: unknown) => void) => ({
         data: {
             subscription: {
                 unsubscribe: vi.fn()
@@ -43,10 +45,13 @@ vi.mock('../services/storageService', () => ({
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 
 const Probe = () => {
-    const { user, signOut } = useAuth();
+    const { user, signOut, passwordRecovery } = useAuth();
+    const [draft, setDraft] = useState('');
     return (
         <div>
+            <input aria-label="private draft" value={draft} onChange={e => setDraft(e.target.value)} />
             <div data-testid="user-id">{user?.id ?? 'none'}</div>
+            <div data-testid="recovery">{String(passwordRecovery)}</div>
             <button data-testid="sign-out" onClick={() => signOut()}>Sign Out</button>
         </div>
     );
@@ -56,6 +61,7 @@ describe('AuthProvider cache handling', () => {
     beforeEach(() => {
         localStorage.clear();
         vi.clearAllMocks();
+        setStorageNamespaceMock.mockImplementation((id: string | null) => setSessionIdentity(id));
         Object.defineProperty(window.navigator, 'onLine', {
             configurable: true,
             value: true
@@ -159,5 +165,60 @@ describe('AuthProvider cache handling', () => {
             expect(signOutMock).toHaveBeenCalled();
         });
         expect(clearScopedOfflineDataMock).toHaveBeenCalledWith('user-1');
+    });
+});
+
+
+describe('AuthProvider — isolation et courses de connexion', () => {
+    const sessionFor = (id: string) => ({ user: { id, user_metadata: {} }, access_token: 'fixture-only' });
+    beforeEach(() => {
+        localStorage.clear(); vi.clearAllMocks();
+        setStorageNamespaceMock.mockImplementation((id: string | null) => setSessionIdentity(id));
+    });
+    it('garde la récupération pendant une revalidation du même compte', async () => {
+        getSessionMock.mockResolvedValue({ data: { session: sessionFor('A') } });
+        render(<AuthProvider><Probe /></AuthProvider>);
+        await waitFor(() => expect(screen.getByTestId('user-id').textContent).toBe('A'));
+        const callback = onAuthStateChangeMock.mock.calls[0][0];
+        act(() => callback('PASSWORD_RECOVERY', sessionFor('A')));
+        act(() => callback('SIGNED_IN', sessionFor('A')));
+        act(() => callback('TOKEN_REFRESHED', sessionFor('A')));
+        expect(screen.getByTestId('recovery').textContent).toBe('true');
+        act(() => callback('SIGNED_IN', sessionFor('B')));
+        expect(screen.getByTestId('recovery').textContent).toBe('false');
+    });
+    it('efface le formulaire A lors de B, mais le garde au refresh de A', async () => {
+        getSessionMock.mockResolvedValue({ data: { session: sessionFor('A') } });
+        render(<AuthProvider><Probe /></AuthProvider>);
+        await screen.findByDisplayValue('');
+        await waitFor(() => expect(screen.getByTestId('user-id').textContent).toBe('A'));
+        fireEvent.change(screen.getByLabelText('private draft'), { target: { value: 'PRIVATE A' } });
+        const callback = onAuthStateChangeMock.mock.calls[0][0];
+        act(() => callback('TOKEN_REFRESHED', sessionFor('A')));
+        expect((screen.getByLabelText('private draft') as HTMLInputElement).value).toBe('PRIVATE A');
+        act(() => callback('SIGNED_IN', sessionFor('B')));
+        await waitFor(() => expect(screen.getByTestId('user-id').textContent).toBe('B'));
+        expect((screen.getByLabelText('private draft') as HTMLInputElement).value).toBe('');
+    });
+    it('ignore le bootstrap A reçu après un événement B', async () => {
+        let finish!: (value: unknown) => void;
+        getSessionMock.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+        render(<AuthProvider><Probe /></AuthProvider>);
+        act(() => onAuthStateChangeMock.mock.calls[0][0]('SIGNED_IN', sessionFor('B')));
+        await waitFor(() => expect(screen.getByTestId('user-id').textContent).toBe('B'));
+        await act(async () => { finish({ data: { session: sessionFor('A') } }); });
+        expect(screen.getByTestId('user-id').textContent).toBe('B');
+        expect(JSON.parse(localStorage.getItem('cached_auth_session')!).user.id).toBe('B');
+    });
+    it('masque A et relit le SDK lors du changement annoncé par un autre onglet', async () => {
+        getSessionMock.mockResolvedValue({ data: { session: sessionFor('A') } });
+        render(<AuthProvider><Probe /></AuthProvider>);
+        await waitFor(() => expect(screen.getByTestId('user-id').textContent).toBe('A'));
+        fireEvent.change(screen.getByLabelText('private draft'), { target: { value: 'PRIVATE A' } });
+        getSessionMock.mockResolvedValue({ data: { session: sessionFor('B') } });
+        localStorage.setItem(SESSION_IDENTITY_KEY, JSON.stringify({ userId: 'B', sessionGeneration: 'remote-B' }));
+        act(() => window.dispatchEvent(new StorageEvent('storage', { key: SESSION_IDENTITY_KEY })));
+        await waitFor(() => expect(screen.getByTestId('user-id').textContent).toBe('B'));
+        expect((screen.getByLabelText('private draft') as HTMLInputElement).value).toBe('');
     });
 });

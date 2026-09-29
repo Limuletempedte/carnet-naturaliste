@@ -1,3 +1,4 @@
+import { captureSessionContext, assertSessionContext, isSessionCurrent } from '../services/sessionScope';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { Observation, View } from '../types';
 import { saveObservation, updateObservation, bulkUpsertObservationsInCache, isDuplicateKeyError } from '../services/storageService';
@@ -34,12 +35,15 @@ export const useImportObservations = ({
     removeToast,
     refreshOfflineQueueSnapshot,
 }: UseImportObservationsParams) => {
+    const [importSession] = useState(() => { try { return captureSessionContext(); } catch { return null; } });
     const [isImporting, setIsImporting] = useState(false);
 
     const handleImportRequest = async (
         importResult: ImportResult,
         options: { conflictMode: ImportConflictMode } = { conflictMode: 'merge' }
     ): Promise<void> => {
+        if (!importSession || !isSessionCurrent(importSession)) return;
+        const context = importSession;
         let importToastId: string | null = null;
         try {
             if (importResult.report.blockingErrors.length > 0) {
@@ -75,6 +79,7 @@ export const useImportObservations = ({
 
             const worker = async () => {
                 while (nextIndex < importPlan.length) {
+                    assertSessionContext(context);
                     const i = nextIndex++;
                     const planned = importPlan[i];
                     const observationToPersist = planned.observation;
@@ -85,12 +90,12 @@ export const useImportObservations = ({
 
                     try {
                         if (planned.mode === 'update') {
-                            await updateObservation(observationToPersist, { skipCache: true });
+                            await updateObservation(observationToPersist, { skipCache: true, context });
                             successfulOps.push(observationToPersist);
                             updatedCount++;
                         } else {
                             try {
-                                const savedObs = await saveObservation(observationToPersist, { skipCache: true });
+                                const savedObs = await saveObservation(observationToPersist, { skipCache: true, context });
                                 const persisted = { ...observationToPersist, id: savedObs.id };
                                 successfulOps.push(persisted);
                                 addedCount++;
@@ -100,13 +105,14 @@ export const useImportObservations = ({
                                 // user_id (orphelin d'un ancien compte), RLS l'empêche d'être visible
                                 // côté client. On régénère un UUID et on retente une fois.
                                 const retryObs: Observation = { ...observationToPersist, id: generateUUID() };
-                                const savedRetry = await saveObservation(retryObs, { skipCache: true });
+                                const savedRetry = await saveObservation(retryObs, { skipCache: true, context });
                                 successfulOps.push({ ...retryObs, id: savedRetry.id });
                                 addedCount++;
                                 regeneratedIds++;
                             }
                         }
                     } catch (importError) {
+                        assertSessionContext(context);
                         failedCount++;
                         captureFailure(toErrorMessage(importError));
                     }
@@ -116,6 +122,7 @@ export const useImportObservations = ({
             // Exécution en batch concurrent
             await Promise.all(Array.from({ length: IMPORT_CONCURRENCY }, worker));
 
+            assertSessionContext(context);
             const successCount = addedCount + updatedCount;
             const failureSummary = Array.from(failureReasons.entries())
                 .sort((a, b) => b[1] - a[1])
@@ -138,7 +145,7 @@ export const useImportObservations = ({
             setObservations(mergedObservations);
 
             // 2. Mise à jour du cache local (si échoue, re-sync au prochain load)
-            bulkUpsertObservationsInCache(successfulOps);
+            bulkUpsertObservationsInCache(successfulOps, context);
 
             // UI Reset
             setView(View.LIST);
@@ -167,16 +174,17 @@ export const useImportObservations = ({
             refreshOfflineQueueSnapshot();
 
         } catch (e: unknown) {
+            if (!isSessionCurrent(context)) return;
             const errorMessage = e instanceof Error ? e.message : String(e);
             setError(`Erreur lors de l'importation : ${errorMessage}`);
             onToast('error', `Échec de l'import: ${errorMessage}`);
             logger.error(e);
             throw e;
         } finally {
-            if (importToastId) {
+            if (importToastId && isSessionCurrent(context)) {
                 removeToast(importToastId);
             }
-            setIsImporting(false);
+            if (isSessionCurrent(context)) setIsImporting(false);
         }
     };
 

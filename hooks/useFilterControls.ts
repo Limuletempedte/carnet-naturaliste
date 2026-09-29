@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Status, TaxonomicGroup } from '../types';
-import { safeGet, safeSet } from '../utils/safeStorage';
+import { captureSessionContext, readAccountValue, writeAccountValue } from '../services/sessionScope';
 import { logger } from '../utils/logger';
 import { generateUUID } from '../utils/uuidUtils';
 import type { AdvancedFilterDialogState, FilterPreset } from '../components/AdvancedFilterDialog';
 import type { ObservationFilterState, SortCriterion } from './useObservationFilters';
 import type { ToastType } from '../components/ToastContainer';
 
-export const FILTER_PRESETS_STORAGE_KEY = 'observation-filter-presets-v1';
+export const FILTER_PRESETS_STORAGE_KEY = 'observation-filter-presets-v2';
 
 export const createDefaultAdvancedFilterState = (): AdvancedFilterDialogState => ({
     geoMode: 'none',
@@ -49,6 +49,7 @@ interface UseFilterControlsParams {
  * gardent les noms et signatures de `useState` pour être branchés tels quels.
  */
 export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
+    const [context] = useState(() => { try { return captureSessionContext(); } catch { return null; } });
     const [searchTerm, setSearchTerm] = useState('');
     const [yearFilter, setYearFilter] = useState<string>('all');
     const [taxonomicGroupFilter, setTaxonomicGroupFilter] = useState<TaxonomicGroup | 'all'>('all');
@@ -57,7 +58,7 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
     const [endDateFilter, setEndDateFilter] = useState<string>('');
     const [advancedFilterState, setAdvancedFilterState] = useState<AdvancedFilterDialogState>(() => createDefaultAdvancedFilterState());
     const [filterPresets, setFilterPresets] = useState<StoredFilterPreset[]>(() => {
-        const raw = safeGet(FILTER_PRESETS_STORAGE_KEY);
+        const raw = context ? readAccountValue(FILTER_PRESETS_STORAGE_KEY, context) : null;
         if (!raw) return [];
         try {
             const parsed = JSON.parse(raw) as StoredFilterPreset[];
@@ -72,8 +73,8 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
     });
 
     useEffect(() => {
-        try { safeSet(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(filterPresets)); } catch { /* non-critical */ }
-    }, [filterPresets]);
+        try { if (context) writeAccountValue(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(filterPresets), context); } catch { /* non-critical */ }
+    }, [filterPresets, context]);
 
     const additionalSorts = useMemo(() => {
         const sorts: SortCriterion[] = [];

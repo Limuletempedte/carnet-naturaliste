@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { isSupabaseConfigured, supabase } from '../supabaseClient';
 import { Session, User } from '@supabase/supabase-js';
 import {
@@ -6,6 +6,8 @@ import {
     migrateLegacyLocalStorageToScoped,
     setStorageNamespace
 } from '../services/storageService';
+import { bindSessionCoordination, getSessionGeneration, getSessionUserId, captureSessionContext } from '../services/sessionScope';
+import { clearEventLog } from '../utils/eventLog';
 import { logger } from '../utils/logger';
 
 const CACHED_SESSION_KEY = 'cached_auth_session';
@@ -14,6 +16,7 @@ const CACHED_SESSION_SCHEMA_VERSION = 3;
 
 interface AuthContextType {
     session: Session | null;
+    sessionGeneration: string;
     user: User | null;
     loading: boolean;
     isOffline: boolean;
@@ -26,6 +29,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
     session: null,
+    sessionGeneration: 'initial',
     user: null,
     loading: true,
     isOffline: false,
@@ -108,109 +112,107 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isOffline, setIsOffline] = useState(!navigator.onLine);
     const [passwordRecovery, setPasswordRecovery] = useState(false);
 
-    useEffect(() => {
-        if (!isSupabaseConfigured) {
-            setStorageNamespace(null);
-            setLoading(false);
-            return;
-        }
+    const [sessionGeneration, setSessionGeneration] = useState(getSessionGeneration);
+    const revision = useRef(0);
 
-        // Track online/offline status
+    useEffect(() => {
+        let mounted = true;
+        const applySession = (next: Session | null) => {
+            if (!mounted) return;
+            if (getSessionUserId() !== (next?.user.id ?? null)) setPasswordRecovery(false);
+            setStorageNamespace(next?.user.id ?? null);
+            migrateLegacyLocalStorageToScoped(next?.user.id ?? '');
+            setSessionGeneration(getSessionGeneration());
+            setSession(next);
+            setUser(next?.user ?? null);
+            cacheSession(next);
+            setLoading(false);
+        };
+        if (!isSupabaseConfigured) { applySession(null); return; }
         const handleOnline = () => setIsOffline(false);
         const handleOffline = () => setIsOffline(true);
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
-
-        // Try to get session with a timeout (5s) to avoid hanging offline
-        const initSession = async () => {
-            try {
-                const { data: { session } } = await withTimeout(
-                    supabase.auth.getSession(),
-                    5000
-                );
-                setSession(session);
-                setUser(session?.user ?? null);
-                cacheSession(session);
-                if (session?.user?.id) {
-                    setStorageNamespace(session.user.id);
-                    migrateLegacyLocalStorageToScoped(session.user.id);
-                } else {
-                    setStorageNamespace(null);
-                }
-            } catch (e) {
-                logger.warn('Auth getSession failed (likely offline), trying cache:', e);
-                // Fallback to cached session
-                const cached = getCachedSession();
-                if (cached) {
-                    setUser(cached.user);
-                    setStorageNamespace(cached.user.id);
-                    migrateLegacyLocalStorageToScoped(cached.user.id);
-                    logger.info('Restored user from cache for offline mode');
-                } else {
-                    setStorageNamespace(null);
-                }
-            } finally {
+        const startRevision = revision.current;
+        void withTimeout(supabase.auth.getSession(), 5000).then(({ data: { session: next } }) => {
+            if (mounted && revision.current === startRevision) applySession(next);
+        }).catch(() => {
+            if (!mounted || revision.current !== startRevision) return;
+            const cached = getCachedSession();
+            if (cached) {
+                setStorageNamespace(cached.user.id);
+                migrateLegacyLocalStorageToScoped(cached.user.id);
+                setSessionGeneration(getSessionGeneration());
+                setUser(cached.user);
                 setLoading(false);
-            }
-        };
-
-        initSession();
-
-        // Listen for auth changes (works when back online)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'PASSWORD_RECOVERY') {
-                setPasswordRecovery(true);
-            }
-            setSession(session);
-            setUser(session?.user ?? null);
-            cacheSession(session);
-            if (session?.user?.id) {
-                setStorageNamespace(session.user.id);
-                migrateLegacyLocalStorageToScoped(session.user.id);
-            } else {
-                setStorageNamespace(null);
-            }
-            setLoading(false);
+            } else applySession(null);
         });
-
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, next) => {
+            revision.current++;
+            applySession(next);
+            if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
+        });
+        const stopCoordination = bindSessionCoordination((nextIdentity) => {
+            const expectedUser = nextIdentity.userId;
+            const expectedGeneration = nextIdentity.sessionGeneration;
+            const currentRevision = ++revision.current;
+            setUser(null);
+            setSession(null);
+            setPasswordRecovery(false);
+            setLoading(true);
+            setSessionGeneration(expectedGeneration);
+            // On relit le SDK hors de son callback synchrone pour éviter un verrou Auth.
+            void withTimeout(supabase.auth.getSession(), 5000).then(({ data: { session: next } }) => {
+                if (!mounted || revision.current !== currentRevision || getSessionGeneration() !== expectedGeneration) return;
+                if ((next?.user.id ?? null) !== expectedUser) { setLoading(false); return; }
+                applySession(next);
+            }).catch(() => { if (mounted && revision.current === currentRevision) setLoading(false); });
+        });
         return () => {
+            mounted = false;
             subscription.unsubscribe();
+            stopCoordination();
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
     }, []);
 
     const signOut = useCallback(async () => {
-        if (user?.id) {
-            clearScopedOfflineData(user.id);
-        }
+        try {
+            const ctx = captureSessionContext();
+            if (ctx.userId !== user?.id || ctx.sessionGeneration !== sessionGeneration) return;
+        } catch { return; }
+        revision.current++;
+        if (user?.id) clearScopedOfflineData(user.id);
+        clearEventLog();
         setStorageNamespace(null);
+        setSessionGeneration(getSessionGeneration());
+        setUser(null);
+        setSession(null);
+        setPasswordRecovery(false);
         cacheSession(null);
         try {
             await supabase.auth.signOut();
         } catch (e) {
-            logger.warn('signOut failed (likely offline):', e);
-            // SE-09: Explicit token cleanup when signOut fails offline
+            logger.warn('[Auth] signOut failed', e);
+            // Filet local: jamais laisser une identité affichée après déconnexion.
             try {
-                const url = import.meta.env.VITE_SUPABASE_URL || '';
-                const match = url.match(/https?:\/\/([^.]+)\./);
-                if (match?.[1]) {
-                    localStorage.removeItem(`sb-${match[1]}-auth-token`);
-                }
-            } catch { /* ignore */ }
+                const hostname = new URL(import.meta.env.VITE_SUPABASE_URL || '').hostname;
+                localStorage.removeItem(`sb-${hostname.split('.')[0]}-auth-token`);
+            } catch { /* configuration invalide */ }
         }
-    }, [user]);
+    }, [user, sessionGeneration]);
 
     const clearPasswordRecovery = useCallback(() => setPasswordRecovery(false), []);
 
     const contextValue = useMemo(
-        () => ({ session, user, loading, isOffline, passwordRecovery, clearPasswordRecovery, signOut }),
-        [session, user, loading, isOffline, passwordRecovery, clearPasswordRecovery, signOut]
+        () => ({ session, sessionGeneration, user, loading, isOffline, passwordRecovery, clearPasswordRecovery, signOut }),
+        [session, sessionGeneration, user, loading, isOffline, passwordRecovery, clearPasswordRecovery, signOut]
     );
 
     return (
         <AuthContext.Provider value={contextValue}>
-            {!loading && children}
+            {!loading && <React.Fragment key={`${user?.id ?? 'signed-out'}:${sessionGeneration}`}>{children}</React.Fragment>}
         </AuthContext.Provider>
     );
 };

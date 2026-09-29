@@ -1,3 +1,4 @@
+import { captureSessionContext, assertSessionContext, inSession, StaleSessionError, type SessionContext } from '../sessionScope';
 import { supabase } from '../../supabaseClient';
 import { generateUUID } from '../../utils/uuidUtils';
 import { logger } from '../../utils/logger';
@@ -11,16 +12,18 @@ import { withTimeout } from './storageHelpers';
 
 const UPLOAD_TIMEOUT_MS = 30_000;
 
-export const uploadPhoto = async (file: Blob): Promise<string> => {
+export const uploadPhoto = async (file: Blob, context: SessionContext = captureSessionContext()): Promise<string> => {
+    assertSessionContext(context);
     if (!navigator.onLine) {
         throw new Error("Impossible d'envoyer une photo en mode hors-ligne. Veuillez réessayer une fois connecté.");
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await inSession(context, () => supabase.auth.getUser());
     if (!user) throw new Error('User not authenticated');
+    if (user.id !== context.userId) throw new StaleSessionError();
 
     const fileName = `${user.id}/photos/${Date.now()}-${generateUUID()}.jpg`;
-    const { error: uploadError } = await withTimeout(
+    const { error: uploadError } = await inSession(context, () => withTimeout(
         supabase.storage
             .from('photos')
             .upload(fileName, file, {
@@ -29,8 +32,9 @@ export const uploadPhoto = async (file: Blob): Promise<string> => {
             }),
         UPLOAD_TIMEOUT_MS,
         'Upload photo'
-    );
+    ));
 
+    assertSessionContext(context);
     if (uploadError) {
         logger.error('Error uploading photo:', uploadError);
         throw new Error(uploadError.message);
@@ -51,13 +55,15 @@ const ALLOWED_AUDIO_TYPES = new Set([
     'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/mp4', 'audio/x-m4a',
 ]);
 
-export const uploadSound = async (file: Blob): Promise<string> => {
+export const uploadSound = async (file: Blob, context: SessionContext = captureSessionContext()): Promise<string> => {
+    assertSessionContext(context);
     if (!navigator.onLine) {
         throw new Error("Impossible d'envoyer un son en mode hors-ligne. Veuillez réessayer une fois connecté.");
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await inSession(context, () => supabase.auth.getUser());
     if (!user) throw new Error('User not authenticated');
+    if (user.id !== context.userId) throw new StaleSessionError();
 
     const contentType = file.type || 'audio/mpeg';
     if (!ALLOWED_AUDIO_TYPES.has(contentType)) {
@@ -66,7 +72,7 @@ export const uploadSound = async (file: Blob): Promise<string> => {
     const extension = contentType.split('/')[1]?.split(';')[0] || 'mp3';
     const fileName = `${user.id}/sounds/${Date.now()}-${generateUUID()}.${extension}`;
 
-    const { error: uploadError } = await withTimeout(
+    const { error: uploadError } = await inSession(context, () => withTimeout(
         supabase.storage
             .from('photos')
             .upload(fileName, file, {
@@ -75,8 +81,9 @@ export const uploadSound = async (file: Blob): Promise<string> => {
             }),
         UPLOAD_TIMEOUT_MS,
         'Upload son'
-    );
+    ));
 
+    assertSessionContext(context);
     if (uploadError) {
         logger.error('Error uploading sound:', uploadError);
         throw new Error(uploadError.message);
