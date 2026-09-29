@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
+import { parseImportFile } from '../services/importFileParser';
 import { setSessionIdentity } from '../services/sessionScope';
 vi.mock('../supabaseClient', () => ({ supabase: { storage: { from: () => ({ download: async () => ({ data: { size: 3, type: 'image/jpeg', arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }, error: null }) }) } } }));
 import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
@@ -70,9 +71,9 @@ describe('backupService.createBackup', () => {
         expect(fileNames).toContain('data.csv');
         expect(fileNames).toContain('backup_manifest.json');
         expect(fileNames.some(name => name.startsWith('images/'))).toBe(true);
-        const { readBackupZip } = await import('../services/backupService');
-        const restored = await readBackupZip(new File([savedBlob], 'backup.zip'));
-        expect(restored.observations[0].photo).toMatch(/^data:image\/jpeg;base64,/);
+
+        const restored = await parseImportFile(new File([savedBlob], 'backup.zip'));
+        expect(restored.media[0].blob.type).toBe('image/jpeg');
     });
 
     it('neutralizes CSV formula injection payloads in exported CSV', async () => {
@@ -171,8 +172,8 @@ describe('backupService.createBackup', () => {
         const blob = await bogus.generateAsync({ type: 'blob' });
         const file = new File([blob], 'bad.zip', { type: 'application/zip' });
 
-        const { readBackupZip } = await import('../services/backupService');
-        await expect(readBackupZip(file)).rejects.toThrow(/data\.json/);
+
+        await expect(parseImportFile(file)).rejects.toThrow(/data\.json/);
     });
 
     it('H2 : la sauvegarde conserve les coordonnées GPS EXACTES des espèces sensibles', async () => {
@@ -202,16 +203,17 @@ describe('backupService.createBackup', () => {
         const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=';
         const sourceObs = { ...makeObservation(), photo: dataUrl, wikipediaImage: undefined, sound: undefined };
 
-        const { createBackup, readBackupZip } = await import('../services/backupService');
+        const { createBackup } = await import('../services/backupService');
         await createBackup([sourceObs]);
 
         const savedBlob = saveAsMock.mock.calls[0][0] as Blob;
         const file = new File([savedBlob], 'carnet-backup.zip', { type: 'application/zip' });
 
-        const restored = await readBackupZip(file);
-        expect(restored.observations).toHaveLength(1);
-        expect(restored.observations[0].speciesName).toBe(sourceObs.speciesName);
+        const restored = await parseImportFile(file);
+        expect(restored.result.observations).toHaveLength(1);
+        expect(restored.result.observations[0].speciesName).toBe(sourceObs.speciesName);
         // Photo data: URL est inlinée dans le ZIP puis ré-exposée en data: URL au restore
-        expect(restored.observations[0].photo?.startsWith('data:')).toBe(true);
+        expect(restored.result.observations[0].photo?.startsWith('import-media:')).toBe(true);
+        expect(restored.media[0].blob.type).toBe('image/png');
     });
 });

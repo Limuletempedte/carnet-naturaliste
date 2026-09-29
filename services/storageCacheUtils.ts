@@ -21,7 +21,7 @@ export interface SanitizationResult {
 export const sanitizeCachedMediaValueWithTracking = (value?: string): SanitizationResult => {
     if (!value) return { value: undefined, stripped: false };
     if (value.startsWith('blob:')) return { value: undefined, stripped: true };
-    if (isStableRemoteUrl(value) || isPersistableDataUrl(value)) {
+    if (isStableRemoteUrl(value) || isPersistableDataUrl(value) || /^pending-media:[a-zA-Z0-9-]+:[a-zA-Z0-9-]+\.[a-z0-9]+$/.test(value)) {
         return { value, stripped: false };
     }
     return { value: undefined, stripped: true };

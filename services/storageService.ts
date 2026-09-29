@@ -1,4 +1,6 @@
 import { captureSessionContext, assertSessionContext, setSessionIdentity, getSessionUserId, inSession, StaleSessionError, removeUnownedLegacyState, type SessionContext } from './sessionScope';
+import { readPendingMedia, isPendingMedia, clearPendingMedia } from './pendingMediaStore';
+import { downloadPrivateMedia } from './privateMediaService';
 import { supabase } from '../supabaseClient';
 import { Observation } from '../types';
 import { sanitizeCachedMediaValue, sanitizeCachedMediaValueWithTracking } from './storageCacheUtils';
@@ -51,6 +53,20 @@ const operationUserId = async (context: SessionContext): Promise<string> => {
     return userId;
 };
 
+// Une saisie hors ligne peut être éditée après reconnexion : aucune référence
+// locale/éphémère ne doit arriver en base, quel que soit le chemin de sauvegarde.
+const uploadObservationMedia = async (observation: Observation, context: SessionContext): Promise<Observation> => {
+    const next = { ...observation };
+    for (const field of ['photo', 'sound'] as const) {
+        const reference = next[field];
+        if (reference && (isPendingMedia(reference) || reference.startsWith('data:') || reference.startsWith('blob:'))) {
+            const blob = await downloadPrivateMedia(reference, context);
+            next[field] = await (field === 'photo' ? uploadPhoto(blob, context) : uploadSound(blob, context));
+        }
+    }
+    assertSessionContext(context); return next;
+};
+
 const assertMutationAffectedRows = (count: number | null, action: 'update' | 'delete'): void => {
     if ((count ?? 0) < 1) {
         throw new Error(`Impossible de ${action === 'update' ? 'mettre à jour' : 'supprimer'}: observation introuvable ou accès refusé.`);
@@ -68,6 +84,7 @@ export const setStorageNamespace = (userId: string | null): void => {
 export const clearScopedOfflineData = (userId?: string): void => {
     const targetUserId = (userId ?? getSessionUserId() ?? '').trim();
     if (!targetUserId) return;
+    void clearPendingMedia(targetUserId).catch(() => {});
 
     localStorage.removeItem(getQueueScopedKey(targetUserId));
     localStorage.removeItem(getCacheScopedKey(targetUserId));
@@ -360,6 +377,7 @@ export const saveObservation = async (
         return offlineObs;
     }
 
+    observation = await uploadObservationMedia(observation, context);
     const row = mapToRow(observation, userId);
 
     let data: ObservationRow | null = null;
@@ -418,6 +436,7 @@ export const updateObservation = async (
         return;
     }
 
+    observation = await uploadObservationMedia(observation, context);
     const row = mapToRow(observation, userId);
 
     // SI-08: Select updated_at to detect concurrent modifications
@@ -625,12 +644,12 @@ const _processOfflineQueueInner = async (options: ProcessOfflineQueueOptions, co
     // SI-16: Re-upload data URL media (photos/sounds stored offline) to Supabase Storage
     const reUploadDataUrlMedia = async (row: Record<string, unknown>): Promise<Record<string, unknown>> => {
         const updated = { ...row };
-        if (typeof updated.photo_url === 'string' && updated.photo_url.startsWith('data:')) {
-            const blob = dataUrlToBlob(updated.photo_url as string);
+        if (typeof updated.photo_url === 'string' && (updated.photo_url.startsWith('data:') || isPendingMedia(updated.photo_url))) {
+            const blob = isPendingMedia(updated.photo_url) ? await readPendingMedia(updated.photo_url, context) : dataUrlToBlob(updated.photo_url);
             updated.photo_url = await uploadPhoto(blob, context);
         }
-        if (typeof updated.sound_url === 'string' && updated.sound_url.startsWith('data:')) {
-            const blob = dataUrlToBlob(updated.sound_url as string);
+        if (typeof updated.sound_url === 'string' && (updated.sound_url.startsWith('data:') || isPendingMedia(updated.sound_url))) {
+            const blob = isPendingMedia(updated.sound_url) ? await readPendingMedia(updated.sound_url, context) : dataUrlToBlob(updated.sound_url);
             updated.sound_url = await uploadSound(blob, context);
         }
         return updated;

@@ -1016,6 +1016,15 @@ describe('storageService.isDuplicateKeyError (SI-30)', () => {
 });
 
 describe('sécurité : résultats tardifs et propriétaire immuable', () => {
+    it('finalise un média local avant une sauvegarde en ligne', async () => {
+        const service = await import('../services/storageService');
+        const observation = { ...makeObservation('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), photo: 'data:image/jpeg;base64,AQID' };
+        storageUploadMock.mockResolvedValue({ data: {}, error: null });
+        insertSingleMock.mockResolvedValue({ data: { id: observation.id }, error: null });
+        await service.saveObservation(observation, { skipCache: true });
+        expect(storageUploadMock).toHaveBeenCalledOnce();
+        expect(insertMock).toHaveBeenCalledWith(expect.objectContaining({ photo_url: 'https://example.com/file' }));
+    });
     it('ne copie pas une lecture A dans le cache de B', async () => {
         const service = await import('../services/storageService');
         const { mapToRow } = await import('../services/storage/storageMappers');

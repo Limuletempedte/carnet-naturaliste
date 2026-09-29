@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient';
+import { isPendingMedia, readPendingMedia } from './pendingMediaStore';
 import { privateMediaPath } from './mediaReference';
 import { assertSessionContext, captureSessionContext, getSessionUserId, inSession, isSessionCurrent, subscribeSessionChange, type SessionContext } from './sessionScope';
 
@@ -79,6 +80,7 @@ export const releasePendingMedia = (url: string): void => { pending.delete(url);
 
 export const downloadPrivateMedia = async (reference: string, context = captureSessionContext()): Promise<Blob> => {
     assertSessionContext(context);
+    if (isPendingMedia(reference)) return validateBlob(await readPendingMedia(reference, context));
     if (reference.startsWith('blob:')) {
         const entry = pending.get(reference);
         if (!entry || entry.context.userId !== context.userId || !isSessionCurrent(entry.context)) throw new Error('Aperçu expiré.');

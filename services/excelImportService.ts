@@ -2,6 +2,7 @@ import { isUuid, generateUUID } from '../utils/uuidUtils';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
 import { dateToIsoLocal, isIsoDateString } from '../utils/dateUtils';
 import { logger } from '../utils/logger';
+import { preflightExcel } from './boundedZip';
 
 // Lazy-loaded ExcelJS module (SE-13: replaced vulnerable xlsx with exceljs)
 let _ExcelJS: typeof import('exceljs') | null = null;
@@ -72,7 +73,7 @@ const todayIso = (): string => dateToIsoLocal(new Date());
 const MAX_IMPORT_ROWS = 10_000;
 const MAX_IMPORT_FILE_BYTES = 15 * 1024 * 1024;
 const MAX_IMPORT_COLUMNS = 120;
-const IMPORT_PARSE_TIMEOUT_MS = 20_000;
+const IMPORT_PARSE_TIMEOUT_MS = 30_000;
 const DANGEROUS_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 const isNonEmptyCell = (value: unknown): boolean => {
@@ -184,15 +185,17 @@ const hasAnyAlias = (normalizedHeaders: Set<string>, aliases: string[]): boolean
 // ─── Main Parse Function ────────────────────────────────────────────────────
 
 export const parseExcel = async (file: File): Promise<ImportResult> => {
+    try { await preflightExcel(file); }
+    catch (error) { return createBlockingResult(error instanceof Error ? error.message : 'Classeur refusé.', file.name); }
     const ExcelJS = await loadExcelJS();
     return new Promise((resolve) => {
         let settled = false;
-        let timeoutId: number | null = null;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
         const safeResolve = (result: ImportResult) => {
             if (settled) return;
             settled = true;
             if (timeoutId) {
-                window.clearTimeout(timeoutId);
+                globalThis.clearTimeout(timeoutId);
             }
             resolve(result);
         };
@@ -208,7 +211,7 @@ export const parseExcel = async (file: File): Promise<ImportResult> => {
 
         const reader = new FileReader();
 
-        timeoutId = window.setTimeout(() => {
+        timeoutId = globalThis.setTimeout(() => {
             logger.warn(`[security][excel-import] Import interrompu après ${IMPORT_PARSE_TIMEOUT_MS}ms.`);
             reader.abort();
             safeResolve(createBlockingResult(

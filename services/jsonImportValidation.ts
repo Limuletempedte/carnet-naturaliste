@@ -14,6 +14,7 @@ import {
 import { ImportError, ImportResult, ImportWarning } from './excelImportService';
 import { isIsoDateString } from '../utils/dateUtils';
 import { isUuid, generateUUID } from '../utils/uuidUtils';
+import { IMPORT_LIMITS } from './importLimits';
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
 
@@ -305,6 +306,7 @@ export const parseJsonImport = (rawJson: unknown): ImportResult => {
     if (!Array.isArray(rawJson)) {
         throw new Error('Le JSON doit contenir un tableau d’observations.');
     }
+    if (rawJson.length > IMPORT_LIMITS.observations) throw new Error('Le fichier dépasse 10 000 observations.');
 
     const warnings: ImportWarning[] = [];
     const errors: ImportError[] = [];

@@ -1,4 +1,5 @@
 import { captureSessionContext, assertSessionContext, isSessionCurrent } from '../services/sessionScope';
+import { persistImportMedia } from '../services/importMediaPersistence';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { Observation, View } from '../types';
 import { saveObservation, updateObservation, bulkUpsertObservationsInCache, isDuplicateKeyError } from '../services/storageService';
@@ -82,13 +83,14 @@ export const useImportObservations = ({
                     assertSessionContext(context);
                     const i = nextIndex++;
                     const planned = importPlan[i];
-                    const observationToPersist = planned.observation;
+                    let observationToPersist = planned.observation;
 
                     if (planned.regeneratedId && !isUuid(planned.originalId)) {
                         regeneratedIds++;
                     }
 
                     try {
+                        observationToPersist = await persistImportMedia(observationToPersist, context);
                         if (planned.mode === 'update') {
                             await updateObservation(observationToPersist, { skipCache: true, context });
                             successfulOps.push(observationToPersist);

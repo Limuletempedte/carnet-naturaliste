@@ -61,6 +61,7 @@ export default defineConfig(() => {
 
 
   return {
+    worker: { format: 'es' },
     plugins: [
       react(),
       VitePWA({
