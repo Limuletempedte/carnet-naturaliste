@@ -2,9 +2,23 @@ import React, { useState } from 'react';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
-import { isSafeImageUrl } from '../utils/urlUtils';
+import { isSafeImageUrl, isPublicEncyclopediaImage } from '../utils/urlUtils';
 import { CameraIcon } from './icons';
 import EmptyState from './EmptyState';
+import { usePrivateMedia } from '../hooks/usePrivateMedia';
+
+const GalleryImage = ({ observation, failed, onError }: { observation: Observation; failed: boolean; onError: () => void }) => {
+    const photo = usePrivateMedia(observation.photo);
+    const source = photo || (!observation.photo && observation.wikipediaImage && isPublicEncyclopediaImage(observation.wikipediaImage) ? observation.wikipediaImage : undefined);
+    return !failed && source && isSafeImageUrl(source) ? (
+        <img src={source} alt={observation.speciesName} loading="lazy" onError={onError}
+            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+    ) : (
+        <div className="w-full h-full bg-nature-beige dark:bg-white/5 flex items-center justify-center text-gray-300 dark:text-gray-600">
+            <span data-testid="broken-image-placeholder" aria-hidden="true"><CameraIcon className="w-12 h-12 opacity-60" /></span>
+        </div>
+    );
+};
 
 interface ObservationGalleryProps {
     observations: Observation[];
@@ -41,9 +55,6 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
     return (
         <div className={`grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-8 animate-fadeIn ${isMobileView ? 'pb-24' : ''}`}>
             {observations.map(obs => {
-                const rawImageSrc = obs.photo || obs.wikipediaImage;
-                const safeImageSrc = rawImageSrc && isSafeImageUrl(rawImageSrc) ? rawImageSrc : undefined;
-                const imageSrc = safeImageSrc && !failedImageIds.has(obs.id) ? safeImageSrc : undefined;
                 const logo = TAXON_LOGOS[obs.taxonomicGroup as keyof typeof TAXON_LOGOS];
 
                 return (
@@ -57,21 +68,7 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView(obs.id); } }}
                     >
                         <div className="relative h-40 sm:h-56 overflow-hidden">
-                            {imageSrc ? (
-                                <img
-                                    src={imageSrc}
-                                    alt={obs.speciesName}
-                                    loading="lazy"
-                                    onError={() => markImageFailed(obs.id)}
-                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                />
-                            ) : (
-                                <div className="w-full h-full bg-nature-beige dark:bg-white/5 flex items-center justify-center text-gray-300 dark:text-gray-600">
-                                    <span data-testid="broken-image-placeholder" aria-hidden="true">
-                                        <CameraIcon className="w-12 h-12 opacity-60" />
-                                    </span>
-                                </div>
-                            )}
+                            <GalleryImage observation={obs} failed={failedImageIds.has(obs.id)} onError={() => markImageFailed(obs.id)} />
                             <div className="absolute top-3 right-3 bg-white/90 dark:bg-nature-dark-surface/90 rounded-full p-1.5 shadow-sm backdrop-blur-md">
                                 {logo && <img src={logo} alt={obs.taxonomicGroup} loading="lazy" className="w-6 h-6 object-contain" />}
                             </div>

@@ -2,7 +2,8 @@ import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
-import { isSafeImageUrl } from '../utils/urlUtils';
+import { isSafeImageUrl, isPublicEncyclopediaImage } from '../utils/urlUtils';
+import { usePrivateMedia } from '../hooks/usePrivateMedia';
 import { formatAtlasCode } from '../utils/atlasCodes';
 import { fetchSpeciesInfo, SpeciesInfo } from '../services/speciesService';
 import { ChevronLeftIcon, PawIcon, PencilIcon, TrashIcon } from './icons';
@@ -71,7 +72,9 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
         return () => { cancelled = true; };
     }, [observation.speciesName]);
 
-    const rawImageSrc = observation.photo || observation.wikipediaImage;
+    const photo = usePrivateMedia(observation.photo);
+    const sound = usePrivateMedia(observation.sound);
+    const rawImageSrc = photo || (!observation.photo && observation.wikipediaImage && isPublicEncyclopediaImage(observation.wikipediaImage) ? observation.wikipediaImage : undefined);
     const heroImageSrc = rawImageSrc && isSafeImageUrl(rawImageSrc) ? rawImageSrc : undefined;
     const taxonLogo = TAXON_LOGOS[observation.taxonomicGroup];
 
@@ -247,7 +250,7 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
             {/* Médias */}
             {observation.sound && (
                 <DetailSection title="Son">
-                    <audio controls src={observation.sound} className="w-full rounded-full shadow-sm" />
+                    <audio controls src={sound} className="w-full rounded-full shadow-sm" />
                 </DetailSection>
             )}
 

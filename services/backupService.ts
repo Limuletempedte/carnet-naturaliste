@@ -7,6 +7,9 @@ import { fetchWithTimeout } from '../utils/fetchUtils';
 import { parseJsonImport } from './jsonImportValidation';
 import type { ImportResult } from './excelImportService';
 import { getEventLog } from '../utils/eventLog';
+import { downloadPrivateMedia } from './privateMediaService';
+import { assertSessionContext, captureSessionContext, type SessionContext } from './sessionScope';
+import { isPublicEncyclopediaImage } from '../utils/urlUtils';
 
 export interface BackupResult {
     fileName: string;
@@ -21,6 +24,7 @@ export interface BackupResult {
 }
 
 export interface BackupOptions {
+    context?: SessionContext;
     /** Inclure les images dans le ZIP. Défaut : true. */
     includeImages?: boolean;
     /** Inclure les sons dans le ZIP. Défaut : true. */
@@ -159,6 +163,8 @@ export const createBackup = async (
     observations: Observation[],
     options: BackupOptions = {}
 ): Promise<BackupResult> => {
+    const context = options.context ?? captureSessionContext();
+    assertSessionContext(context);
     const { includeImages = true, includeSounds = true } = options;
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
@@ -263,7 +269,7 @@ export const createBackup = async (
     const usedImageFileNames = new Set<string>();
     const usedSoundFileNames = new Set<string>();
 
-    type MediaTask = { url: string; kind: 'image' | 'sound' };
+    type MediaTask = { url: string; kind: 'image' | 'sound'; private?: boolean };
 
     // Collect unique media tasks (de-duped per kind to avoid collisions on same url used twice)
     const seenImage = new Set<string>();
@@ -271,11 +277,11 @@ export const createBackup = async (
     const mediaTasks: MediaTask[] = [];
     observations.forEach(obs => {
         if (includeImages) {
-            if (obs.photo && !seenImage.has(obs.photo)) { seenImage.add(obs.photo); mediaTasks.push({ url: obs.photo, kind: 'image' }); }
+            if (obs.photo && !seenImage.has(obs.photo)) { seenImage.add(obs.photo); mediaTasks.push({ url: obs.photo, kind: 'image', private: true }); }
             if (obs.wikipediaImage && !seenImage.has(obs.wikipediaImage)) { seenImage.add(obs.wikipediaImage); mediaTasks.push({ url: obs.wikipediaImage, kind: 'image' }); }
         }
         if (includeSounds) {
-            if (obs.sound && !seenSound.has(obs.sound)) { seenSound.add(obs.sound); mediaTasks.push({ url: obs.sound, kind: 'sound' }); }
+            if (obs.sound && !seenSound.has(obs.sound)) { seenSound.add(obs.sound); mediaTasks.push({ url: obs.sound, kind: 'sound', private: true }); }
         }
     });
 
@@ -295,6 +301,7 @@ export const createBackup = async (
     };
 
     const tasks = mediaTasks.map((media, index) => async () => {
+        assertSessionContext(context);
         const { url, kind } = media;
         const targetFolder = kind === 'image' ? imgFolder : soundFolder;
         if (!targetFolder) return;
@@ -322,6 +329,14 @@ export const createBackup = async (
         }
         // http(s)
         try {
+            if (media.private) {
+                const blob = await downloadPrivateMedia(url, context);
+                const buffer = await blob.arrayBuffer();
+                assertSessionContext(context);
+                handleSuccess(kind, targetFolder, deriveImageBaseName(url, index), buffer, false);
+                return;
+            }
+            if (!isPublicEncyclopediaImage(url)) throw new Error('Source publique non autorisée.');
             const response = await fetchWithTimeout(url, IMAGE_FETCH_TIMEOUT_MS);
             if (response.ok) {
                 const buffer = await response.arrayBuffer();
@@ -335,6 +350,7 @@ export const createBackup = async (
                 handleFailure(kind, url);
             }
         } catch (e) {
+            assertSessionContext(context);
             logger.warn(`Failed to download ${kind}: ${url}`, e);
             handleFailure(kind, url);
         }
@@ -408,6 +424,7 @@ export const createBackup = async (
         throw new Error('Archive ZIP vide générée.');
     }
     const { saveAs } = await import('file-saver');
+    assertSessionContext(context);
     saveAs(content, fileName);
 
     return {
@@ -532,7 +549,12 @@ export const readBackupZip = async (file: File): Promise<ImportResult> => {
             if (entry) {
                 try {
                     const blob = await entry.async('blob');
-                    return await blobToDataUrl(blob);
+                    const extension = name.split('.').pop()?.toLowerCase() ?? '';
+                    const mime = ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+                        avif: 'image/avif', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm',
+                        m4a: 'audio/x-m4a', mp4: 'audio/mp4' } as Record<string, string>)[extension];
+                    if (!mime) throw new Error('Format du média restauré non reconnu.');
+                    return await blobToDataUrl(blob.slice(0, blob.size, mime));
                 } catch (err) {
                     logger.warn(`[backupService] Impossible de lire ${name} depuis le ZIP:`, err);
                 }

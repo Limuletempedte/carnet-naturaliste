@@ -1,8 +1,9 @@
 import React from 'react';
+import { usePrivateMedia } from '../hooks/usePrivateMedia';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
-import { isSafeImageUrl } from '../utils/urlUtils';
+import { isSafeImageUrl, isPublicEncyclopediaImage } from '../utils/urlUtils';
 
 const getStatusBadgeClass = (status: string): string => {
     switch (status) {
@@ -30,7 +31,8 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
     const { id, speciesName, latinName, taxonomicGroup, location, date, count, photo, wikipediaImage } = observation;
 
     const logo = TAXON_LOGOS[taxonomicGroup as keyof typeof TAXON_LOGOS];
-    const rawImageSrc = photo || wikipediaImage;
+    const privatePhoto = usePrivateMedia(photo);
+    const rawImageSrc = privatePhoto || (!photo && wikipediaImage && isPublicEncyclopediaImage(wikipediaImage) ? wikipediaImage : undefined);
     const imageSrc = rawImageSrc && isSafeImageUrl(rawImageSrc) ? rawImageSrc : undefined;
 
     return (

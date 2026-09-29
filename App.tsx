@@ -552,9 +552,11 @@ const App: React.FC = () => {
     };
 
     const handleExportUserData = async () => {
+        if (!operationSession || !isSessionCurrent(operationSession)) return;
         const exportToastId = pushToast('info', 'Export de vos données (RGPD)...', 0);
         try {
             const { createBackup, estimateBackupSize, BACKUP_WARN_SIZE_BYTES } = await import('./services/backupService');
+            assertSessionContext(operationSession);
             // SR-04 : au-delà du seuil, proposer d'exclure les images du ZIP.
             const estimated = estimateBackupSize(observations);
             let includeImages = true;
@@ -564,7 +566,8 @@ const App: React.FC = () => {
                     `L'export risque d'être volumineux (~${mb} Mo). Cliquez sur OK pour inclure les images, ou sur Annuler pour exporter sans les images.`,
                 );
             }
-            const result = await createBackup(observations, { includeImages });
+            const result = await createBackup(observations, { includeImages, context: operationSession });
+            assertSessionContext(operationSession);
             removeToast(exportToastId);
             pushToast(
                 result.failedImages > 0 ? 'warning' : 'success',

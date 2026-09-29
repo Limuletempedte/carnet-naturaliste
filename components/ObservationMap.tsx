@@ -1,4 +1,5 @@
 import { captureSessionContext, readAccountValue, writeAccountValue } from '../services/sessionScope';
+import { acquirePrivateMedia } from '../services/privateMediaService';
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -34,7 +35,7 @@ interface ObservationMapProps {
     onAddAtLocation?: (lat: number, lon: number) => void;
 }
 
-import { isSafeImageUrl } from '../utils/urlUtils';
+import { isPublicEncyclopediaImage } from '../utils/urlUtils';
 
 // 8c : plus de couleur inline selon isDark — la popup est en verre stylé par
 // .leaflet-popup-content-wrapper (index.css), la cascade .dark s'en charge.
@@ -42,8 +43,8 @@ const buildPopupContent = (obs: Observation, onView?: (id: string) => void): HTM
     const root = document.createElement('div');
     root.style.minWidth = '200px';
 
-    const imageSrc = obs.photo || obs.wikipediaImage;
-    if (imageSrc && isSafeImageUrl(imageSrc)) {
+    const imageSrc = !obs.photo ? obs.wikipediaImage : undefined;
+    if (imageSrc && isPublicEncyclopediaImage(imageSrc)) {
         const img = document.createElement('img');
         img.src = imageSrc;
         img.alt = obs.speciesName;
@@ -319,6 +320,25 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
                 const marker = L.marker([obs.gps.lat, obs.gps.lon], { icon: customIcon });
                 // PE-22: Lazy popup — DOM created only when popup is opened
                 marker.bindPopup(() => buildPopupContent(obs, onViewRef.current));
+                let mediaRelease: (() => void) | undefined;
+                let popupGeneration = 0;
+                marker.on('popupopen', () => {
+                    const generation = ++popupGeneration;
+                    if (!obs.photo) return;
+                    try {
+                        const context = captureSessionContext();
+                        void acquirePrivateMedia(obs.photo, context).then(lease => {
+                            const root = marker.getPopup()?.getContent();
+                            if (generation !== popupGeneration || !marker.isPopupOpen() || !(root instanceof HTMLElement)) { lease.release(); return; }
+                            mediaRelease?.(); mediaRelease = lease.release;
+                            const img = document.createElement('img');
+                            img.src = lease.url; img.alt = obs.speciesName;
+                            img.style.cssText = 'width:100%;height:128px;object-fit:cover;border-radius:8px;margin-bottom:8px';
+                            root.prepend(img); marker.getPopup()?.update();
+                        }).catch(() => {});
+                    } catch { /* plus de session */ }
+                });
+                marker.on('popupclose remove', () => { popupGeneration++; mediaRelease?.(); mediaRelease = undefined; });
 
                 // Hover effect
                 marker.on('mouseover', function (this: L.Marker) {
