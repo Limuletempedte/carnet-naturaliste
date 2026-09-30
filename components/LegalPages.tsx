@@ -31,7 +31,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 
 export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
     <LegalPageWrapper title="Politique de confidentialite" onBack={onBack}>
-        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 13 juillet 2026</p>
+        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 30 septembre 2026</p>
 
         <Section title="1. Responsable du traitement">
             <p>Eliot SERIVE — editeur particulier (service non commercial). Contact : carnetnaturaliste.app@gmail.com</p>
@@ -42,12 +42,14 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
             <ul className="list-disc pl-5 space-y-1">
                 <li><strong>Donnees de compte</strong> : adresse email (authentification)</li>
                 <li><strong>Observations naturalistes</strong> : nom d'espece, coordonnees GPS, date, heure, lieu-dit, commune, photos, sons, commentaires</li>
+                <li><strong>Protection anti-robots</strong> : adresse IP, informations du navigateur et de connexion transmises à Cloudflare Turnstile sur les formulaires de connexion, inscription et récupération du compte.</li>
                 <li><strong>Donnees techniques</strong> : identifiant utilisateur, horodatage des actions</li>
             </ul>
         </Section>
 
         <Section title="3. Finalites et bases legales">
             <ul className="list-disc pl-5 space-y-1">
+                <li><strong>Protection contre les abus automatisés</strong> : intérêt légitime à sécuriser les comptes (art. 6.1.f RGPD).</li>
                 <li><strong>Gestion du compte</strong> : execution du contrat (art. 6.1.b RGPD)</li>
                 <li><strong>Stockage et synchronisation des observations</strong> : execution du contrat</li>
                 <li><strong>Geolocalisation</strong> : consentement via l'API du navigateur (art. 6.1.a)</li>
@@ -70,7 +72,8 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
                 <li><strong>Vercel</strong> (hebergement frontend) — fichiers statiques distribues via CDN mondial ; aucune donnee personnelle stockee</li>
                 <li><strong>Sentry</strong> (suivi des erreurs techniques) — recoit uniquement les rapports d'erreur du navigateur (message, trace technique, type d'appareil), jamais vos observations ni votre email. Donnees hebergees dans l'UE. Finalite : fiabilite du service (interet legitime, art. 6.1.f RGPD).</li>
                 <li><strong>GitHub</strong> (sauvegarde technique hebdomadaire) — recoit une copie <strong>chiffree</strong> de la base, conservee 35 jours puis supprimee automatiquement. Elle sert uniquement a restaurer le service apres un incident. GitHub heberge cette archive aux Etats-Unis mais ne peut pas la lire : la cle de dechiffrement n'est detenue que par l'editeur.</li>
-                <li><strong>Aucun partage actif</strong> de vos donnees vers des tiers. Les appels vers iNaturalist, GBIF et Nominatim sont en lecture seule (autocomplete) et ne transmettent pas vos observations.</li>
+                <li><strong>Cloudflare Turnstile</strong> (protection anti-robots) — traite des signaux techniques du navigateur et de connexion, notamment l’adresse IP, selon sa <a href="https://www.cloudflare.com/turnstile-privacy-policy/" target="_blank" rel="noopener noreferrer" className="underline">politique de confidentialité</a>. Des traitements hors UE sont possibles. L’application ne lui transmet pas vos mots de passe ni vos observations. Le jeton de vérification est transmis à Supabase pour validation et n’est pas conservé dans le stockage local de l’application.</li>
+                <li>Les services tiers interviennent pour les finalités décrites ci-dessus. Les appels vers iNaturalist, GBIF et Nominatim sont en lecture seule (autocomplete) et ne transmettent pas vos observations.</li>
             </ul>
         </Section>
 

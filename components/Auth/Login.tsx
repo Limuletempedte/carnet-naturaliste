@@ -1,5 +1,7 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import { supabase } from '../../supabaseClient';
+import Turnstile from './Turnstile';
+import { CAPTCHA_MAX_AGE_MS, MIN_PASSWORD_LENGTH, isNewPasswordValid } from '../../services/authPolicy';
 
 // Chargement différé des pages légales (cohérent avec App.tsx) — évite que cet
 // import statique n'annule le code-splitting lazy de LegalPages au niveau de l'app.
@@ -16,7 +18,8 @@ const mapSupabaseAuthError = (message: string): string => {
     if (lower.includes('invalid login credentials')) return 'Email ou mot de passe incorrect.';
     if (lower.includes('email not confirmed')) return 'Veuillez confirmer votre email avant de vous connecter.';
     if (lower.includes('user already registered')) return 'Un compte existe déjà avec cet email.';
-    if (lower.includes('password') && lower.includes('at least')) return 'Le mot de passe doit contenir au moins 6 caractères.';
+    if (lower.includes('password') && lower.includes('at least')) return `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.`;
+    if (lower.includes('captcha')) return 'La vérification de sécurité a échoué. Veuillez la renouveler.';
     if (lower.includes('invalid email')) return 'Adresse email invalide.';
     if (lower.includes('rate limit') || lower.includes('too many')) return 'Trop de tentatives. Veuillez patienter quelques minutes.';
     return 'Une erreur est survenue. Veuillez réessayer.';
@@ -35,14 +38,37 @@ const Login: React.FC = () => {
     const [legalView, setLegalView] = useState<'login' | 'privacy' | 'terms' | 'legal'>('login');
     const [forgotMode, setForgotMode] = useState(false);
 
+    const [captchaAttempt, setCaptchaAttempt] = useState(0);
+    const captchaScope = `${isSignUp}:${forgotMode}:${legalView}:${captchaAttempt}`;
+    const captcha = useRef<{ token: string; scope: string; expiresAt: number } | null>(null);
+    const [captchaReadyScope, setCaptchaReadyScope] = useState<string | null>(null);
+    const onCaptchaToken = useCallback((token: string | null) => {
+        captcha.current = token ? { token, scope: captchaScope, expiresAt: Date.now() + CAPTCHA_MAX_AGE_MS } : null;
+        setCaptchaReadyScope(token ? captchaScope : null);
+    }, [captchaScope]);
+    const consumeCaptcha = (): string | null => {
+        const current = captcha.current;
+        captcha.current = null; // Usage unique, même en cas de double soumission synchrone.
+        setCaptchaReadyScope(null);
+        if (!current || current.scope !== captchaScope || current.expiresAt <= Date.now()) {
+            setMessage({ type: 'error', text: 'Veuillez terminer la vérification de sécurité.' });
+            return null;
+        }
+        return current.token;
+    };
+    const captchaWidget = <Turnstile key={captchaScope} onToken={onCaptchaToken} />;
+
     const handleForgotPassword = async (e: React.FormEvent) => {
         e.preventDefault();
         if (loading) return;
+        const captchaToken = consumeCaptcha();
+        if (!captchaToken) return;
         setLoading(true);
         setMessage(null);
         try {
             const { error } = await supabase.auth.resetPasswordForEmail(email, {
                 redirectTo: window.location.origin,
+                captchaToken,
             });
             if (error) throw error;
             // Message volontairement neutre : ne révèle pas si l'email existe.
@@ -52,6 +78,7 @@ const Login: React.FC = () => {
             setMessage({ type: 'error', text: mapSupabaseAuthError(text) });
         } finally {
             setLoading(false);
+            setCaptchaAttempt(n => n + 1);
         }
     };
 
@@ -72,8 +99,15 @@ const Login: React.FC = () => {
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (loading) return;
         if (lockedUntil && Date.now() < lockedUntil) return;
         if (isSignUp && !acceptedTerms) return;
+        if (isSignUp && !isNewPasswordValid(password)) {
+            setMessage({ type: 'error', text: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.` });
+            return;
+        }
+        const captchaToken = consumeCaptcha();
+        if (!captchaToken) return;
         setLoading(true);
         setMessage(null);
 
@@ -84,6 +118,7 @@ const Login: React.FC = () => {
                     password,
                     options: {
                         emailRedirectTo: window.location.origin,
+                        captchaToken,
                     },
                 });
                 if (error) throw error;
@@ -92,6 +127,7 @@ const Login: React.FC = () => {
                 const { error } = await supabase.auth.signInWithPassword({
                     email,
                     password,
+                    options: { captchaToken },
                 });
                 if (error) throw error;
                 setFailedAttempts(0);
@@ -109,6 +145,7 @@ const Login: React.FC = () => {
             setMessage({ type: 'error', text: mapSupabaseAuthError(message) });
         } finally {
             setLoading(false);
+            setCaptchaAttempt(n => n + 1);
         }
     };
 
@@ -145,9 +182,10 @@ const Login: React.FC = () => {
                                 placeholder="votre@email.com"
                             />
                         </div>
+                        {captchaWidget}
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || captchaReadyScope !== captchaScope}
                             className="w-full py-3 px-4 bg-nature-green hover:bg-nature-dark text-white font-semibold rounded-lg shadow-lg transform active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loading ? 'Envoi…' : 'Envoyer le lien'}
@@ -155,7 +193,7 @@ const Login: React.FC = () => {
                     </form>
 
                     <button
-                        type="button"
+                        type="button" disabled={loading}
                         onClick={() => { setForgotMode(false); setMessage(null); }}
                         className="mt-4 w-full text-center text-sm text-gray-400 dark:text-gray-500 hover:text-nature-green transition-colors underline"
                     >
@@ -178,14 +216,14 @@ const Login: React.FC = () => {
 
                 <div className="flex bg-gray-100 dark:bg-white/10 rounded-lg p-1 mb-6">
                     <button
-                        type="button"
+                        type="button" disabled={loading}
                         onClick={() => { setIsSignUp(false); setMessage(null); setAcceptedTerms(false); }}
                         className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${!isSignUp ? 'bg-white dark:bg-nature-dark-bg shadow-sm text-nature-dark dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
                     >
                         Se connecter
                     </button>
                     <button
-                        type="button"
+                        type="button" disabled={loading}
                         onClick={() => { setIsSignUp(true); setMessage(null); setAcceptedTerms(false); }}
                         className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${isSignUp ? 'bg-white dark:bg-nature-dark-bg shadow-sm text-nature-dark dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
                     >
@@ -226,11 +264,11 @@ const Login: React.FC = () => {
                             placeholder="••••••••"
                         />
                         {isSignUp ? (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-1">Minimum 6 caractères</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-1">Minimum {MIN_PASSWORD_LENGTH} caractères</p>
                         ) : (
                             <div className="text-right mt-1.5">
                                 <button
-                                    type="button"
+                                    type="button" disabled={loading}
                                     onClick={() => { setForgotMode(true); setMessage(null); }}
                                     className="text-xs text-nature-green-text hover:underline font-medium"
                                 >
@@ -250,9 +288,9 @@ const Login: React.FC = () => {
                             />
                             <span>
                                 J'accepte les{' '}
-                                <button type="button" onClick={() => setLegalView('terms')} className="text-nature-green-text hover:underline font-medium">CGU</button>
+                                <button type="button" disabled={loading} onClick={() => setLegalView('terms')} className="text-nature-green-text hover:underline font-medium">CGU</button>
                                 {' '}et la{' '}
-                                <button type="button" onClick={() => setLegalView('privacy')} className="text-nature-green-text hover:underline font-medium">Politique de confidentialité</button>
+                                <button type="button" disabled={loading} onClick={() => setLegalView('privacy')} className="text-nature-green-text hover:underline font-medium">Politique de confidentialité</button>
                             </span>
                         </label>
                     )}
@@ -263,9 +301,10 @@ const Login: React.FC = () => {
                         </div>
                     )}
 
+                    {captchaWidget}
                     <button
                         type="submit"
-                        disabled={loading || cooldownRemaining > 0 || (isSignUp && !acceptedTerms)}
+                        disabled={loading || captchaReadyScope !== captchaScope || cooldownRemaining > 0 || (isSignUp && !acceptedTerms)}
                         className="w-full py-3 px-4 bg-nature-green hover:bg-nature-dark text-white font-semibold rounded-lg shadow-lg transform active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Chargement...' : (isSignUp ? "S'inscrire" : 'Se connecter')}
@@ -277,11 +316,11 @@ const Login: React.FC = () => {
                 </p>
 
                 <div className="mt-4 text-center text-xs text-gray-400 dark:text-gray-500 space-x-2">
-                    <button type="button" onClick={() => setLegalView('privacy')} className="hover:text-nature-green transition-colors underline">Confidentialite</button>
+                    <button type="button" disabled={loading} onClick={() => setLegalView('privacy')} className="hover:text-nature-green transition-colors underline">Confidentialite</button>
                     <span>|</span>
-                    <button type="button" onClick={() => setLegalView('terms')} className="hover:text-nature-green transition-colors underline">CGU</button>
+                    <button type="button" disabled={loading} onClick={() => setLegalView('terms')} className="hover:text-nature-green transition-colors underline">CGU</button>
                     <span>|</span>
-                    <button type="button" onClick={() => setLegalView('legal')} className="hover:text-nature-green transition-colors underline">Mentions legales</button>
+                    <button type="button" disabled={loading} onClick={() => setLegalView('legal')} className="hover:text-nature-green transition-colors underline">Mentions legales</button>
                 </div>
             </div>
         </div>

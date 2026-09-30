@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-07-26
+**Date de mise a jour** : 2026-09-30
 
 ---
 
@@ -88,6 +88,20 @@
 > Procedure d'exploitation : [`docs/ops/RUNBOOK-sauvegarde-restauration.md`](../ops/RUNBOOK-sauvegarde-restauration.md)
 
 ---
+
+## Traitement 8 : Protection anti-robots (Cloudflare Turnstile)
+
+| Champ | Valeur |
+|---|---|
+| Finalité | Limiter les abus automatisés sur connexion, inscription et demande de récupération du compte |
+| Base légale | Intérêt légitime à sécuriser les comptes (art. 6.1.f) |
+| Données | IP, signaux du navigateur et de connexion (notamment User-Agent, caractéristiques TLS et site d'origine) ; jeton transmis à Supabase pour validation |
+| Destinataires | Cloudflare Inc. (Turnstile) et Supabase Auth pour la validation du jeton |
+| Conservation | Jeton conservé uniquement en mémoire par l'application jusqu'à utilisation, expiration (5 minutes maximum) ou fermeture du formulaire. Conservation des données du fournisseur selon sa politique, sans durée supplémentaire garantie par l'application. |
+| Transfert hors UE | Possible : traitement Cloudflare mondial ; ne pas assimiler la région Supabase à une garantie de traitement exclusivement européen |
+| Mesures | Widget limité au domaine de production, pas de pré-clearance, clé secrète uniquement dans la configuration serveur Supabase ; aucun mot de passe ou contenu d'observation envoyé au widget |
+
+Sources : [politique Turnstile](https://www.cloudflare.com/turnstile-privacy-policy/), [validation serveur](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
 
 ## Droits des personnes concernees
 

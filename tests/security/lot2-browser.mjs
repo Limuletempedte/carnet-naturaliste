@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { installCaptchaFixture } from './fixtures/turnstile-widget.mjs';
 
 const config = JSON.parse(await fs.readFile(process.env.LOCAL_STATUS_FILE, 'utf8'));
 const api = config.API_URL;
@@ -98,6 +99,7 @@ try {
         return ['127.0.0.1', 'localhost'].includes(url.hostname) ? route.continue()
             : route.fulfill({ json: url.hostname === 'nominatim.openstreetmap.org' || url.pathname.endsWith('/suggest') ? [] : { results: [], features: [], query: { pages: {} } } });
     });
+    await installCaptchaFixture(context);
     await page.goto(base);
     await page.evaluate(async () => {
         localStorage.setItem('onboarding-seen-v1', 'true'); localStorage.setItem('storage_consent_accepted', '1');
@@ -117,6 +119,7 @@ try {
     // La transition d'identité purge aussi le cache d'un worker historique déjà actif.
     async function login(user) {
         await page.locator('#login-email').fill(user.email); await page.locator('#login-password').fill(user.password);
+        await page.getByRole('button', { name: 'Valider le CAPTCHA de test' }).click();
         await page.locator('form button[type=submit]').click();
         await page.getByRole('button', { name: `Voir l'observation de PRIVE_${user === A ? 'A' : 'B'}`, exact: true }).waitFor();
     }

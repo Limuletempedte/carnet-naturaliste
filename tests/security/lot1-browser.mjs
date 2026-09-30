@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { installCaptchaFixture } from './fixtures/turnstile-widget.mjs';
 
 const config = JSON.parse(await fs.readFile(process.env.LOCAL_STATUS_FILE, 'utf8'));
 const api = config.API_URL;
@@ -65,6 +66,7 @@ try {
             : route.fulfill({ json: host === 'nominatim.openstreetmap.org' || url.pathname.endsWith('/suggest') ? [] : { results: [], features: [], query: { pages: {} }, hourly: { time: [], weather_code: [] } } });
     };
     await context.route('**/*', routeExternal);
+    await installCaptchaFixture(context);
     const page = await context.newPage();
     page.on('pageerror', error => console.error('Erreur navigateur :', error.message));
     page.on('console', message => { if (message.type() === 'error') console.error('Console :', message.text()); });
@@ -73,6 +75,7 @@ try {
     async function login(target, user) {
         await target.locator('#login-email').fill(user.email);
         await target.locator('#login-password').fill(user.password);
+        await target.getByRole('button', { name: 'Valider le CAPTCHA de test' }).click();
         await target.locator('form button[type=submit]').click();
         await target.locator('#login-email').waitFor({ state: 'hidden' });
     }
@@ -160,6 +163,7 @@ try {
     await context.close();
     context = await launch();
     await context.route('**/*', routeExternal);
+    await installCaptchaFixture(context);
     const restarted = await context.newPage();
     await restarted.goto(base);
     await restarted.getByRole('button', { name: "Voir l'observation de SAISIE_HORS_LIGNE_B", exact: true }).waitFor();
