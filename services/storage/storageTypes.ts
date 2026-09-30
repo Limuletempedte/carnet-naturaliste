@@ -1,3 +1,4 @@
+import type { SessionContext } from '../sessionScope';
 import { Observation } from '../../types';
 
 export interface ObservationLoadResult {
@@ -20,11 +21,13 @@ export interface OfflineSyncResult {
 }
 
 export interface ProcessOfflineQueueOptions {
+    context?: SessionContext;
     itemIds?: string[];
     onProgress?: (current: number, total: number) => void;
 }
 
 export interface PersistenceOptions {
+    context?: SessionContext;
     skipCache?: boolean;
 }
 

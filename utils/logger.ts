@@ -12,7 +12,7 @@
  * Pour changer de reporteur externe, modifier `logger.error` uniquement.
  */
 
-import { pushEvent } from './eventLog';
+import { pushEvent, safeLogMessage } from './eventLog';
 import { reportError } from '../services/errorReportingService';
 
 type Level = 'debug' | 'info' | 'warn' | 'error';
@@ -32,28 +32,28 @@ export const logger = {
     debug: (...args: unknown[]): void => {
         if (shouldLog('debug')) {
              
-            console.debug(...args);
+            console.debug(safeLogMessage('info', args));
         }
     },
     info: (...args: unknown[]): void => {
         if (shouldLog('info')) {
              
-            console.info(...args);
+            console.info(safeLogMessage('info', args));
         }
     },
     warn: (...args: unknown[]): void => {
         pushEvent('warn', args);
         if (shouldLog('warn')) {
              
-            console.warn(...args);
+            console.warn(safeLogMessage('warn', args));
         }
     },
     error: (...args: unknown[]): void => {
         pushEvent('error', args);
-        reportError(args);
+        reportError([safeLogMessage('error', args)]);
         if (shouldLog('error')) {
 
-            console.error(...args);
+            console.error(safeLogMessage('error', args));
         }
     },
 };

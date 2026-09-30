@@ -1,3 +1,4 @@
+import { captureSessionContext, assertSessionContext, isSessionCurrent } from '../services/sessionScope';
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import { deleteObservation } from '../services/storageService';
 import { logger } from '../utils/logger';
@@ -37,9 +38,12 @@ export const useBulkDelete = ({
     removeToast,
     refreshOfflineQueueSnapshot,
 }: UseBulkDeleteParams) => {
+    const [deleteSession] = useState(() => { try { return captureSessionContext(); } catch { return null; } });
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
     const handleBulkDeleteRequest = (ids: string[]) => {
+        if (!deleteSession || !isSessionCurrent(deleteSession)) return;
+        const context = deleteSession;
         const previewNames = ids.slice(0, 5).map(id => {
             const obs = observations.find(o => o.id === id);
             return obs?.speciesName || '?';
@@ -49,13 +53,15 @@ export const useBulkDelete = ({
             title: "Confirmer la suppression multiple",
             message: `Supprimer ${ids.length} observations ?\n\n${preview}\n\nCette action est irréversible.`,
             onConfirm: async () => {
+                if (!isSessionCurrent(context)) return;
                 setIsBulkDeleting(true);
                 // Toast persistant de progression : le modal se ferme immédiatement
                 // (cf. ConfirmationDialog), l'utilisateur a besoin d'un feedback pendant
                 // que les N suppressions tournent.
                 const progressToastId = onToast('info', `Suppression de ${ids.length} observation(s)…`, 0);
                 try {
-                    const results = await Promise.allSettled(ids.map(id => deleteObservation(id)));
+                    const results = await Promise.allSettled(ids.map(id => deleteObservation(id, context)));
+                    assertSessionContext(context);
                     const successIds: string[] = [];
                     const failedIds: string[] = [];
 
@@ -86,11 +92,12 @@ export const useBulkDelete = ({
                         onToast('warning', `${failedIds.length} suppression(s) échouée(s) : ${preview}`);
                     }
                 } catch (e) {
+                    if (!isSessionCurrent(context)) return;
                     removeToast(progressToastId);
                     setError("Erreur lors de la suppression multiple.");
                     logger.error(e);
                 } finally {
-                    setIsBulkDeleting(false);
+                    if (isSessionCurrent(context)) setIsBulkDeleting(false);
                 }
             }
         });

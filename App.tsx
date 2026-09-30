@@ -1,3 +1,4 @@
+import { captureSessionContext, assertSessionContext, isSessionCurrent, StaleSessionError } from './services/sessionScope';
 import React, { Suspense, lazy, startTransition, useState, useEffect, useRef, useCallback } from 'react';
 import { useAccessibleDialog } from './hooks/useAccessibleDialog';
 import { Observation, View } from './types';
@@ -69,6 +70,7 @@ const App: React.FC = () => {
     // Identité stable de l'utilisateur (cf. H6) : l'objet `user` change de
     // référence à chaque rafraîchissement de token, pas son id.
     const userId = user?.id;
+    const [operationSession] = useState(() => { try { return captureSessionContext(); } catch { return null; } });
     const hasLoadedOnceRef = useRef(false);
     const { offlineQueueItems, refreshOfflineQueueSnapshot } = useOfflineQueue(user);
     const [observations, setObservations] = useState<Observation[]>([]);
@@ -262,7 +264,7 @@ const App: React.FC = () => {
         // Audit v2 (H6) : on dépend de `userId` (identité stable) et NON de l'objet
         // `user`, recréé à chaque TOKEN_REFRESHED (~1×/h) — sinon l'app se
         // rechargeait entièrement toutes les heures, effaçant la saisie en cours.
-        if (authLoading || !userId || supabaseConfigError) {
+        if (authLoading || !userId || !operationSession || supabaseConfigError) {
             return;
         }
 
@@ -277,7 +279,7 @@ const App: React.FC = () => {
                 // Try to sync if online (PE-15: skip if queue empty to avoid unnecessary auth call)
                 const pendingQueue = getOfflineQueueSnapshot();
                 if (navigator.onLine && pendingQueue.length > 0) {
-                    const syncResult = await processOfflineQueue();
+                    const syncResult = await processOfflineQueue({ context: operationSession });
                     if (syncResult.failed > 0) {
                         setConnectionStatus('degraded');
                         const remainingQueue = getOfflineQueueSnapshot();
@@ -293,7 +295,7 @@ const App: React.FC = () => {
                     }
                 }
 
-                const loadResult = await getObservations();
+                const loadResult = await getObservations(operationSession!);
                 if (!mounted) return;
                 setObservations(loadResult.observations);
                 setConnectionStatus(
@@ -337,7 +339,7 @@ const App: React.FC = () => {
 
                                 // H9 : ne persister QUE le champ image (pas la ligne entière)
                                 // pour ne pas écraser une édition concurrente de l'utilisateur.
-                                await setObservationWikipediaImage(obs.id, wikipediaImage);
+                                await setObservationWikipediaImage(obs.id, wikipediaImage, operationSession);
                                 if (!mounted) continue;
 
                                 // Mise à jour fonctionnelle ciblée : ne touche que cette
@@ -371,7 +373,7 @@ const App: React.FC = () => {
         loadData();
 
         return () => { mounted = false; };
-    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, userId, pushToast]);
+    }, [authLoading, isOffline, refreshOfflineQueueSnapshot, userId, pushToast, operationSession]);
 
     const handleAddObservation = useCallback(() => {
         setEditingObservation(null);
@@ -422,6 +424,7 @@ const App: React.FC = () => {
     }, [view, selectedObservationId, observations, detailReturnView]);
 
     const handleDeleteRequest = useCallback((id: string) => {
+        if (!operationSession || !isSessionCurrent(operationSession)) return;
         if (isImporting) return;
         const obs = observations.find(o => o.id === id);
         const obsLabel = obs ? `${obs.speciesName} du ${obs.date}` : 'cette observation';
@@ -429,8 +432,10 @@ const App: React.FC = () => {
             title: "Confirmer la suppression",
             message: `Supprimer l'observation de ${obsLabel} ? Cette action est irréversible.`,
             onConfirm: async () => {
+                if (!isSessionCurrent(operationSession)) return;
                 try {
-                    await deleteObservation(id);
+                    await deleteObservation(id, operationSession);
+                    assertSessionContext(operationSession);
                     setObservations(prev => prev.filter(obs => obs.id !== id));
                     refreshOfflineQueueSnapshot();
                 } catch (e) {
@@ -441,16 +446,20 @@ const App: React.FC = () => {
                 }
             }
         });
-    }, [observations, isImporting, refreshOfflineQueueSnapshot]);
+    }, [observations, isImporting, refreshOfflineQueueSnapshot, operationSession]);
 
     const handleSaveObservation = async (observation: Observation, options?: { keepFormOpen?: boolean }) => {
+        if (!operationSession) throw new StaleSessionError();
+        assertSessionContext(operationSession);
         if (isImporting) throw new Error('Un import est en cours. Veuillez patienter.');
         try {
             if (editingObservation) {
-                await updateObservation(observation);
+                await updateObservation(observation, { context: operationSession });
+                assertSessionContext(operationSession);
                 setObservations(prev => prev.map(obs => obs.id === observation.id ? observation : obs));
             } else {
-                const savedObs = await saveObservation(observation);
+                const savedObs = await saveObservation(observation, { context: operationSession });
+                assertSessionContext(operationSession);
                 // Merge the returned ID with the local observation data to ensure we have all fields (especially date)
                 const newObservation = { ...observation, id: savedObs.id };
                 setObservations(prev => [newObservation, ...prev]);
@@ -480,9 +489,10 @@ const App: React.FC = () => {
     }, []);
 
     const handleRefresh = async () => {
+        if (!operationSession || !isSessionCurrent(operationSession)) return;
         try {
             setIsLoading(true);
-            const loadResult = await getObservations();
+            const loadResult = await getObservations(operationSession!);
             setObservations(loadResult.observations);
             setConnectionStatus(
                 isOffline
@@ -574,11 +584,12 @@ const App: React.FC = () => {
     };
 
     const handleDeleteAccount = async () => {
+        if (!operationSession || !isSessionCurrent(operationSession)) return;
         if (isDeletingAccount) return;
         setIsDeletingAccount(true);
         try {
             const { deleteAccount } = await import('./services/accountService');
-            await deleteAccount();
+            await deleteAccount(operationSession);
             pushToast('success', 'Compte supprimé avec succès.', 5000);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);

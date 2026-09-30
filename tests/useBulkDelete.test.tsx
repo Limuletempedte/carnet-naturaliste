@@ -1,3 +1,4 @@
+import { setSessionIdentity } from '../services/sessionScope';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { Observation } from '../types';
@@ -40,6 +41,7 @@ const makeParams = () => {
 
 describe('useBulkDelete', () => {
     beforeEach(() => {
+        setSessionIdentity('user-1');
         vi.clearAllMocks();
     });
 

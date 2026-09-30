@@ -1,3 +1,4 @@
+import { setSessionIdentity } from '../services/sessionScope';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useFilterControls, FILTER_PRESETS_STORAGE_KEY } from '../hooks/useFilterControls';
@@ -6,6 +7,7 @@ import { Status, TaxonomicGroup } from '../types';
 describe('useFilterControls', () => {
     beforeEach(() => {
         localStorage.clear();
+        setSessionIdentity('user-1');
     });
 
     it('expose des filtres par défaut et un objet `filters` cohérent', () => {
@@ -49,7 +51,7 @@ describe('useFilterControls', () => {
         expect(onToast).toHaveBeenCalledWith('success', expect.stringContaining('Mon preset'), 4000);
 
         // Persistance localStorage
-        const raw = localStorage.getItem(FILTER_PRESETS_STORAGE_KEY);
+        const raw = localStorage.getItem(`${FILTER_PRESETS_STORAGE_KEY}:user-1`);
         expect(raw).toBeTruthy();
         expect(JSON.parse(raw as string)).toHaveLength(1);
     });
@@ -103,7 +105,7 @@ describe('useFilterControls', () => {
             statusFilter: 'all', startDateFilter: '', endDateFilter: '',
             advancedFilters: { geoMode: 'none' }
         }];
-        localStorage.setItem(FILTER_PRESETS_STORAGE_KEY, JSON.stringify(stored));
+        localStorage.setItem(`${FILTER_PRESETS_STORAGE_KEY}:user-1`, JSON.stringify(stored));
 
         const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
         expect(result.current.filterPresets).toHaveLength(1);

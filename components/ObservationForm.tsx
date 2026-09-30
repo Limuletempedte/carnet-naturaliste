@@ -1,3 +1,4 @@
+import { captureSessionContext, assertSessionContext, isSessionCurrent } from '../services/sessionScope';
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
@@ -340,7 +341,10 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         requestAnimationFrame(() => document.getElementById('speciesName')?.focus());
     };
 
+    const [formSession] = useState(() => { try { return captureSessionContext(); } catch { return null; } });
     const performSave = async (addAnother: boolean) => {
+        if (!formSession || !isSessionCurrent(formSession)) return;
+        const context = formSession;
         if (isUploading) return;
         const validationErrors = validate();
         if (Object.keys(validationErrors).length > 0) {
@@ -357,7 +361,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         try {
             if (navigator.onLine) {
                 if (photoFile) {
-                    photoUrl = await uploadPhoto(photoFile);
+                    photoUrl = await uploadPhoto(photoFile, context);
                 }
             } else {
                 if (photoFile) {
@@ -372,6 +376,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 }
             }
 
+            assertSessionContext(context);
             const observationToSave: Observation = buildObservationFromForm(
                 formData,
                 initialData?.id || generateUUID(),
@@ -379,6 +384,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 soundUrl
             );
             await onSave(observationToSave, { keepFormOpen: addAnother });
+            assertSessionContext(context);
 
             if (strippedOfflineMedia.length > 0) {
                 onToast('warning', `Observation enregistrée avec ${strippedOfflineMedia.join(' et ')} conservé(e) localement. L'envoi se fera automatiquement en ligne.`, 7000);
@@ -389,10 +395,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 onToast('success', 'Observation enregistrée. Ajoutez la suivante (même lieu et date conservés).');
             }
         } catch (error) {
+            if (!isSessionCurrent(context)) return;
             logger.error("Erreur lors de l'envoi:", error);
             onToast('error', `Échec de l'enregistrement. ${mapUserFacingError(error)}`);
         } finally {
-            setIsUploading(false);
+            if (isSessionCurrent(context)) setIsUploading(false);
         }
     };
 
