@@ -1,5 +1,8 @@
 # Lot 4 — mots de passe et protection anti-robots
 
+> Mise à jour du 30 septembre 2026 : minimum12 et CAPTCHA activés côté Supabase après déploiement.
+> Voir le [bilan de mise en production](MISE-EN-PRODUCTION-2026-09-30.md) pour les preuves et limites. La préparation initiale est conservée ci-dessous.
+
 Date : 30 septembre 2026. Branche empilée sur le lot 3 (PR #85).
 
 ## Résultat et limite de déploiement

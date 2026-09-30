@@ -53,6 +53,7 @@ Pour l’audit fonctionnel ultérieur : retenir l’anomalie Excel des synonymes
 
 ## Documents et suites
 
+- [Mise en production des corrections — 30 septembre 2026](MISE-EN-PRODUCTION-2026-09-30.md) : état des protections après les PR #83 à #86 ; distinct du constat historique ci-dessus.
 - [Rapport détaillé](rapport-audit.md) : preuves source et raisonnement.
 - [Matrice des scénarios](MATRICE.md) : protections, failles et limites.
 - [Vérifications complémentaires Auth et PWA](VERIFICATIONS-COMPLEMENTAIRES.md).

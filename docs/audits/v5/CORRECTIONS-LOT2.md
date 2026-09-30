@@ -1,5 +1,8 @@
 # Lot 2 — médias privés et cache hors ligne
 
+> Mise à jour du 30 septembre 2026 : bucket passé en privé après déploiement.
+> Voir le [bilan de mise en production](MISE-EN-PRODUCTION-2026-09-30.md) pour les preuves et limites. La préparation initiale est conservée ci-dessous.
+
 Cette branche dépend du lot 1 (PR #83). Ne pas appliquer la migration hébergée
 avant que le frontend compatible soit effectivement déployé.
 
