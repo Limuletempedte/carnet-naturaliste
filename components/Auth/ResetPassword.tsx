@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../contexts/AuthContext';
 
-const MIN_PASSWORD_LENGTH = 6;
+import { MIN_PASSWORD_LENGTH, isNewPasswordValid } from '../../services/authPolicy';
 
 /**
  * Écran de définition d'un nouveau mot de passe (audit v2, H13).
@@ -20,7 +20,7 @@ const ResetPassword: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (loading) return;
-        if (password.length < MIN_PASSWORD_LENGTH) {
+        if (!isNewPasswordValid(password)) {
             setMessage({ type: 'error', text: `Le mot de passe doit contenir au moins ${MIN_PASSWORD_LENGTH} caractères.` });
             return;
         }

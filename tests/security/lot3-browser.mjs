@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { installCaptchaFixture } from './fixtures/turnstile-widget.mjs';
 
 const config = JSON.parse(await fs.readFile(process.env.LOCAL_STATUS_FILE, 'utf8'));
 const api = config.API_URL;
@@ -59,6 +60,7 @@ try {
     const A = await account('A');
     await context.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname)
         ? route.continue() : route.fulfill({ json: { results: [], features: [], query: { pages: {} } } }));
+    await installCaptchaFixture(context);
     let page = await context.newPage(); page.setDefaultTimeout(15000);
     await page.addInitScript(() => {
         const NativeWorker = window.Worker;
@@ -73,6 +75,7 @@ try {
     await page.goto(base);
     await page.evaluate(() => { localStorage.setItem('onboarding-seen-v1', 'true'); localStorage.setItem('storage_consent_accepted', '1'); });
     await page.locator('#login-email').fill(A.email); await page.locator('#login-password').fill(A.password);
+    await page.getByRole('button', { name: 'Valider le CAPTCHA de test' }).click();
     await page.locator('form button[type=submit]').click();
     await page.getByRole('button', { name: "Voir l'observation de PRIVE_A", exact: true }).waitFor();
     await page.evaluate(async () => { await navigator.serviceWorker.ready; });
