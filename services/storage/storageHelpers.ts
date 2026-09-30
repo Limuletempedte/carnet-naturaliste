@@ -1,4 +1,5 @@
 import type { SupabaseLikeError } from './storageTypes';
+import { privateMediaPath } from '../mediaReference';
 
 /**
  * Helpers purs du stockage — aucune dépendance à l'état mutable du module
@@ -9,12 +10,7 @@ const ONLINE_AUTH_ERROR = 'User not authenticated';
 
 /** Extrait le chemin relatif (scopé user) d'une URL publique Supabase Storage. */
 export const extractStoragePath = (publicUrl: string | null, userId: string): string | null => {
-    if (!publicUrl || !publicUrl.includes('/storage/v1/object/public/photos/')) return null;
-    const marker = '/storage/v1/object/public/photos/';
-    const idx = publicUrl.indexOf(marker);
-    if (idx === -1) return null;
-    const path = publicUrl.substring(idx + marker.length);
-    return path.startsWith(userId + '/') ? path : null;
+    try { return publicUrl ? privateMediaPath(publicUrl, userId) : null; } catch { return null; }
 };
 
 /** Convertit une data URL (`data:...;base64,...`) en Blob. */

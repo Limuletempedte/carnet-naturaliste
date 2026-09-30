@@ -1,4 +1,6 @@
 import { captureSessionContext, assertSessionContext, isSessionCurrent } from '../services/sessionScope';
+import { usePrivateMedia } from '../hooks/usePrivateMedia';
+import { registerPendingMedia, releasePendingMedia } from '../services/privateMediaService';
 import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { TAXON_LOGOS } from '../constants';
 import { Observation, TaxonomicGroup, Status, Protocol, Sexe, Age, ObservationCondition, Comportement, WeatherCondition, Habitat, Phenology } from '../types';
@@ -38,6 +40,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const [showAdvancedLocation, setShowAdvancedLocation] = useState(false);
     const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
     const [photoFile, setPhotoFile] = useState<Blob | null>(null);
+    const privatePhoto = usePrivateMedia(formData.photo);
+    const privateSound = usePrivateMedia(formData.sound);
     const { observerInput, setObserverInput, addObservers, removeObserver } = useObserverTags(setFormData);
 
     const [isUploading, setIsUploading] = useState(false);
@@ -116,7 +120,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     useEffect(() => {
         const urls = blobUrlsRef.current;
         return () => {
-            urls.forEach(url => URL.revokeObjectURL(url));
+            urls.forEach(releasePendingMedia);
             urls.clear();
         };
     }, []);
@@ -299,14 +303,15 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             }
             try {
                 const compressedBlob = await compressImage(files[0]);
+                if (!formSession || !isSessionCurrent(formSession)) return;
                 setPhotoFile(compressedBlob);
 
                 // Revoke previous preview URL to prevent memory leak
                 if (formData.photo?.startsWith('blob:')) {
-                    URL.revokeObjectURL(formData.photo);
+                    releasePendingMedia(formData.photo);
                 }
                 // Create preview URL
-                const previewUrl = URL.createObjectURL(compressedBlob);
+                const previewUrl = registerPendingMedia(compressedBlob, formSession).url;
                 setFormData(prev => ({ ...prev, photo: previewUrl }));
             } catch (error) {
                 logger.error("Erreur lors de la compression:", error);
@@ -821,12 +826,12 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             <div>
                                 <label htmlFor="photo" className={labelClass}>Photo (perso)</label>
                                 <input type="file" id="photo" name="photo" accept="image/*" onChange={handleFileChange} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-nature-green/10 file:text-nature-green-text hover:file:bg-nature-green/20 transition cursor-pointer" />
-                                {formData.photo && <img src={formData.photo} alt="Aperçu" className="mt-4 h-32 w-32 object-cover rounded-2xl shadow-md ring-1 ring-black/5" />}
+                                {privatePhoto && <img src={privatePhoto} alt="Aperçu" className="mt-4 h-32 w-32 object-cover rounded-2xl shadow-md ring-1 ring-black/5" />}
                             </div>
                             <div className={formData.sound ? '' : 'opacity-50 pointer-events-none'}>
                                 <label className={labelClass}>Son</label>
                                 {formData.sound ? (
-                                    <audio controls src={formData.sound} className="mt-2 w-full rounded-full shadow-sm"></audio>
+                                    <audio controls src={privateSound} className="mt-2 w-full rounded-full shadow-sm"></audio>
                                 ) : (
                                     <p className="text-xs text-gray-400 italic mt-1">Enregistrement sonore — bientôt disponible</p>
                                 )}

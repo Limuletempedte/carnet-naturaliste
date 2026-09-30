@@ -9,6 +9,7 @@ import {
 import { bindSessionCoordination, getSessionGeneration, getSessionUserId, captureSessionContext } from '../services/sessionScope';
 import { clearEventLog } from '../utils/eventLog';
 import { logger } from '../utils/logger';
+import '../services/privateMediaService';
 
 const CACHED_SESSION_KEY = 'cached_auth_session';
 const CACHED_SESSION_TTL_MS = 2 * 24 * 60 * 60 * 1000;

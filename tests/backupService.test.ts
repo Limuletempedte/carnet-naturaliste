@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
+import { setSessionIdentity } from '../services/sessionScope';
+vi.mock('../supabaseClient', () => ({ supabase: { storage: { from: () => ({ download: async () => ({ data: { size: 3, type: 'image/jpeg', arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }, error: null }) }) } } }));
 import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 
 const saveAsMock = vi.fn();
@@ -34,13 +36,15 @@ const makeObservation = () => ({
     observationCondition: ObservationCondition.UNKNOWN,
     comportement: Comportement.UNKNOWN,
     weather: WeatherCondition.UNKNOWN,
-    photo: 'https://example.com/image.jpg',
+    photo: 'https://fixture.supabase.co/storage/v1/object/public/photos/user-1/photos/image.jpg',
     wikipediaImage: undefined,
     sound: undefined
 });
 
 describe('backupService.createBackup', () => {
     beforeEach(() => {
+        localStorage.clear(); setSessionIdentity('user-1');
+        vi.stubEnv('VITE_SUPABASE_URL', 'https://fixture.supabase.co');
         saveAsMock.mockReset();
         vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 })));
     });
@@ -66,6 +70,9 @@ describe('backupService.createBackup', () => {
         expect(fileNames).toContain('data.csv');
         expect(fileNames).toContain('backup_manifest.json');
         expect(fileNames.some(name => name.startsWith('images/'))).toBe(true);
+        const { readBackupZip } = await import('../services/backupService');
+        const restored = await readBackupZip(new File([savedBlob], 'backup.zip'));
+        expect(restored.observations[0].photo).toMatch(/^data:image\/jpeg;base64,/);
     });
 
     it('neutralizes CSV formula injection payloads in exported CSV', async () => {

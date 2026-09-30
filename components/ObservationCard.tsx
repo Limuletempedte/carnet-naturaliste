@@ -1,8 +1,9 @@
 import React from 'react';
+import { usePrivateMedia } from '../hooks/usePrivateMedia';
 import { Observation } from '../types';
 import { TAXON_LOGOS } from '../constants';
 import { isoToFrDisplay } from '../utils/dateUtils';
-import { isSafeImageUrl } from '../utils/urlUtils';
+import { isPublicEncyclopediaImage } from '../utils/urlUtils';
 import { PawIcon, MapPinIcon, CalendarIcon } from './icons';
 
 interface ObservationCardProps {
@@ -27,6 +28,7 @@ const getStatusBadgeClass = (status: string): string => {
 };
 
 const ObservationCard: React.FC<ObservationCardProps> = React.memo(({ observation, onView, onEdit, onDelete, selected, onToggle }) => {
+    const photo = usePrivateMedia(observation.photo);
     return (
         <div className={`bg-white/60 dark:bg-nature-dark-surface/60 backdrop-blur-md rounded-2xl p-4 shadow-sm border border-white/20 dark:border-white/5 mb-4 relative overflow-hidden group ${selected ? 'ring-2 ring-nature-green bg-nature-green/5' : ''}`}>
             <div className="flex items-start gap-4">
@@ -52,9 +54,9 @@ const ObservationCard: React.FC<ObservationCardProps> = React.memo(({ observatio
                 >
                     {/* Image or Icon */}
                     <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 dark:bg-black/20 relative">
-                        {observation.photo && isSafeImageUrl(observation.photo) ? (
-                            <img src={observation.photo} alt={observation.speciesName} loading="lazy" className="w-full h-full object-cover" />
-                        ) : observation.wikipediaImage && isSafeImageUrl(observation.wikipediaImage) ? (
+                        {photo ? (
+                            <img src={photo} alt={observation.speciesName} loading="lazy" className="w-full h-full object-cover" />
+                        ) : observation.wikipediaImage && isPublicEncyclopediaImage(observation.wikipediaImage) ? (
                             <img src={observation.wikipediaImage} alt={observation.speciesName} loading="lazy" className="w-full h-full object-cover" />
                         ) : (
                             <div className="w-full h-full flex items-center justify-center text-3xl opacity-50">

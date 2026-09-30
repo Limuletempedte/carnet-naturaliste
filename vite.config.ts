@@ -1,23 +1,8 @@
 
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const buildSupabaseStoragePattern = (supabaseUrl?: string): RegExp | null => {
-  if (!supabaseUrl) return null;
-
-  try {
-    const hostname = new URL(supabaseUrl).hostname;
-    if (!hostname) return null;
-
-    return new RegExp(`^https://${escapeRegex(hostname)}/storage/v1/object/public/.*`, 'i');
-  } catch {
-    return null;
-  }
-};
 
 type RuntimeCachingRule = {
   urlPattern: RegExp | (({ url }: { url: URL }) => boolean);
@@ -34,9 +19,7 @@ type RuntimeCachingRule = {
   };
 };
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
-  const supabaseStoragePattern = buildSupabaseStoragePattern(env.VITE_SUPABASE_URL);
+export default defineConfig(() => {
   const runtimeCaching: RuntimeCachingRule[] = [
     {
       // Audit v2 (lot C) : les chunks vendeur lourds sont exclus du precache
@@ -76,24 +59,6 @@ export default defineConfig(({ mode }) => {
     }
   ];
 
-  if (supabaseStoragePattern) {
-    runtimeCaching.push({
-      urlPattern: supabaseStoragePattern,
-      handler: 'StaleWhileRevalidate' as const,
-      options: {
-        cacheName: 'supabase-storage-cache',
-        expiration: {
-          maxEntries: 50,
-          maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-        },
-        cacheableResponse: {
-          statuses: [0, 200]
-        }
-      }
-    });
-  } else {
-    console.warn('[vite-config] Supabase storage cache rule disabled: invalid or missing VITE_SUPABASE_URL.');
-  }
 
   return {
     plugins: [
@@ -169,12 +134,13 @@ export default defineConfig(({ mode }) => {
           ]
         },
         workbox: {
+          importScripts: ['/sw-private-media-cleanup.js'],
           maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MiB to accommodate the large main bundle
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           // PE-11: Exclude heavy vendor chunks from precache (loaded on-demand via runtime cache)
           globIgnores: ['**/Logo/*', '**/vendor-exceljs*', '**/vendor-jspdf*', '**/vendor-html2canvas*', '**/vendor-jszip*', '**/vendor-file-saver*'],
           // CO-08: page de fallback offline servie quand une navigation echoue
-          navigateFallback: '/offline.html',
+          navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
           runtimeCaching
         }

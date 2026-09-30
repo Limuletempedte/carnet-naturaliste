@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { extractStoragePath, parseJson, scopedKey, dataUrlToBlob } from '../services/storage/storageHelpers';
 import { isDuplicateKeyError, isRecoverableNetworkError } from '../services/storage/storagePredicates';
 
 describe('storageHelpers', () => {
     describe('extractStoragePath', () => {
+        beforeEach(() => vi.stubEnv('VITE_SUPABASE_URL', 'https://x.supabase.co'));
         it('retourne le chemin scopé user pour une URL publique valide', () => {
             const url = 'https://x.supabase.co/storage/v1/object/public/photos/user-1/photos/abc.jpg';
             expect(extractStoragePath(url, 'user-1')).toBe('user-1/photos/abc.jpg');
