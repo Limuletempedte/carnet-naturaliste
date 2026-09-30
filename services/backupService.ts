@@ -4,12 +4,11 @@ import { escapeCsvCell } from '../utils/csvUtils';
 import { isSensitiveSpecies } from '../utils/gpsPrivacy';
 import { logger } from '../utils/logger';
 import { fetchWithTimeout } from '../utils/fetchUtils';
-import { parseJsonImport } from './jsonImportValidation';
-import type { ImportResult } from './excelImportService';
 import { getEventLog } from '../utils/eventLog';
 import { downloadPrivateMedia } from './privateMediaService';
 import { assertSessionContext, captureSessionContext, type SessionContext } from './sessionScope';
 import { isPublicEncyclopediaImage } from '../utils/urlUtils';
+import { isPendingMedia } from './pendingMediaStore';
 
 export interface BackupResult {
     fileName: string;
@@ -305,6 +304,12 @@ export const createBackup = async (
         const { url, kind } = media;
         const targetFolder = kind === 'image' ? imgFolder : soundFolder;
         if (!targetFolder) return;
+        if (media.private && isPendingMedia(url)) {
+            const blob = await downloadPrivateMedia(url, context);
+            const buffer = await blob.arrayBuffer(); assertSessionContext(context);
+            handleSuccess(kind, targetFolder, deriveImageBaseName(url, index), buffer, false);
+            return;
+        }
         const classified = classifyMediaUrl(url);
         if (classified === 'data') {
             const decoded = decodeDataUrl(url);
@@ -438,136 +443,4 @@ export const createBackup = async (
         skippedImages: !includeImages,
         skippedSounds: !includeSounds,
     };
-};
-
-/** SR-01 : taille maximale d'un backup ZIP acceptée pour restauration. */
-export const BACKUP_RESTORE_MAX_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB
-
-const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error('FileReader error'));
-    reader.readAsDataURL(blob);
-});
-
-const mediaFilenameCandidates = (url: string | undefined): string[] => {
-    if (!url) return [];
-    if (url.startsWith('data:') || url.startsWith('blob:')) return [];
-    try {
-        const parsed = new URL(url);
-        const raw = parsed.pathname.split('/').pop() || '';
-        const cleaned = sanitizeFileName(raw.split('?')[0]);
-        return cleaned ? [cleaned] : [];
-    } catch {
-        // Relative or non-URL — try last segment
-        const raw = url.split('/').pop() || '';
-        const cleaned = sanitizeFileName(raw.split('?')[0]);
-        return cleaned ? [cleaned] : [];
-    }
-};
-
-/**
- * SR-01 : relit un backup ZIP créé par `createBackup` et prépare un `ImportResult`
- * consommable par le flux d'import existant (ImportPreviewDialog + buildImportPersistencePlan).
- *
- * Les fichiers `images/*` et `sounds/*` référencés par les observations sont
- * convertis en `data:` URL : la queue offline (INSERT/UPDATE) ré-uploadera
- * automatiquement les médias vers Supabase Storage à la prochaine sync (voir SI-16).
- */
-export const readBackupZip = async (file: File): Promise<ImportResult> => {
-    if (file.size > BACKUP_RESTORE_MAX_SIZE_BYTES) {
-        const mb = Math.round(file.size / (1024 * 1024));
-        throw new Error(`Archive trop volumineuse (${mb} Mo). Limite : ${Math.round(BACKUP_RESTORE_MAX_SIZE_BYTES / (1024 * 1024))} Mo.`);
-    }
-
-    const { default: JSZip } = await import('jszip');
-    let zip: import('jszip');
-    try {
-        zip = await JSZip.loadAsync(file);
-    } catch (err) {
-        logger.error('[backupService] ZIP illisible:', err);
-        throw new Error('Archive ZIP invalide ou corrompue.');
-    }
-
-    const dataEntry = zip.file('data.json');
-    if (!dataEntry) {
-        throw new Error('Archive ZIP invalide : data.json manquant.');
-    }
-    const jsonText = await dataEntry.async('string');
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(jsonText);
-    } catch (err) {
-        logger.error('[backupService] data.json corrompu:', err);
-        throw new Error('Archive ZIP : data.json corrompu.');
-    }
-
-    // Pré-charger un index des médias pour résolution par nom de fichier
-    const imageFiles = new Map<string, import('jszip').JSZipObject>();
-    const soundFiles = new Map<string, import('jszip').JSZipObject>();
-    zip.forEach((path, entry) => {
-        if (entry.dir) return;
-        if (path.startsWith('images/')) imageFiles.set(path.slice('images/'.length), entry);
-        else if (path.startsWith('sounds/')) soundFiles.set(path.slice('sounds/'.length), entry);
-    });
-
-    // Validation des observations via le parseur JSON existant
-    const importResult = parseJsonImport(parsed);
-
-    // Le validateur JSON (`asOptionalUrl`) ne conserve que http(s) — les data: URLs
-    // légitimes d'un backup sont donc réintroduites ici par correspondance d'ID.
-    const rawById = new Map<string, Record<string, unknown>>();
-    if (Array.isArray(parsed)) {
-        for (const row of parsed) {
-            if (row && typeof row === 'object' && typeof (row as { id?: unknown }).id === 'string') {
-                rawById.set((row as { id: string }).id, row as Record<string, unknown>);
-            }
-        }
-    }
-    const isAllowedDataUrl = (value: unknown, mimePrefix: 'image/' | 'audio/'): value is string => {
-        if (typeof value !== 'string') return false;
-        return value.startsWith(`data:${mimePrefix}`);
-    };
-    for (const obs of importResult.observations) {
-        const raw = rawById.get(obs.id);
-        if (!raw) continue;
-        if (!obs.photo && isAllowedDataUrl(raw.photo, 'image/')) obs.photo = raw.photo;
-        if (!obs.wikipediaImage && isAllowedDataUrl(raw.wikipediaImage, 'image/')) obs.wikipediaImage = raw.wikipediaImage;
-        if (!obs.sound && isAllowedDataUrl(raw.sound, 'audio/')) obs.sound = raw.sound;
-    }
-
-    // Résolution des médias : URL → data: URL si un fichier local correspond
-    const resolveMedia = async (
-        url: string | undefined,
-        index: Map<string, import('jszip').JSZipObject>,
-    ): Promise<string | undefined> => {
-        if (!url) return url;
-        if (url.startsWith('data:')) return url; // déjà inline
-        const candidates = mediaFilenameCandidates(url);
-        for (const name of candidates) {
-            const entry = index.get(name);
-            if (entry) {
-                try {
-                    const blob = await entry.async('blob');
-                    const extension = name.split('.').pop()?.toLowerCase() ?? '';
-                    const mime = ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
-                        avif: 'image/avif', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm',
-                        m4a: 'audio/x-m4a', mp4: 'audio/mp4' } as Record<string, string>)[extension];
-                    if (!mime) throw new Error('Format du média restauré non reconnu.');
-                    return await blobToDataUrl(blob.slice(0, blob.size, mime));
-                } catch (err) {
-                    logger.warn(`[backupService] Impossible de lire ${name} depuis le ZIP:`, err);
-                }
-            }
-        }
-        return url; // fallback : conserver l'URL d'origine
-    };
-
-    for (const obs of importResult.observations) {
-        obs.photo = await resolveMedia(obs.photo, imageFiles);
-        obs.wikipediaImage = await resolveMedia(obs.wikipediaImage, imageFiles);
-        obs.sound = await resolveMedia(obs.sound, soundFiles);
-    }
-
-    return importResult;
 };

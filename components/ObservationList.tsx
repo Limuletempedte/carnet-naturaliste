@@ -5,7 +5,7 @@ import ObservationRow from './ObservationRow';
 import ObservationCard from './ObservationCard';
 import { TAXON_LOGOS } from '../constants';
 import { ImportResult } from '../services/excelImportService';
-import { parseJsonImport } from '../services/jsonImportValidation';
+import { parseImportInWorker } from '../services/importWorkerClient';
 import ImportPreviewDialog from './ImportPreviewDialog';
 import { ToastType } from './ToastContainer';
 import ExportScopeDialog from './ExportScopeDialog';
@@ -80,6 +80,9 @@ const ObservationList: React.FC<ObservationListProps> = ({
     const fileInputRef = useRef<HTMLInputElement>(null);
     const tableRef = useRef<HTMLDivElement>(null);
     const [isParsingImport, setIsParsingImport] = React.useState(false);
+    const importController = useRef<AbortController | null>(null);
+    const releasePreview = useRef<(() => void) | undefined>(undefined);
+    useEffect(() => () => { importController.current?.abort(); releasePreview.current?.(); }, []);
     const [previewImportResult, setPreviewImportResult] = React.useState<ImportResult | null>(null);
     const [previewImportFileName, setPreviewImportFileName] = React.useState('');
     const [importConflictMode, setImportConflictMode] = React.useState<ImportConflictMode>('merge');
@@ -160,6 +163,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
     };
 
     const handleImportClick = () => {
+        if (isParsingImport) { importController.current?.abort(); return; }
         fileInputRef.current?.click();
     };
 
@@ -168,24 +172,12 @@ const ObservationList: React.FC<ObservationListProps> = ({
         if (file) {
             try {
                 setIsParsingImport(true);
-                let importResult: ImportResult;
-
-                const lowerName = file.name.toLowerCase();
-                if (lowerName.endsWith('.json')) {
-                    const text = await file.text();
-                    const parsed = JSON.parse(text) as unknown;
-                    importResult = parseJsonImport(parsed);
-                } else if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
-                    const { parseExcel } = await import('../services/excelImportService');
-                    importResult = await parseExcel(file);
-                } else if (lowerName.endsWith('.zip')) {
-                    // SR-01 : restauration depuis un backup ZIP
-                    const { readBackupZip } = await import('../services/backupService');
-                    importResult = await readBackupZip(file);
-                } else {
-                    onToast('warning', "Format non supporté. Utilisez JSON, Excel (.xlsx, .xls) ou un backup ZIP.");
-                    return;
-                }
+                importController.current?.abort();
+                releasePreview.current?.();
+                const controller = new AbortController(); importController.current = controller;
+                const preview = await parseImportInWorker(file, controller.signal);
+                releasePreview.current = preview.release;
+                const importResult = preview.result;
 
                 if (importResult.report.warnings.length > 0) {
                     logger.warn(`Import: ${importResult.report.warnings.length} warning(s)`, importResult.report.warnings);
@@ -201,7 +193,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 setPreviewImportResult(importResult);
             } catch (error) {
                 logger.error("Erreur d'import:", error);
-                onToast('error', isChunkLoadError(error) ? CHUNK_LOAD_USER_MESSAGE : "Erreur lors de l'importation du fichier. Vérifiez le format.");
+                onToast('error', isChunkLoadError(error) ? CHUNK_LOAD_USER_MESSAGE : (error instanceof Error ? error.message : "Fichier refusé."));
             } finally {
                 setIsParsingImport(false);
             }
@@ -212,6 +204,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
     };
 
     const handleCancelPreview = () => {
+        releasePreview.current?.(); releasePreview.current = undefined;
         setPreviewImportResult(null);
         setPreviewImportFileName('');
         setImportConflictMode('merge');
@@ -248,6 +241,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
         }
         try {
             await onImport(previewImportResult, { conflictMode: importConflictMode });
+            releasePreview.current?.(); releasePreview.current = undefined;
             setPreviewImportResult(null);
             setPreviewImportFileName('');
             setImportConflictMode('merge');
@@ -361,10 +355,10 @@ const ObservationList: React.FC<ObservationListProps> = ({
                         <div className="hidden md:flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
                             <button
                                 onClick={handleImportClick}
-                                disabled={isParsingImport}
+
                                 className="h-8 px-3 rounded-lg text-xs font-medium bg-gray-500 text-white disabled:opacity-60 flex-shrink-0 inline-flex items-center"
                             >
-                                {isParsingImport ? 'Analyse...' : 'Importer'}
+                                {isParsingImport ? 'Annuler analyse' : 'Importer'}
                             </button>
                             <button
                                 onClick={() => openExportDialog('json')}
@@ -409,10 +403,10 @@ const ObservationList: React.FC<ObservationListProps> = ({
                         <div className="flex md:hidden gap-2 pb-0.5">
                             <button
                                 onClick={handleImportClick}
-                                disabled={isParsingImport}
+
                                 className="h-8 px-3 rounded-lg text-xs font-medium bg-gray-500 text-white disabled:opacity-60 inline-flex items-center"
                             >
-                                {isParsingImport ? 'Analyse...' : 'Importer'}
+                                {isParsingImport ? 'Annuler analyse' : 'Importer'}
                             </button>
                             <div className="flex-1">
                                 <button
@@ -601,10 +595,10 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             />
                             <button
                                 onClick={handleImportClick}
-                                disabled={isParsingImport}
+
                                 className={`${secondaryButtonClass} bg-gray-500/80 hover:bg-gray-600 backdrop-blur-md disabled:opacity-60 disabled:cursor-not-allowed`}
                             >
-                                {isParsingImport ? 'Analyse...' : 'Importer'}
+                                {isParsingImport ? 'Annuler analyse' : 'Importer'}
                             </button>
                             <button onClick={() => openExportDialog('json')} disabled={isExporting} className={`${secondaryButtonClass} bg-blue-500/80 hover:bg-blue-600 backdrop-blur-md disabled:opacity-60`}>JSON</button>
                             <button onClick={() => openExportDialog('excel')} disabled={isExporting} className={`${secondaryButtonClass} bg-emerald-500/80 hover:bg-emerald-600 backdrop-blur-md disabled:opacity-60`}>Excel</button>
