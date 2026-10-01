@@ -49,7 +49,7 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 
 ## Tests
 - Framework : Vitest + Testing Library React
-- 66 fichiers de tests (459 tests) couvrant composants, services et utils
+- Dernière validation du 1er octobre 2026 : 73 fichiers de tests (514 tests) couvrant composants, services et utils
 - Lancer `npm run test:run` pour valider les changements
 
 ## Deploiement et pieges a connaitre
@@ -62,7 +62,13 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
   verifier que les bornes basses declarees dans `package.json` supportent la
   nouvelle version (peerDependencies), sinon `npm audit fix` echoue en ERESOLVE.
 - ⚠️ **Ne pas surcharger `brace-expansion`** en override global : la v5 change sa
-  forme d'export et casse ESLint (`expand is not a function`). Le correctif des
-  alertes qui en decoulent passe par la montee majeure d'ESLint.
+  forme d'export et casse les anciens consommateurs (`expand is not a function`).
+  Le correctif livré limite l'override v5 à `minimatch@10` ; les branches 1/2
+  restent utilisées par les anciennes API. Voir `docs/audits/v5/DEPENDANCES-2026-10-01.md`.
 - **Documents legaux** : ajouter un service tiers implique de mettre a jour
   `components/LegalPages.tsx` ET `docs/legal/` (registre des traitements).
+
+## Reprise et suivi
+- Lire `docs/ops/ETAT-REPRISE.md` pour les travaux terminés, les limites et la suite.
+- Conserver les audits datés comme preuves historiques ; ne pas les présenter comme l'état actuel.
+- Aucune fusion automatique. Ne pas rejouer la régularisation des migrations déjà effectuée.
