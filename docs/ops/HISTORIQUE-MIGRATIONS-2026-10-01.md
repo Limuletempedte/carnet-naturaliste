@@ -1,5 +1,11 @@
 # Historique des migrations Supabase — 1er octobre 2026
 
+> **Mise à jour à 15 h 02 (Europe/Paris)** : la régularisation des quatre entrées
+> a été effectuée et vérifiée. Les dix versions sont alignées. Voir le
+> [compte rendu final](REGULARISATION-MIGRATIONS-2026-10-01.md).
+> Le diagnostic et la procédure ci-dessous décrivent l'état antérieur à cette
+> opération ; ils sont conservés comme trace de la préparation, pas à réexécuter.
+
 ## Résultat et périmètre
 
 Comparaison en lecture seule du projet `xowiezzqehadcfnbkijo` avec
