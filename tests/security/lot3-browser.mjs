@@ -79,6 +79,40 @@ try {
     await page.locator('form button[type=submit]').click();
     await page.getByRole('button', { name: "Voir l'observation de PRIVE_A", exact: true }).waitFor();
     await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    // Vérification optionnelle des vraies bibliothèques d'export après mise à jour.
+    if (process.env.CHECK_DEPENDENCY_EXPORTS === '1') {
+        for (const format of ['Excel', 'PDF']) {
+            await page.getByRole('button', { name: format, exact: true }).click();
+            const downloadPromise = page.waitForEvent('download');
+            await page.getByRole('button', { name: /^Exporter toutes les observations/ }).click();
+            const download = await downloadPromise;
+            const bytes = await fs.readFile(await download.path());
+            if (format === 'PDF') {
+                assert.equal(bytes.subarray(0, 5).toString(), '%PDF-');
+                assert(bytes.length > 1000);
+                assert(bytes.toString().includes('/Type /Page'));
+            } else {
+                const { default: ExcelJS } = await import('exceljs');
+                const book = new ExcelJS.Workbook(); await book.xlsx.load(bytes);
+                assert.equal(book.worksheets[0].getCell('B2').value, 'PRIVE_A');
+                assert.equal(book.worksheets[0].rowCount, 2);
+            }
+            passed(`Export ${format} réel téléchargé et contenu vérifié`);
+        }
+        await page.getByRole('tab', { name: 'Stats', exact: true }).click();
+        await page.getByRole('button', { name: 'Exporter Stats (ZIP: PDF statique + HTML interactif)', exact: true }).click();
+        const downloadPromise = page.waitForEvent('download');
+        await page.getByRole('button', { name: 'Lancer export', exact: true }).click();
+        const { default: JSZip } = await import('jszip');
+        const zip = await JSZip.loadAsync(await fs.readFile(await (await downloadPromise).path()));
+        const pdf = await zip.file('stats-report.pdf').async('nodebuffer');
+        assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+        assert(pdf.toString().includes('/Subtype /Image'));
+        const manifest = JSON.parse(await zip.file('manifest.json').async('string'));
+        assert.equal(manifest.totalObservations, 1);
+        passed('ZIP statistiques réel : PDF avec images html2canvas, manifeste et observations cohérents');
+        await page.getByRole('tab', { name: 'Liste', exact: true }).click();
+    }
     const input = () => page.locator('input[type=file][accept=".json,.xlsx,.xls,.zip"]').first();
     const row = { id: randomUUID(), speciesName: 'IMPORT_FICTIF', latinName: '', taxonomicGroup: 'Oiseaux', date: '2026-09-19', time: '10:00', count: 1,
         location: 'Bois fictif', gps: { lat: 48.1, lon: 2.1 }, municipality: '', department: '', country: 'France', altitude: null,

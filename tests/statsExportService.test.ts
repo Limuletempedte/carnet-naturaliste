@@ -25,7 +25,7 @@ const jsPDFInstance = {
     addPage: vi.fn(),
     output: vi.fn(() => pdfBlobMock)
 };
-vi.mock('jspdf', () => ({ jsPDF: vi.fn(() => jsPDFInstance) }));
+vi.mock('jspdf', () => ({ jsPDF: vi.fn(function () { return jsPDFInstance; }) }));
 
 // ── Fixture ───────────────────────────────────────────────────────────────────
 
