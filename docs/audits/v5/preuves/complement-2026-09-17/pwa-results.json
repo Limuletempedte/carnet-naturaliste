@@ -1,0 +1,664 @@
+{
+  "date": "2026-09-17T12:32:16.671Z",
+  "commit": "cf79cebd88efb6219a428a1522e528f58d842c07",
+  "sw_sha256": "0ee7adc7edf18dbfb7a530f28f3c9bd57714323102f6eb39e4747bd91812a9f5",
+  "sourceUnmodified": true,
+  "transport": "Local static bundle. Auth/REST/media fixtures via browserContext.route including worker-owned requests; all other hosts blocked, DNS disabled except loopback. No TLS bypass.",
+  "scope": "Cache behavior only; no claim about real Auth or backend authorization. True browser offline state used; persistent profile reopened.",
+  "results": [
+    {
+      "test": "Worker de production actif",
+      "ok": true,
+      "evidence": {
+        "entries": [],
+        "controlled": true,
+        "online": true
+      },
+      "category": "control"
+    },
+    {
+      "test": "Chargement A image",
+      "ok": true,
+      "evidence": {
+        "loaded": true,
+        "online": true,
+        "naturalWidth": 1,
+        "fromServiceWorker": false
+      },
+      "category": "control"
+    },
+    {
+      "test": "Chargement A audio",
+      "ok": true,
+      "evidence": {
+        "status": 200,
+        "bytes": 46,
+        "sha256": "4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91",
+        "fromServiceWorker": true,
+        "loaded": true,
+        "online": true,
+        "interpretation": "Audio bytes fetched; native playback is blocked by the unchanged CSP media-src fallback."
+      },
+      "category": "control"
+    },
+    {
+      "test": "Cache réellement rempli par Workbox",
+      "ok": true,
+      "evidence": {
+        "entries": [
+          {
+            "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/fictive.png",
+            "type": "opaque",
+            "status": 0
+          },
+          {
+            "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/sounds/fictive.wav",
+            "type": "cors",
+            "status": 200
+          }
+        ],
+        "controlled": true,
+        "online": true
+      },
+      "category": "control"
+    },
+    {
+      "test": "Transport du service worker intercepté",
+      "ok": true,
+      "evidence": [
+        {
+          "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/fictive.png",
+          "owner": "service-worker",
+          "action": "fixture"
+        },
+        {
+          "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/sounds/fictive.wav",
+          "owner": "service-worker",
+          "action": "fixture"
+        }
+      ],
+      "category": "control"
+    },
+    {
+      "test": "A lit hors ligne image",
+      "ok": true,
+      "evidence": {
+        "loaded": true,
+        "online": false,
+        "naturalWidth": 1,
+        "fromServiceWorker": false
+      },
+      "category": "control"
+    },
+    {
+      "test": "A lit hors ligne audio",
+      "ok": true,
+      "evidence": {
+        "status": 200,
+        "bytes": 46,
+        "sha256": "4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91",
+        "fromServiceWorker": true,
+        "loaded": true,
+        "online": false,
+        "interpretation": "Audio bytes fetched; native playback is blocked by the unchanged CSP media-src fallback."
+      },
+      "category": "control"
+    },
+    {
+      "test": "Témoin non mis en cache échoue hors ligne",
+      "ok": true,
+      "evidence": {
+        "error": "TypeError",
+        "fromServiceWorker": false
+      },
+      "category": "control"
+    },
+    {
+      "test": "Sans session média A encore lisible",
+      "ok": true,
+      "evidence": {
+        "loaded": true,
+        "online": false,
+        "naturalWidth": 1,
+        "fromServiceWorker": false
+      },
+      "category": "finding"
+    },
+    {
+      "test": "B accède au média A hors ligne image",
+      "ok": true,
+      "evidence": {
+        "loaded": true,
+        "online": false,
+        "naturalWidth": 1,
+        "fromServiceWorker": false
+      },
+      "category": "finding"
+    },
+    {
+      "test": "B accède au média A hors ligne audio",
+      "ok": true,
+      "evidence": {
+        "status": 200,
+        "bytes": 46,
+        "sha256": "4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91",
+        "fromServiceWorker": true,
+        "loaded": true,
+        "online": false,
+        "interpretation": "Audio bytes fetched; native playback is blocked by the unchanged CSP media-src fallback."
+      },
+      "category": "finding"
+    },
+    {
+      "test": "Contrôle positif média B hors ligne",
+      "ok": true,
+      "evidence": {
+        "loaded": true,
+        "online": false,
+        "naturalWidth": 1,
+        "fromServiceWorker": false
+      },
+      "category": "control"
+    },
+    {
+      "test": "Image A après rechargement hors ligne de B",
+      "ok": true,
+      "evidence": {
+        "loaded": true,
+        "online": false,
+        "naturalWidth": 1,
+        "fromServiceWorker": true
+      },
+      "category": "finding"
+    },
+    {
+      "test": "Média A après fermeture et réouverture du profil B image",
+      "ok": true,
+      "evidence": {
+        "loaded": true,
+        "online": false,
+        "naturalWidth": 1,
+        "fromServiceWorker": true
+      },
+      "category": "finding"
+    },
+    {
+      "test": "Média A après fermeture et réouverture du profil B audio",
+      "ok": true,
+      "evidence": {
+        "status": 200,
+        "bytes": 46,
+        "sha256": "4aebda3a657a0d8f532d11ceacb1679081d7bdf7d7d301a53f1096af3580be91",
+        "fromServiceWorker": true,
+        "loaded": true,
+        "online": false,
+        "interpretation": "Audio bytes fetched; native playback is blocked by the unchanged CSP media-src fallback."
+      },
+      "category": "finding"
+    },
+    {
+      "test": "Identité visible après réouverture",
+      "ok": true,
+      "evidence": {
+        "menu": "B\nb"
+      },
+      "category": "control"
+    },
+    {
+      "test": "Octets A affichables par B hors ligne",
+      "ok": true,
+      "evidence": {
+        "knownUrl": true,
+        "syntheticDiagnosticImage": true,
+        "entries": [
+          {
+            "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/fictive.png",
+            "type": "opaque",
+            "status": 0
+          },
+          {
+            "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/sounds/fictive.wav",
+            "type": "cors",
+            "status": 200
+          },
+          {
+            "url": "https://audit.supabase.co/storage/v1/object/public/photos/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/photos/fictive.png",
+            "type": "opaque",
+            "status": 0
+          },
+          {
+            "url": "https://audit.supabase.co/storage/v1/object/public/photos/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/sounds/fictive.wav",
+            "type": "cors",
+            "status": 200
+          }
+        ],
+        "controlled": true,
+        "online": false
+      },
+      "category": "finding"
+    }
+  ],
+  "requests": [
+    {
+      "url": "https://audit.supabase.co/auth/v1/token?grant_type=password",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/auth/v1/user",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/rest/v1/observations?select=*&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&order=date.desc&offset=0&limit=1000",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/fictive.png",
+      "owner": "service-worker",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/sounds/fictive.wav",
+      "owner": "service-worker",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/sounds/fictive.wav",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/fictive.png?uncached=1",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "https://audit.supabase.co/auth/v1/user",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/rest/v1/observations?select=*&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&order=date.desc&offset=0&limit=1000",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/auth/v1/logout?scope=global",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/auth/v1/token?grant_type=password",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/auth/v1/user",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/rest/v1/observations?select=*&user_id=eq.bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb&order=date.desc&offset=0&limit=1000",
+      "owner": "page",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/photos/fictive.png",
+      "owner": "service-worker",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/sounds/fictive.wav",
+      "owner": "service-worker",
+      "action": "fixture"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/sounds/fictive.wav",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Oiseaux.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Mammif%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Mammif%C3%A8res%20marin.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/reptiles.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Amphibiens.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Odonates.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Papillons%20de%20jour.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Papillons%20de%20nuit.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Orthopt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Hym%C3%A9nopt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Fourmis.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Mantes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Cigales.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Punaises.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Col%C3%A9opt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Nevropt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Dipt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Phasmes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Araign%C3%A9es.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Scorpions.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Poissons.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Crustac%C3%A9s.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Branchiopodes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Gast%C3%A9ropodes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Bivalves.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Chiropt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Dermat%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Orchid%C3%A9es.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Botanique%20g%C3%A9n%C3%A9rale.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/lichen.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Champigion.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Arbres.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/photos/fictive.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/fictive.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Mammif%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Mammif%C3%A8res%20marin.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/reptiles.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Amphibiens.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Odonates.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Papillons%20de%20jour.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Papillons%20de%20nuit.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Orthopt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Hym%C3%A9nopt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Fourmis.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Mantes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Cigales.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Punaises.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Col%C3%A9opt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Nevropt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Dipt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Phasmes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Araign%C3%A9es.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Scorpions.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Poissons.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Crustac%C3%A9s.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Branchiopodes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Gast%C3%A9ropodes.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Bivalves.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Chiropt%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Dermat%C3%A8res.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Orchid%C3%A9es.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Botanique%20g%C3%A9n%C3%A9rale.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/lichen.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Champigion.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "http://127.0.0.1:3107/Logo/Arbres.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/photos/fictive.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/photos/fictive.png",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    },
+    {
+      "url": "https://audit.supabase.co/storage/v1/object/public/photos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/sounds/fictive.wav",
+      "owner": "service-worker",
+      "action": "aborted-offline"
+    }
+  ],
+  "profile": "browser-profile-ew8pgD"
+}

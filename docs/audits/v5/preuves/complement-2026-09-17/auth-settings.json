@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-17",
+  "project": "Carnet naturaliste",
+  "project_ref": "xowiezzqehadcfnbkijo",
+  "method": "Lecture seule du tableau de bord Supabase connecté via GitHub; aucun réglage enregistré. Valeurs de champs et interrupteurs visibles, minimum du mot de passe confirmé visuellement.",
+  "settings": {
+    "email_provider": true,
+    "signup_allowed": true,
+    "anonymous_signin": false,
+    "manual_linking": false,
+    "confirm_email": true,
+    "secure_email_change": true,
+    "secure_password_change": false,
+    "require_current_password_when_updating": false,
+    "leaked_password_protection": false,
+    "minimum_password_length_displayed": 6,
+    "password_character_requirements": "aucune option sélectionnée",
+    "email_otp_expiry_seconds": 3600,
+    "email_otp_length": 8,
+    "rate_signup_signin_per_5min_per_ip": 30,
+    "rate_token_refresh_per_5min_per_ip": 150,
+    "rate_token_verify_per_5min_per_ip": 30,
+    "ip_forwarding": false,
+    "single_session_per_user": false,
+    "session_max_hours": 0,
+    "inactivity_timeout": 0,
+    "access_token_expiry_seconds": 3600,
+    "detect_revoke_compromised_refresh_tokens": true,
+    "refresh_token_reuse_interval_seconds": 10,
+    "totp": "Enabled",
+    "max_mfa_factors_per_user": 10,
+    "sms_mfa": "Disabled",
+    "limit_aal1_sessions": true,
+    "aal1_verification_minutes": 15,
+    "site_url": "https://carnet-naturaliste.vercel.app/",
+    "redirect_urls": [
+      "https://carnet-naturaliste.vercel.app/"
+    ],
+    "captcha": false
+  },
+  "plan_limits": [
+    "Leaked password protection : Pro ou supérieur selon interface.",
+    "Limites de durée/inactivité et session unique : Pro ou supérieur selon interface.",
+    "SMS MFA : Pro ou supérieur selon interface."
+  ],
+  "source_paths": [
+    "auth/providers",
+    "auth/providers?provider=Email",
+    "auth/rate-limits",
+    "auth/sessions",
+    "auth/mfa",
+    "auth/url-configuration",
+    "auth/protection"
+  ],
+  "limitations": [
+    "Pas de tentative de connexion hostile en production.",
+    "Les compteurs de limites décrivent les réglages, pas une mesure de résistance sous charge distribuée.",
+    "TOTP disponible ne signifie pas MFA imposée : aucun flux MFA ou contrôle aal2 trouvé dans les sources applicatives examinées."
+  ]
+}

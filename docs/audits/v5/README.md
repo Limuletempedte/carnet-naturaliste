@@ -56,6 +56,7 @@ Pour l’audit fonctionnel ultérieur : retenir l’anomalie Excel des synonymes
 
 ## Documents et suites
 
+- [Complément historique Auth/PWA du 17 septembre](COMPLEMENT-2026-09-17.md) : preuves de la PR #82, conservées avec leur date et leurs limites, avant les corrections.
 - [Régularisation des migrations — 1er octobre 2026](../../ops/REGULARISATION-MIGRATIONS-2026-10-01.md) : dix versions alignées ; opération terminée.
 - [Diagnostic hors ligne et ZIP — 1er octobre 2026](../../ops/DIAGNOSTIC-HORS-LIGNE-2026-10-01.md) : campagne réussie, incidents historiques non reproduits et cause non isolée.
 - [Dépendances — 1er octobre 2026](DEPENDANCES-2026-10-01.md) : qualification des alertes, mises à jour et tests de compatibilité.

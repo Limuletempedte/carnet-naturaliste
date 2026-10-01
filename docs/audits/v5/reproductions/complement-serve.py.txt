@@ -1,0 +1,11 @@
+from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
+from pathlib import Path
+import json
+ROOT=Path(__file__).resolve().parent.parent/'audit-complements'
+HEADERS=json.loads((ROOT/'vercel.json').read_text())['headers'][0]['headers']
+class H(SimpleHTTPRequestHandler):
+ def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT/'dist'),**kw)
+ def end_headers(self):
+  for h in HEADERS:self.send_header(h['key'],h['value'])
+  super().end_headers()
+ThreadingHTTPServer(('127.0.0.1',3107),H).serve_forever()

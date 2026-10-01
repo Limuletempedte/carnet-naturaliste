@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-01",
+  "source_pr": 82,
+  "source_commit": "354ffc7245547aed24142910776514ebe37a2fb3",
+  "base_main": "bd13548c9539c55a202c2c508253ccf949b61dc9",
+  "files": [
+    {
+      "path": "docs/audits/v5/COMPLEMENT-2026-09-17.md",
+      "source_sha256": "b396c300c45099789eac76d11855892c51c0563cdd70c319f5fb816b160471db",
+      "preserved_byte_for_byte": false,
+      "change": "Avertissement historique ajouté"
+    },
+    {
+      "path": "docs/audits/v5/preuves/complement-2026-09-17/auth-settings.json",
+      "source_sha256": "ce96a93685cb24824593a53a12f1b33d04201d1227458415ec2caaaf90c0a54a",
+      "preserved_byte_for_byte": true,
+      "change": "Aucun"
+    },
+    {
+      "path": "docs/audits/v5/preuves/complement-2026-09-17/pwa-b-offline.png",
+      "source_sha256": "d0346a0e75830d0379bebdb0c3c84b586b0e6d2977fd3b5ee1fb099391915e89",
+      "preserved_byte_for_byte": true,
+      "change": "Aucun"
+    },
+    {
+      "path": "docs/audits/v5/preuves/complement-2026-09-17/pwa-results.json",
+      "source_sha256": "968ed91c8c592b8dc72d1fa8bd4f43e3b63f91bacf6fd0fe27b29b1b352173ac",
+      "preserved_byte_for_byte": true,
+      "change": "Aucun"
+    },
+    {
+      "path": "docs/audits/v5/preuves/complement-2026-09-17/pwa-tests.txt",
+      "source_sha256": "720f86dad1e5adef3850da1e5ba6ac9c502a2dcd8d0d08948c069d349ee65418",
+      "preserved_byte_for_byte": true,
+      "change": "Aucun"
+    },
+    {
+      "path": "docs/audits/v5/preuves/complement-2026-09-17/sw-tested.js.txt",
+      "source_sha256": "0ee7adc7edf18dbfb7a530f28f3c9bd57714323102f6eb39e4747bd91812a9f5",
+      "preserved_byte_for_byte": true,
+      "change": "Aucun"
+    },
+    {
+      "path": "docs/audits/v5/reproductions/README-complement-PWA.md",
+      "source_sha256": "d49152351755899655850f1fb8c2c7d23e929fab3a6988490de281ea1a25b06c",
+      "preserved_byte_for_byte": false,
+      "change": "Avertissement historique ajouté"
+    },
+    {
+      "path": "docs/audits/v5/reproductions/complement-pwa-tests.mjs.txt",
+      "source_sha256": "d0bf3b6d66ab2ee7e106589de8c096d69a02e38296f5a5f44c5feeb9076851a3",
+      "preserved_byte_for_byte": true,
+      "change": "Aucun"
+    },
+    {
+      "path": "docs/audits/v5/reproductions/complement-serve.py.txt",
+      "source_sha256": "7f4782d5fe3cdf12deb1a3fd145af40147ca5e92aafd36e9acf4052ab2c8e7a1",
+      "preserved_byte_for_byte": true,
+      "change": "Aucun"
+    }
+  ],
+  "review": {
+    "assertions": 17,
+    "controls": 10,
+    "historical_findings": 7,
+    "all_ok": true,
+    "worker_sha256_matches": true,
+    "log_matches_json": true,
+    "screenshot_reviewed": true,
+    "scripts_syntax_checked": true,
+    "historical_tests_executed": false
+  }
+}

@@ -1,6 +1,10 @@
 # Compléter les vérifications Auth et PWA
 
-Ces deux points restent ouverts dans l’audit du commit `0041b1c`. Les procédures ci-dessous sont à exécuter et leurs résultats à ajouter dans un complément daté. Elles ne constituent pas des protections déjà vérifiées.
+Ces deux points ont été examinés le 17 septembre 2026 : voir le
+[complément historique et ses preuves](COMPLEMENT-2026-09-17.md), repris de la
+PR #82 le 1er octobre. Les procédures ci-dessous conservent le protocole prévu
+pour l'ancien code ; elles ne constituent pas une validation de la version
+actuelle, qui a reçu les corrections décrites dans l'[état de reprise](../../ops/ETAT-REPRISE.md).
 
 ## 1. Paramètres Supabase Auth hébergés
 
