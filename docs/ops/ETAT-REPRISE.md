@@ -1,9 +1,12 @@
 # État de reprise — 1er octobre 2026
 
-Point d'entrée à lire avant de reprendre les travaux. Dernier état de `main`
-vérifié : `60eb163303b4d4781120f4cc627e92418d9ac220`, après fusion de la PR #94.
+Point d'entrée à lire avant de reprendre les travaux. Pour changer de discussion,
+utiliser la [passation vers l'audit fonctionnel](REPRISE-AUDIT-FONCTIONNEL.md).
+Dernier état de `main` vérifié : `bd13548c9539c55a202c2c508253ccf949b61dc9`,
+après fusion de la PR #95.
 Les rapports datés gardent leur portée historique ; cette page donne l'ordre
-actuel des actions. Le déploiement GitHub/Vercel `Production` associé à ce commit
+actuel des actions. Le déploiement GitHub/Vercel `Production` associé au commit
+précédent `60eb163303b4d4781120f4cc627e92418d9ac220` (#94)
 est déclaré réussi (ID `6786327087`, statut du 1er octobre à 14:04:38 UTC).
 Ce contrôle de déploiement ne remplace pas l'audit fonctionnel du site.
 
@@ -20,18 +23,26 @@ Dernière validation applicative : `npm run check` réussi, TypeScript, lint,
 514 tests dans 73 fichiers et build PWA. Aucune fusion automatique autorisée.
 Ne jamais rendre les médias publics pour contourner un problème.
 
-## Documentation restant à trier
+## Complément documentaire #82 examiné
 
 La [PR #82 — complément Auth et cache PWA](https://github.com/Limuletempedte/carnet-naturaliste/pull/82)
-est toujours ouverte au contrôle du 1er octobre. Elle contient des preuves
-historiques sur un état antérieur aux corrections, absentes de `main` sous les
-chemins de ce complément. Avant de la fusionner ou de la fermer, examiner ce qui
-mérite d'être conservé et garder clairement la date et le code étudié. Ne pas
-appliquer ses anciens réglages Auth comme recommandations actuelles.
+reste ouverte au contrôle du 1er octobre. Son contenu a maintenant été examiné :
+preuves cohérentes, 17 assertions (10 contrôles et 7 reproductions du défaut),
+empreinte du worker conforme, capture sur données fictives, scripts archivés.
+Le [complément](../audits/v5/COMPLEMENT-2026-09-17.md) et ses pièces utiles sont
+repris dans le présent lot documentaire basé sur `main`, avec une signalisation
+historique explicite. Les preuves brutes sont conservées à l'identique.
+
+Ce lot **remplace la proposition documentaire de #82**, sans reprendre ses
+modifications anciennes par-dessus les documents récents. Après fusion manuelle
+du présent lot, vérifier la présence des preuves sur `main`, puis proposer la
+fermeture de #82 comme remplacée, sans fusion ni suppression de sa branche.
+Ne pas appliquer ses anciens réglages Auth comme recommandations actuelles.
 
 Les PR #92 à #94 sont fusionnées ; aucune opération de migration ni correction
 applicative démontrée ne reste à livrer dans ces trois lots. Cela ne clôt pas les
-deux incidents intermittents ni la revue documentaire de #82.
+deux incidents intermittents. La revue de #82 est faite ; seule la livraison
+manuelle de ce lot et le rangement de l'ancienne PR restent à vérifier.
 
 ## Prochaine étape : audit fonctionnel général
 

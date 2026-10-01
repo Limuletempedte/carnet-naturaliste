@@ -1,5 +1,10 @@
 # Matrice des scénarios de sécurité
 
+> Complément daté : les réglages Auth et le cache PWA ont été examinés le
+> 17 septembre, après la matrice initiale ci-dessous. Voir le
+> [complément historique](COMPLEMENT-2026-09-17.md). Les corrections et l'état
+> actuel sont décrits séparément dans l'[état de reprise](../../ops/ETAT-REPRISE.md).
+
 Les essais actifs ciblent exclusivement le laboratoire loopback. « Protection vérifiée » signifie vérifiée dans le chemin et les conditions décrits, pas garantie universelle.
 
 | Surface | Scénario et contrôle positif | Résultat | Preuve / limite |
