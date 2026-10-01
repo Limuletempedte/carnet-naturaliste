@@ -2,6 +2,9 @@
 
 Audit du 11 septembre 2026, commit `0041b1c1964251cb6585ce69eef6f43ceb72bc4f`. Code applicatif et production inchangés pendant l’audit. Tests d’attaque exécutés uniquement sur une copie locale avec comptes et données fictifs.
 
+> Ce rapport conserve le constat du 11 septembre. Pour les corrections livrées
+> et les suites au 1er octobre, consulter l'[état de reprise](../../ops/ETAT-REPRISE.md).
+
 ## Résultat
 
 **Six failles confirmées : trois de gravité moyenne et trois de gravité faible.** Les problèmes principaux concernent la confidentialité des médias et le cloisonnement entre comptes dans le navigateur. Aucun contournement SQL, exécution JavaScript injectée ou suppression du compte d’autrui n’a été démontré dans les scénarios examinés. Ce résultat n’est pas une garantie d’absence de toute vulnérabilité.
@@ -53,6 +56,8 @@ Pour l’audit fonctionnel ultérieur : retenir l’anomalie Excel des synonymes
 
 ## Documents et suites
 
+- [Régularisation des migrations — 1er octobre 2026](../../ops/REGULARISATION-MIGRATIONS-2026-10-01.md) : dix versions alignées ; opération terminée.
+- [Diagnostic hors ligne et ZIP — 1er octobre 2026](../../ops/DIAGNOSTIC-HORS-LIGNE-2026-10-01.md) : campagne réussie, incidents historiques non reproduits et cause non isolée.
 - [Dépendances — 1er octobre 2026](DEPENDANCES-2026-10-01.md) : qualification des alertes, mises à jour et tests de compatibilité.
 - [Mise en production des corrections — 30 septembre 2026](MISE-EN-PRODUCTION-2026-09-30.md) : état des protections après les PR #83 à #86 ; distinct du constat historique ci-dessus.
 - [Rapport détaillé](rapport-audit.md) : preuves source et raisonnement.
