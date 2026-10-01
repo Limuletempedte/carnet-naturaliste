@@ -1,0 +1,564 @@
+{
+  "captured_on": "2026-10-01",
+  "project_id": "xowiezzqehadcfnbkijo",
+  "migrations": [
+    {
+      "version": "20260419152657",
+      "name": "phase6_count_breakdown",
+      "statements": [
+        "-- Phase 6 migration: optional count breakdown per observation.\nalter table observations\n  add column if not exists male_count int,\n  add column if not exists female_count int,\n  add column if not exists unidentified_count int;\n\ndo $$ begin\n  alter table observations\n    add constraint observations_male_count_non_negative_check\n    check (male_count is null or male_count >= 0) not valid;\nexception when duplicate_object then null; end $$;\n\ndo $$ begin\n  alter table observations\n    add constraint observations_female_count_non_negative_check\n    check (female_count is null or female_count >= 0) not valid;\nexception when duplicate_object then null; end $$;\n\ndo $$ begin\n  alter table observations\n    add constraint observations_unidentified_count_non_negative_check\n    check (unidentified_count is null or unidentified_count >= 0) not valid;\nexception when duplicate_object then null; end $$;\n\ndo $$ begin\n  alter table observations\n    add constraint observations_count_breakdown_sum_check\n    check (\n      (\n        male_count is null\n        and female_count is null\n        and unidentified_count is null\n      )\n      or (\n        coalesce(male_count, 0) + coalesce(female_count, 0) + coalesce(unidentified_count, 0) = count\n      )\n    ) not valid;\nexception when duplicate_object then null; end $$;\n\nalter table observations validate constraint observations_male_count_non_negative_check;\nalter table observations validate constraint observations_female_count_non_negative_check;\nalter table observations validate constraint observations_unidentified_count_non_negative_check;\nalter table observations validate constraint observations_count_breakdown_sum_check;"
+      ]
+    },
+    {
+      "version": "20260419152704",
+      "name": "storage_insert_policy_hardening",
+      "statements": [
+        "-- Harden storage insert policy: only allow upload to own folder (auth.uid prefix)\ndrop policy if exists \"Authenticated users can upload photos\" on storage.objects;\n\ncreate policy \"Authenticated users can upload photos\"\n  on storage.objects for insert\n  with check (\n    bucket_id = 'photos'\n    and auth.role() = 'authenticated'\n    and auth.uid()::text = (storage.foldername(name))[1]\n  );"
+      ]
+    },
+    {
+      "version": "20260419152719",
+      "name": "theme5_sync_integrity",
+      "statements": [
+        "-- Theme 5: Sync & Integrity corrections (non-destructive, zero-downtime)\n\n-- SI-18: FK ON DELETE CASCADE (GDPR art. 17)\nALTER TABLE observations DROP CONSTRAINT IF EXISTS observations_user_id_fkey;\nALTER TABLE observations\n  ADD CONSTRAINT observations_user_id_fkey\n  FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;\n\n-- SI-19: RLS UPDATE WITH CHECK (prevent user_id transfer)\nDROP POLICY IF EXISTS \"Users can update their own observations\" ON observations;\nCREATE POLICY \"Users can update their own observations\"\n  ON observations FOR UPDATE\n  USING (auth.uid() = user_id)\n  WITH CHECK (auth.uid() = user_id);\n\n-- SI-22: CHECK length constraints\nDO $$ BEGIN\n  ALTER TABLE observations\n    ADD CONSTRAINT observations_location_max_length_check\n    CHECK (location IS NULL OR char_length(location) <= 500) NOT VALID;\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\nALTER TABLE observations VALIDATE CONSTRAINT observations_location_max_length_check;\n\nDO $$ BEGIN\n  ALTER TABLE observations\n    ADD CONSTRAINT observations_comment_max_length_check\n    CHECK (comment IS NULL OR char_length(comment) <= 5000) NOT VALID;\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\nALTER TABLE observations VALIDATE CONSTRAINT observations_comment_max_length_check;\n\nDO $$ BEGIN\n  ALTER TABLE observations\n    ADD CONSTRAINT observations_latin_name_max_length_check\n    CHECK (latin_name IS NULL OR char_length(latin_name) <= 200) NOT VALID;\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\nALTER TABLE observations VALIDATE CONSTRAINT observations_latin_name_max_length_check;\n\n-- SI-23: taxonomic_group NOT NULL DEFAULT 'Autre'\nUPDATE observations SET taxonomic_group = 'Autre' WHERE taxonomic_group IS NULL;\nALTER TABLE observations ALTER COLUMN taxonomic_group SET DEFAULT 'Autre';\nDO $$ BEGIN\n  ALTER TABLE observations\n    ADD CONSTRAINT observations_taxonomic_group_not_null_check\n    CHECK (taxonomic_group IS NOT NULL) NOT VALID;\nEXCEPTION WHEN duplicate_object THEN NULL; END $$;\nALTER TABLE observations VALIDATE CONSTRAINT observations_taxonomic_group_not_null_check;\n\n-- SI-24: Protect created_at from client modification\nCREATE OR REPLACE FUNCTION public.set_observations_updated_at()\nRETURNS trigger\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NEW.updated_at = timezone('utc'::text, now());\n  NEW.created_at = OLD.created_at;\n  RETURN NEW;\nEND;\n$$;"
+      ]
+    },
+    {
+      "version": "20260419152731",
+      "name": "theme12_observation_fields",
+      "statements": [
+        "-- Theme 12: new metier fields (VP-04 habitat, VP-05 observers, VP-08 phenology)\n-- Non-destructive, zero-downtime, all optional.\nALTER TABLE observations\n  ADD COLUMN IF NOT EXISTS habitat text,\n  ADD COLUMN IF NOT EXISTS phenology text,\n  ADD COLUMN IF NOT EXISTS observers text[];"
+      ]
+    },
+    {
+      "version": "20260611093249",
+      "name": "audit_v2_storage_hardening",
+      "statements": [
+        "-- Audit v2 — durcissement Storage (constats H1 + bucket sans limites serveur).\n--\n-- 1) Fin de l'énumération anonyme.\n--    La policy SELECT \"Public Access\" (initial_schema) s'appliquait aussi au\n--    rôle anon sur l'endpoint de listing (POST /storage/v1/object/list/photos) :\n--    n'importe qui, muni de la seule clé anon publique, pouvait énumérer tous\n--    les fichiers de tous les utilisateurs (donc découvrir tous les user_id et\n--    toutes les URLs). Les URLs publiques (/object/public/) d'un bucket\n--    public=true ne passent PAS par RLS : elles continuent de fonctionner.\n--    Seule la découverte en masse est bloquée. L'app n'utilise aucun list()\n--    côté client (seul delete-account liste, via service_role qui bypasse RLS).\n\ndrop policy if exists \"Public Access\" on storage.objects;\n\ncreate policy \"Users can list their own files\"\n  on storage.objects for select\n  using (\n    bucket_id = 'photos'\n    and auth.uid()::text = (storage.foldername(name))[1]\n  );\n\n-- 2) Limites côté serveur.\n--    Les gardes existantes (20 Mo, whitelist MIME audio, JPEG forcé) ne\n--    vivaient que dans le client (ObservationForm / storageMedia) : un client\n--    direct de l'API Storage pouvait uploader n'importe quel type/taille dans\n--    son dossier du bucket public. Le serveur applique désormais les mêmes\n--    règles quel que soit le chemin d'appel.\n\nupdate storage.buckets\nset\n  file_size_limit = 20971520, -- 20 MiB, aligné sur la garde client (SE-15)\n  allowed_mime_types = array[\n    'image/jpeg',\n    'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/webm', 'audio/mp4', 'audio/x-m4a'\n  ]\nwhere id = 'photos';"
+      ]
+    },
+    {
+      "version": "20260930135528",
+      "name": "security_private_media",
+      "statements": [
+        "-- Frontend compatible déployé et contrôle utilisateur effectué.\n-- Aucun déplacement ni suppression des fichiers ou références historiques.\nUPDATE storage.buckets SET public = false WHERE id = 'photos';"
+      ]
+    }
+  ],
+  "history_columns": [
+    {
+      "column_name": "version",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "column_name": "statements",
+      "data_type": "ARRAY",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "column_name": "name",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "column_name": "created_by",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "column_name": "idempotency_key",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "column_name": "rollback",
+      "data_type": "ARRAY",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    }
+  ],
+  "columns": [
+    {
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": "uuid_generate_v4()",
+      "ordinal_position": 1
+    },
+    {
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "column_name": "species_name",
+      "data_type": "text",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "column_name": "latin_name",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "column_name": "taxonomic_group",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": "'Autre'::text",
+      "ordinal_position": 5
+    },
+    {
+      "column_name": "date",
+      "data_type": "date",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "column_name": "time",
+      "data_type": "time without time zone",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "column_name": "count",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": "1",
+      "ordinal_position": 8
+    },
+    {
+      "column_name": "location",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 9
+    },
+    {
+      "column_name": "gps_lat",
+      "data_type": "double precision",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 10
+    },
+    {
+      "column_name": "gps_lon",
+      "data_type": "double precision",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 11
+    },
+    {
+      "column_name": "municipality",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "column_name": "department",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 13
+    },
+    {
+      "column_name": "country",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 14
+    },
+    {
+      "column_name": "altitude",
+      "data_type": "double precision",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 15
+    },
+    {
+      "column_name": "comment",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 16
+    },
+    {
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 17
+    },
+    {
+      "column_name": "atlas_code",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 18
+    },
+    {
+      "column_name": "protocol",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 19
+    },
+    {
+      "column_name": "sexe",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 20
+    },
+    {
+      "column_name": "age",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 21
+    },
+    {
+      "column_name": "observation_condition",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 22
+    },
+    {
+      "column_name": "comportement",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 23
+    },
+    {
+      "column_name": "photo_url",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 24
+    },
+    {
+      "column_name": "wikipedia_image",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 25
+    },
+    {
+      "column_name": "sound_url",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 26
+    },
+    {
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": "timezone('utc'::text, now())",
+      "ordinal_position": 27
+    },
+    {
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES",
+      "column_default": "timezone('utc'::text, now())",
+      "ordinal_position": 28
+    },
+    {
+      "column_name": "weather_condition",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 29
+    },
+    {
+      "column_name": "male_count",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 30
+    },
+    {
+      "column_name": "female_count",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 31
+    },
+    {
+      "column_name": "unidentified_count",
+      "data_type": "integer",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 32
+    },
+    {
+      "column_name": "habitat",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 33
+    },
+    {
+      "column_name": "phenology",
+      "data_type": "text",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 34
+    },
+    {
+      "column_name": "observers",
+      "data_type": "ARRAY",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 35
+    }
+  ],
+  "constraints": [
+    {
+      "conname": "observations_comment_max_length_check",
+      "convalidated": true,
+      "definition": "CHECK (((comment IS NULL) OR (char_length(comment) <= 5000)))"
+    },
+    {
+      "conname": "observations_count_breakdown_sum_check",
+      "convalidated": true,
+      "definition": "CHECK ((((male_count IS NULL) AND (female_count IS NULL) AND (unidentified_count IS NULL)) OR (((COALESCE(male_count, 0) + COALESCE(female_count, 0)) + COALESCE(unidentified_count, 0)) = count)))"
+    },
+    {
+      "conname": "observations_count_positive_check",
+      "convalidated": true,
+      "definition": "CHECK (((count IS NOT NULL) AND (count >= 1)))"
+    },
+    {
+      "conname": "observations_female_count_non_negative_check",
+      "convalidated": true,
+      "definition": "CHECK (((female_count IS NULL) OR (female_count >= 0)))"
+    },
+    {
+      "conname": "observations_gps_lat_range_check",
+      "convalidated": true,
+      "definition": "CHECK (((gps_lat IS NULL) OR ((gps_lat >= ('-90'::integer)::double precision) AND (gps_lat <= (90)::double precision))))"
+    },
+    {
+      "conname": "observations_gps_lon_range_check",
+      "convalidated": true,
+      "definition": "CHECK (((gps_lon IS NULL) OR ((gps_lon >= ('-180'::integer)::double precision) AND (gps_lon <= (180)::double precision))))"
+    },
+    {
+      "conname": "observations_latin_name_max_length_check",
+      "convalidated": true,
+      "definition": "CHECK (((latin_name IS NULL) OR (char_length(latin_name) <= 200)))"
+    },
+    {
+      "conname": "observations_location_max_length_check",
+      "convalidated": true,
+      "definition": "CHECK (((location IS NULL) OR (char_length(location) <= 500)))"
+    },
+    {
+      "conname": "observations_male_count_non_negative_check",
+      "convalidated": true,
+      "definition": "CHECK (((male_count IS NULL) OR (male_count >= 0)))"
+    },
+    {
+      "conname": "observations_pkey",
+      "convalidated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "conname": "observations_species_name_not_blank_check",
+      "convalidated": true,
+      "definition": "CHECK ((char_length(btrim(species_name)) > 0))"
+    },
+    {
+      "conname": "observations_taxonomic_group_not_null_check",
+      "convalidated": true,
+      "definition": "CHECK ((taxonomic_group IS NOT NULL))"
+    },
+    {
+      "conname": "observations_unidentified_count_non_negative_check",
+      "convalidated": true,
+      "definition": "CHECK (((unidentified_count IS NULL) OR (unidentified_count >= 0)))"
+    },
+    {
+      "conname": "observations_user_id_fkey",
+      "convalidated": true,
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+    }
+  ],
+  "indexes": [
+    {
+      "indexname": "idx_observations_user_date_created",
+      "indexdef": "CREATE INDEX idx_observations_user_date_created ON public.observations USING btree (user_id, date DESC, created_at DESC)"
+    },
+    {
+      "indexname": "idx_observations_user_gps_present",
+      "indexdef": "CREATE INDEX idx_observations_user_gps_present ON public.observations USING btree (user_id, gps_lat, gps_lon) WHERE ((gps_lat IS NOT NULL) AND (gps_lon IS NOT NULL))"
+    },
+    {
+      "indexname": "idx_observations_user_species_name",
+      "indexdef": "CREATE INDEX idx_observations_user_species_name ON public.observations USING btree (user_id, species_name)"
+    },
+    {
+      "indexname": "idx_observations_user_status",
+      "indexdef": "CREATE INDEX idx_observations_user_status ON public.observations USING btree (user_id, status)"
+    },
+    {
+      "indexname": "idx_observations_user_taxonomic_group",
+      "indexdef": "CREATE INDEX idx_observations_user_taxonomic_group ON public.observations USING btree (user_id, taxonomic_group)"
+    },
+    {
+      "indexname": "observations_pkey",
+      "indexdef": "CREATE UNIQUE INDEX observations_pkey ON public.observations USING btree (id)"
+    }
+  ],
+  "policies": [
+    {
+      "schemaname": "public",
+      "tablename": "observations",
+      "policyname": "Users can delete their own observations",
+      "roles": [
+        "public"
+      ],
+      "cmd": "DELETE",
+      "qual": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "observations",
+      "policyname": "Users can insert their own observations",
+      "roles": [
+        "public"
+      ],
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "observations",
+      "policyname": "Users can update their own observations",
+      "roles": [
+        "public"
+      ],
+      "cmd": "UPDATE",
+      "qual": "(auth.uid() = user_id)",
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "observations",
+      "policyname": "Users can view their own observations",
+      "roles": [
+        "public"
+      ],
+      "cmd": "SELECT",
+      "qual": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "storage",
+      "tablename": "objects",
+      "policyname": "Authenticated users can upload photos",
+      "roles": [
+        "public"
+      ],
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((bucket_id = 'photos'::text) AND (auth.role() = 'authenticated'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))"
+    },
+    {
+      "schemaname": "storage",
+      "tablename": "objects",
+      "policyname": "Users can delete their own photos",
+      "roles": [
+        "public"
+      ],
+      "cmd": "DELETE",
+      "qual": "((bucket_id = 'photos'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))",
+      "with_check": null
+    },
+    {
+      "schemaname": "storage",
+      "tablename": "objects",
+      "policyname": "Users can list their own files",
+      "roles": [
+        "public"
+      ],
+      "cmd": "SELECT",
+      "qual": "((bucket_id = 'photos'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))",
+      "with_check": null
+    },
+    {
+      "schemaname": "storage",
+      "tablename": "objects",
+      "policyname": "Users can update their own photos",
+      "roles": [
+        "public"
+      ],
+      "cmd": "UPDATE",
+      "qual": "((bucket_id = 'photos'::text) AND ((auth.uid())::text = (storage.foldername(name))[1]))",
+      "with_check": null
+    }
+  ],
+  "trigger_function": "CREATE OR REPLACE FUNCTION public.set_observations_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  NEW.updated_at = timezone('utc'::text, now());\n  NEW.created_at = OLD.created_at;\n  RETURN NEW;\nEND;\n$function$\n",
+  "triggers": [
+    "CREATE TRIGGER trg_set_observations_updated_at BEFORE UPDATE ON public.observations FOR EACH ROW EXECUTE FUNCTION set_observations_updated_at()"
+  ],
+  "rls": [
+    {
+      "nspname": "public",
+      "relname": "observations",
+      "relrowsecurity": true
+    },
+    {
+      "nspname": "storage",
+      "relname": "objects",
+      "relrowsecurity": true
+    }
+  ],
+  "bucket": [
+    {
+      "id": "photos",
+      "public": false,
+      "file_size_limit": 20971520,
+      "allowed_mime_types": [
+        "image/jpeg",
+        "audio/mpeg",
+        "audio/ogg",
+        "audio/wav",
+        "audio/webm",
+        "audio/mp4",
+        "audio/x-m4a"
+      ]
+    }
+  ],
+  "legacy_taxonomic_labels": 0,
+  "data_fingerprints": {
+    "observations": "d33af425f8b203f077bd49bb3e1ef969",
+    "objects": "1d6eaa5786140e0aa79c8e06845be659"
+  }
+}

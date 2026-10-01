@@ -1,0 +1,116 @@
+{
+  "checked_at_utc": "2026-10-01T13:02:24Z",
+  "project_id": "xowiezzqehadcfnbkijo",
+  "operation": "Quatre INSERT atomiques dans le seul historique ; SQL des fichiers enregistré comme texte, non exécuté.",
+  "regularisation_sql_sha256": "bc30c666c3583dec1fb2aba0ed154fceb9f2f5f29a5e60a55e3a8d762268a37a",
+  "before_count": 6,
+  "after_count": 10,
+  "preserved_existing_entries": true,
+  "unchanged_snapshot_sections": [
+    "columns",
+    "constraints",
+    "indexes",
+    "policies",
+    "trigger_function",
+    "triggers",
+    "rls",
+    "bucket",
+    "legacy_taxonomic_labels",
+    "data_fingerprints",
+    "history_columns"
+  ],
+  "data_fingerprints_before": {
+    "observations": "d33af425f8b203f077bd49bb3e1ef969",
+    "objects": "1d6eaa5786140e0aa79c8e06845be659"
+  },
+  "data_fingerprints_after": {
+    "observations": "d33af425f8b203f077bd49bb3e1ef969",
+    "objects": "1d6eaa5786140e0aa79c8e06845be659"
+  },
+  "pending_local_versions": [],
+  "remote_only_versions": [],
+  "migrations": [
+    {
+      "version": "20240101000000",
+      "name": "initial_schema",
+      "statements_md5": "cdde0ae01606aca68800e270b091e5d8",
+      "local_file_sha256": "0e23911957a8284233e7fd1ffa2414a022592234002a90088086d129566a9317",
+      "new_history_entry": true
+    },
+    {
+      "version": "20240201000000",
+      "name": "phase2_indexes_constraints",
+      "statements_md5": "fbb16e526192d8e7c4995c90f77e0974",
+      "local_file_sha256": "b85c873d33f354688c2a3ad5c41cd9d957cccd6f698a5bdfa966372fe124e068",
+      "new_history_entry": true
+    },
+    {
+      "version": "20240325000000",
+      "name": "add_weather_condition",
+      "statements_md5": "c0c73cc6cca9af930f2866519c35ed42",
+      "local_file_sha256": "f0f6fb2a8b8ef85d12f302cb49c4dfe03d43bf88cdb7ed007229e91307b7ea70",
+      "new_history_entry": true
+    },
+    {
+      "version": "20240501000000",
+      "name": "phase5_neuroptera_label",
+      "statements_md5": "87768d517266627336389c5421814edb",
+      "local_file_sha256": "96ceb1fe0d966510ba317af3072d1378c53d87a6ca92cba072f6d5a7f07cc5dd",
+      "new_history_entry": true
+    },
+    {
+      "version": "20260419152657",
+      "name": "phase6_count_breakdown",
+      "statements_md5": "f43e6da677017d7da5517d01d6934c5b",
+      "local_file_sha256": "609569c162042ae42a6f1ab6f5eac738db33249bbe6a639bb6a27ddd450a2ce7",
+      "new_history_entry": false
+    },
+    {
+      "version": "20260419152704",
+      "name": "storage_insert_policy_hardening",
+      "statements_md5": "fc365d10842be3cfde50e2382f6b2fef",
+      "local_file_sha256": "6f89a9704e03849633877a59a8e03587f56bf1754a7d7aa6432d56480172b83d",
+      "new_history_entry": false
+    },
+    {
+      "version": "20260419152719",
+      "name": "theme5_sync_integrity",
+      "statements_md5": "583d8bbda54ddca5e0fc690477a29bbb",
+      "local_file_sha256": "3ea736c3f88675f8bf72b9b3d753a6aa12469ee6c648d89abe37f30305fa2781",
+      "new_history_entry": false
+    },
+    {
+      "version": "20260419152731",
+      "name": "theme12_observation_fields",
+      "statements_md5": "fb7fa4b9be1c5136eba8c5dbc35f4fe3",
+      "local_file_sha256": "78ad4c5ee7594b1d594ad0ff39fd1ead3514602204564d1a8ec9894b41bfe094",
+      "new_history_entry": false
+    },
+    {
+      "version": "20260611093249",
+      "name": "audit_v2_storage_hardening",
+      "statements_md5": "24beb8a380e91b39d212be26c9c8a54e",
+      "local_file_sha256": "118a72d506105022fa3269c1878d3b6de8bb3970d709679dbf873b7b46dcfc0b",
+      "new_history_entry": false
+    },
+    {
+      "version": "20260930135528",
+      "name": "security_private_media",
+      "statements_md5": "c39dcdc946f8a0285ac48f687380bcb2",
+      "local_file_sha256": "46da9f39974f34f356b9cd34ecae2472466bbac2dd31a4924912f39dee1fff0a",
+      "new_history_entry": false
+    }
+  ],
+  "local_validation": {
+    "fresh_ten_migrations_replayed": true,
+    "repair_six_to_ten": true,
+    "metadata_and_fixtures_unchanged": true,
+    "repeat_refused": true,
+    "history_drift_refused_and_rolled_back": true,
+    "public_bucket_refused_and_rolled_back": true,
+    "cli_migration_list_ten_aligned": true,
+    "cli_db_push_dry_run": "Local database is up to date."
+  },
+  "hosted_cli_dry_run_executed": false,
+  "hosted_verification": "Connecteur Supabase : dix versions égales aux fichiers, six entrées originales intégralement préservées, quatre textes SQL enregistrés identiques aux fichiers. Aucun push réel."
+}
