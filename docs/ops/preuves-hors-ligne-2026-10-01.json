@@ -1,0 +1,143 @@
+{
+  "date": "2026-10-01",
+  "base_commit": "e94754873a197d9416ff84db2ff6429cf1041041",
+  "node": "22.23.2",
+  "chromium": "153.0.8010.12",
+  "script_sha256": "b6ded9dcf98733360822ced7ec641c5f4f4c7ac4073ca2b30151a8363d41cbfe",
+  "application_modified": false,
+  "production_modified": false,
+  "status": "Non reproduit sans injection ; cause historique non isolée.",
+  "normal_runs": [
+    {
+      "log": "baseline-1.log",
+      "sha256": "fb99371abe874b7cc3a250adbd0032c08c68dc40d31e7bb48f5edc8cf7ae9dc2",
+      "cpu_throttle_first_tab": 1,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": null,
+      "zip_menu_to_download_ms": null,
+      "reconnect_to_download_ms": null
+    },
+    {
+      "log": "diagnostic-1.log",
+      "sha256": "025d0ca994893a8c1661dd54d648a2535aea0a28d7edb4c81ee48380649fa6ca",
+      "cpu_throttle_first_tab": 1,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 439,
+      "zip_menu_to_download_ms": 308,
+      "reconnect_to_download_ms": 761
+    },
+    {
+      "log": "diagnostic-2.log",
+      "sha256": "83a689a40eea51732eec9e4a75013d9af4a7e987e5e2e3a9d869a1666d376abb",
+      "cpu_throttle_first_tab": 1,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 203,
+      "zip_menu_to_download_ms": 356,
+      "reconnect_to_download_ms": 718
+    },
+    {
+      "log": "diagnostic-3.log",
+      "sha256": "d9376b3b6829a823d9012f60ba8708775b3d38bf9d061ae20f88a175ef715027",
+      "cpu_throttle_first_tab": 1,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 217,
+      "zip_menu_to_download_ms": 271,
+      "reconnect_to_download_ms": 488
+    },
+    {
+      "log": "throttle-4.log",
+      "sha256": "b0732fe94a86c1ca80e1927b952b5d4598d2890cc976387994f5de743b4d3ea0",
+      "cpu_throttle_first_tab": 4,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 1264,
+      "zip_menu_to_download_ms": 617,
+      "reconnect_to_download_ms": 852
+    },
+    {
+      "log": "throttle-8-1.log",
+      "sha256": "3af915b624472813853aa8148f1cb2a0854d8dd65f3909163dfdd2a0839af640",
+      "cpu_throttle_first_tab": 8,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 1758,
+      "zip_menu_to_download_ms": 1119,
+      "reconnect_to_download_ms": 1504
+    },
+    {
+      "log": "throttle-8-2.log",
+      "sha256": "a697e8f7cc5331c54d654a7ca2ed4a67def91fce194ea7ac9bdaa7a2a81bbb65",
+      "cpu_throttle_first_tab": 8,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 1891,
+      "zip_menu_to_download_ms": 852,
+      "reconnect_to_download_ms": 1406
+    },
+    {
+      "log": "throttle-8-3.log",
+      "sha256": "d9ad30a9d6fcee4bfdaf0fa6dc7d6f08cdabdb94938eea8c95514c8c4f03dda8",
+      "cpu_throttle_first_tab": 8,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 3240,
+      "zip_menu_to_download_ms": 2019,
+      "reconnect_to_download_ms": 2579
+    },
+    {
+      "log": "throttle-8-4.log",
+      "sha256": "9b7c47cf63e8ed82487d51fcc6b03e45538e8f97a7a16f5966300c1b87aaee72",
+      "cpu_throttle_first_tab": 8,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 8265,
+      "zip_menu_to_download_ms": 927,
+      "reconnect_to_download_ms": 1470
+    },
+    {
+      "log": "throttle-8-5.log",
+      "sha256": "afae1b070f7e96ae75a867072c42989d0513c312392a2569a339e9eb128e1aaf",
+      "cpu_throttle_first_tab": 8,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": 4181,
+      "zip_menu_to_download_ms": 1313,
+      "reconnect_to_download_ms": 1782
+    },
+    {
+      "log": "final-default.log",
+      "sha256": "fb99371abe874b7cc3a250adbd0032c08c68dc40d31e7bb48f5edc8cf7ae9dc2",
+      "cpu_throttle_first_tab": 1,
+      "checks_passed": 11,
+      "offline_reload_to_photo_ms": null,
+      "zip_menu_to_download_ms": null,
+      "reconnect_to_download_ms": null
+    }
+  ],
+  "controlled_failures": [
+    {
+      "log": "controlled-delay.log",
+      "sha256": "cb6e298fd5cffc1acf2210a8bc8b17c1a9f0023f96b42cf15d89f1d34dff8fc9",
+      "expected_failure": true,
+      "timeout": "Timeout 15000ms",
+      "online": true,
+      "controlled": true,
+      "ready_state": "complete",
+      "pending": [
+        {
+          "path": "/assets/vendor-jszip-CS7rSj0o.js",
+          "ms": 14743
+        }
+      ],
+      "private_images_loaded": 1,
+      "export_started_in_ui": true
+    },
+    {
+      "log": "controlled-offline.log",
+      "sha256": "fcea435f0efd251b81ae324a2603f64488a90c2320b469735b9f6f287ce78e84",
+      "expected_failure": true,
+      "timeout": "Timeout 30000ms",
+      "online": false,
+      "controlled": true,
+      "ready_state": "complete",
+      "pending": [],
+      "private_images_loaded": 0,
+      "export_started_in_ui": false
+    }
+  ],
+  "profiles_remaining": 0
+}

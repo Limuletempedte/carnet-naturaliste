@@ -2,6 +2,8 @@
 // LOCAL_STATUS_FILE : JSON produit par `supabase status -o json` (jamais versionné).
 // AUDIT_BUILD_DIR : bundle compilé avec les clés publiques du laboratoire.
 // PLAYWRIGHT_MODULE / CHROMIUM_EXECUTABLE : facultatifs selon l'installation.
+// MEDIA_DIAGNOSTICS=1 : durées et état borné en cas d'échec, sans en-têtes ni jetons.
+// MEDIA_CPU_THROTTLE_RATE : ralentissement Chromium de 1 (défaut) à 8.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import http from 'node:http';
@@ -57,9 +59,53 @@ let context = await launch();
 const checks = [];
 const passed = name => { checks.push(name); console.log(`PASS ${name}`); };
 const uploaded = [];
+const diagnostic = process.env.MEDIA_DIAGNOSTICS === '1';
+const started = performance.now();
+const requests = new Map();
+const recentRequests = [];
+let diagnosticPage;
+const requestPath = request => new URL(request.url()).pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '[id]');
+const mark = name => { if (diagnostic) console.log(`TIMING ${Math.round(performance.now() - started)}ms ${name}`); };
+const pageState = async target => {
+    if (!target) return { unavailable: true };
+    let timer;
+    try {
+        return await Promise.race([
+            target.evaluate(async () => ({
+                online: navigator.onLine,
+                readyState: document.readyState,
+                controlled: !!navigator.serviceWorker.controller,
+                workers: (await navigator.serviceWorker.getRegistrations()).map(r => ({ scope: new URL(r.scope).pathname, active: r.active?.state })),
+                body: document.body.innerText.slice(0, 1800),
+                images: [...document.images].map(img => ({ alt: img.alt, blob: img.src.startsWith('blob:'), complete: img.complete, width: img.naturalWidth })),
+            })).catch(() => ({ unavailable: true })),
+            new Promise(resolve => { timer = setTimeout(() => resolve({ unavailable: true, reason: 'diagnostic limité à 2 secondes' }), 2000); }),
+        ]);
+    } finally { clearTimeout(timer); }
+};
+if (diagnostic) {
+    context.on('request', request => requests.set(request, { path: requestPath(request), started: performance.now() }));
+    const finish = (request, error) => {
+        const entry = requests.get(request);
+        if (entry) {
+            recentRequests.push({ path: entry.path, ms: Math.round(performance.now() - entry.started), error });
+            if (recentRequests.length > 30) recentRequests.shift();
+            requests.delete(request);
+        }
+    };
+    context.on('requestfinished', request => finish(request));
+    context.on('requestfailed', request => finish(request, request.failure()?.errorText));
+}
 try {
     const A = await account('A'), B = await account('B');
     const page = await context.newPage();
+    diagnosticPage = page;
+    const throttle = Number(process.env.MEDIA_CPU_THROTTLE_RATE || 1);
+    assert(Number.isFinite(throttle) && throttle >= 1 && throttle <= 8);
+    if (throttle > 1) {
+        const cdp = await context.newCDPSession(page);
+        await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
+    }
     page.on('pageerror', error => console.error('Erreur navigateur :', error.message));
     page.on('console', message => { if (message.type() === 'error') console.error('Console :', message.text()); });
     page.setDefaultTimeout(15000);
@@ -124,10 +170,11 @@ try {
         await page.getByRole('button', { name: `Voir l'observation de PRIVE_${user === A ? 'A' : 'B'}`, exact: true }).waitFor();
     }
     async function photoLoaded(label, target = page) {
+        diagnosticPage = target;
         try {
             await target.waitForFunction(label => [...document.images].some(img => img.alt === label && img.src.startsWith('blob:') && img.complete && img.naturalWidth > 0), label, { timeout: 30000 });
         } catch (error) {
-            console.error('État du laboratoire :', (await page.locator('body').innerText()).slice(0, 1200));
+            if (!diagnostic) console.error('État du laboratoire :', JSON.stringify(await pageState(target)));
             throw error;
         }
     }
@@ -171,14 +218,21 @@ try {
     assert.equal(await page.locator('audio').evaluate(audio => audio.error?.code ?? null), null);
     passed('Photo et son privés dans la vue détail');
     await context.setOffline(true);
+    mark('début rechargement hors ligne A');
     await page.reload();
+    mark('navigation hors ligne A terminée');
     await photoLoaded('PRIVE_A');
+    mark('photo hors ligne A affichée');
     passed('Rechargement PWA hors ligne : média disponible pour A');
     await context.setOffline(false);
+    mark('retour réseau');
     await page.getByRole('button', { name: 'Menu utilisateur' }).click();
-    const downloaded = page.waitForEvent('download');
-    await page.getByRole('menuitem', { name: 'Exporter mes données', exact: true }).click();
-    const download = await downloaded;
+    mark('menu ouvert, début export ZIP');
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('menuitem', { name: 'Exporter mes données', exact: true }).click(),
+    ]);
+    mark('téléchargement ZIP reçu');
     const zipPath = await download.path();
     const { default: JSZip } = await import('jszip');
     const zip = await JSZip.loadAsync(await fs.readFile(zipPath));
@@ -218,9 +272,20 @@ try {
     assert.deepEqual(publicRequests, []);
     passed('Aucune lecture directe des références publiques par le navigateur');
     console.log(JSON.stringify({ status: 'passed', checks, backend: 'Supabase local réel, bucket privé', serviceWorker: 'actif' }));
+} catch (error) {
+    if (diagnostic) {
+        console.error('DIAGNOSTIC', JSON.stringify({
+            elapsed: Math.round(performance.now() - started),
+            pending: [...requests.values()].map(entry => ({ path: entry.path, ms: Math.round(performance.now() - entry.started) })),
+            recentRequests,
+            page: await pageState(diagnosticPage),
+        }));
+    }
+    throw error;
 } finally {
     await context.close(); await fs.rm(profile, { recursive: true, force: true });
     if (uploaded.length) await request('DELETE', '/storage/v1/object/photos', null, { prefixes: uploaded });
     for (const user of accounts) await request('DELETE', `/auth/v1/admin/users/${user.id}`);
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+    mark(`nettoyage terminé : ${accounts.length} comptes et ${uploaded.length} médias fictifs supprimés`);
 }
