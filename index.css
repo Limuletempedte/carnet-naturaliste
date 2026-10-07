@@ -22,7 +22,8 @@
     font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
     line-height: 1.5;
     font-weight: 400;
-    color-scheme: light dark;
+    /* Le thème de l'application pilote aussi les champs natifs du navigateur. */
+    color-scheme: only light;
     /* CO-25: suppression des color/background-color hardcodes (#242424) qui
        creaient un flash sombre avant le chargement React. Tailwind body bg gere. */
     font-synthesis: none;
@@ -35,7 +36,13 @@
 }
 
 .dark {
+    color-scheme: dark;
     --map-accent: #8FAD7A;
+}
+
+/* Fond Auto sombre : seules les tuiles changent, pas les marqueurs ni les photos. */
+.map-tiles-auto-dark {
+    filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.9);
 }
 
 @keyframes fadeIn {

@@ -63,3 +63,16 @@
 - **User-Agent** : toutes les APIs identifient l'application via un User-Agent dedie (VP-15/16/17)
 - **Attribution** : fichier `ATTRIBUTIONS.txt` inclus dans les sauvegardes ZIP (VP-18)
 - **RGPD** : aucune donnee personnelle n'est transmise aux APIs taxonomiques. Les coordonnees GPS envoyees a Nominatim et Open-Meteo ne sont pas couplees a une identite utilisateur.
+
+## Fonds cartographiques — mise à jour du 7 octobre 2026
+
+Le mode Auto utilise les tuiles OpenStreetMap déjà proposées en mode Standard.
+Le thème sombre applique un filtre visuel aux seules tuiles, en conservant
+les attributions et les marqueurs. Les requêtes CARTO sans clé sont retirées.
+Aucun nouveau fournisseur ni abonnement n’est ajouté. L’adresse IP, le référent
+et les coordonnées des tuiles affichées sont transmis au fournisseur ; aucune
+prélecture de zone ni fonction de téléchargement de carte hors ligne n’est ajoutée.
+Les fonds Satellite (Esri) et Topo (OpenTopoMap) restent disponibles.
+
+Sources consultées : [exigence de clé CARTO](https://www.carto.com/basemaps/apikey/)
+et [politique des tuiles OpenStreetMap](https://operations.osmfoundation.org/policies/tiles/).
