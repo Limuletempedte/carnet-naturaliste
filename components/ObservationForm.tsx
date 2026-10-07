@@ -416,10 +416,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     const inputClass = "w-full p-3 bg-nature-beige dark:bg-black/20 border-none rounded-xl focus:ring-2 focus:ring-nature-green transition-all dark:text-white placeholder-gray-400";
     const labelClass = "block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 ml-1";
     const errorClass = "text-red-500 text-xs mt-1 ml-1";
-    const buttonClass = "px-6 py-3 rounded-full shadow-ios font-semibold text-white transition-all duration-300 transform hover:scale-105 active:scale-95";
+    const buttonClass = "min-h-[44px] px-3 sm:px-6 py-2.5 sm:py-3 text-sm sm:text-base whitespace-nowrap rounded-full shadow-ios font-semibold text-white transition-all duration-300 transform hover:scale-105 active:scale-95";
     const primaryButtonClass = `${buttonClass} bg-nature-green hover:bg-green-600`;
     const secondaryButtonClass = `${buttonClass} bg-gray-400 hover:bg-gray-500`;
-    const addAnotherButtonClass = "px-5 py-3 rounded-full font-semibold border-2 border-nature-green text-nature-green dark:text-green-400 dark:border-green-500 hover:bg-nature-green/10 transition-all duration-300 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+    const addAnotherButtonClass = "min-h-[44px] px-3 sm:px-5 py-2.5 sm:py-3 text-sm sm:text-base whitespace-nowrap rounded-full font-semibold border-2 border-nature-green text-nature-green dark:text-green-400 dark:border-green-500 hover:bg-nature-green/10 transition-all duration-300 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+    const addAnotherLabel = isUploading ? 'Envoi...' : <><span className="sm:hidden">Sauver +</span><span className="hidden sm:inline">Enregistrer et ajouter une autre</span></>;
 
     return (
         <>
@@ -884,11 +885,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                     </div>
                 </div>
 
-                <div ref={bottomButtonsRef} className={`flex flex-wrap justify-end gap-3 pt-6 border-t border-gray-100 dark:border-white/5 ${showStickyBar ? 'invisible' : ''}`}>
+                <div ref={bottomButtonsRef} className={`flex flex-wrap justify-end gap-2 sm:gap-3 pt-6 border-t border-gray-100 dark:border-white/5 ${showStickyBar ? 'invisible' : ''}`}>
                     <button type="button" onClick={onCancel} className={secondaryButtonClass}>Annuler</button>
                     {!initialData && (
-                        <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo} className={addAnotherButtonClass}>
-                            {isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'}
+                        <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo} className={addAnotherButtonClass} aria-label={isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'} title="Enregistrer et ajouter une autre">
+                            {addAnotherLabel}
                         </button>
                     )}
                     <button type="submit" disabled={isUploading || isFetchingInfo} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>
@@ -900,11 +901,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             {/* Sticky Save/Cancel Bar */}
             {
                 showStickyBar && (
-                    <div className="fixed bottom-0 left-0 right-0 z-40 px-4 py-3 bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md border-t border-gray-200/50 dark:border-white/10 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] flex flex-wrap justify-end gap-3">
+                    <div className="fixed bottom-0 left-0 right-0 z-40 px-3 sm:px-4 py-2 sm:py-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md border-t border-gray-200/50 dark:border-white/10 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] flex flex-wrap justify-end gap-2 sm:gap-3">
                         <button type="button" onClick={onCancel} className={secondaryButtonClass}>Annuler</button>
                         {!initialData && (
-                            <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo} className={addAnotherButtonClass}>
-                                {isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'}
+                            <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo} className={addAnotherButtonClass} aria-label={isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'} title="Enregistrer et ajouter une autre">
+                                {addAnotherLabel}
                             </button>
                         )}
                         <button type="button" onClick={() => bottomButtonsRef.current?.closest('form')?.requestSubmit()} disabled={isUploading || isFetchingInfo} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>

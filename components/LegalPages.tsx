@@ -196,7 +196,7 @@ export const MentionsLegales: React.FC<LegalPageProps> = ({ onBack }) => (
                 <li>Donnees taxonomiques : iNaturalist (California Academy of Sciences) et GBIF</li>
                 <li>Geocodage : Nominatim / OpenStreetMap (licence ODbL)</li>
                 <li>Meteo : Open-Meteo (licence Apache 2.0)</li>
-                <li>Cartographie : OpenStreetMap, OpenTopoMap, CARTO, Esri</li>
+                <li>Cartographie : OpenStreetMap, OpenTopoMap, Esri</li>
             </ul>
         </Section>
     </LegalPageWrapper>

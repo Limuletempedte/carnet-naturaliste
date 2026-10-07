@@ -233,13 +233,12 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
         }
 
         if (activeLayer === 'auto') {
-            const tileUrl = isDarkMode
-                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-            tileLayerRef.current = L.tileLayer(tileUrl, {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                subdomains: 'abcd',
-                maxZoom: 20,
+            // CARTO exige désormais une clé. Auto utilise le fournisseur OSM
+            // déjà proposé en Standard, avec une teinte sombre limitée aux tuiles.
+            tileLayerRef.current = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                className: isDarkMode ? 'map-tiles-auto-dark' : '',
+                maxZoom: 19,
                 detectRetina: true
             }).addTo(mapRef.current);
         } else {
@@ -248,7 +247,7 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
             // densité (BUG-E1). detectRetina charge des tuiles standard plus fines à la
             // place. ArcGIS (satellite) n'a jamais eu de {r}, d'où son bon fonctionnement.
             const configs = {
-                osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 19 },
+                osm: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom: 19 },
                 satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri', maxZoom: 18 },
                 topo: { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>', maxZoom: 17 }
             };
