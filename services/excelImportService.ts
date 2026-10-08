@@ -520,7 +520,8 @@ function mapEnum<T extends string>(
     }
 
     // 3. Synonym lookup
-    if (synonyms[normalized]) return synonyms[normalized];
+    // Les valeurs du fichier ne doivent pas lire le prototype (constructor, __proto__).
+    if (Object.prototype.hasOwnProperty.call(synonyms, normalized)) return synonyms[normalized];
 
     // 4. Fallback with warning
     warnings.push({ row: rowNum, field: fieldName, message: `Valeur non reconnue, fallback appliqué`, original: raw, applied: fallback });
