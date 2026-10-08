@@ -92,13 +92,13 @@ export const useImportObservations = ({
                     try {
                         observationToPersist = await persistImportMedia(observationToPersist, context);
                         if (planned.mode === 'update') {
-                            await updateObservation(observationToPersist, { skipCache: true, context });
-                            successfulOps.push(observationToPersist);
+                            const saved = await updateObservation(observationToPersist, { skipCache: true, context });
+                            successfulOps.push(saved);
                             updatedCount++;
                         } else {
                             try {
                                 const savedObs = await saveObservation(observationToPersist, { skipCache: true, context });
-                                const persisted = { ...observationToPersist, id: savedObs.id };
+                                const persisted = { ...observationToPersist, ...savedObs };
                                 successfulOps.push(persisted);
                                 addedCount++;
                             } catch (insertErr) {
@@ -108,7 +108,7 @@ export const useImportObservations = ({
                                 // côté client. On régénère un UUID et on retente une fois.
                                 const retryObs: Observation = { ...observationToPersist, id: generateUUID() };
                                 const savedRetry = await saveObservation(retryObs, { skipCache: true, context });
-                                successfulOps.push({ ...retryObs, id: savedRetry.id });
+                                successfulOps.push({ ...retryObs, ...savedRetry });
                                 addedCount++;
                                 regeneratedIds++;
                             }

@@ -54,7 +54,7 @@ describe('useImportObservations', () => {
             { observation: obs('b', '2026-04-01'), mode: 'update', regeneratedId: false, originalId: 'b' },
         ]);
         saveObservationMock.mockResolvedValue({ id: 'a' });
-        updateObservationMock.mockResolvedValue(undefined);
+        updateObservationMock.mockImplementation(async (obs) => obs);
 
         const params = makeParams();
         const { result } = renderHook(() => useImportObservations(params));

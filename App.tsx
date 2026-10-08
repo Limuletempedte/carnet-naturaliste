@@ -454,14 +454,14 @@ const App: React.FC = () => {
         if (isImporting) throw new Error('Un import est en cours. Veuillez patienter.');
         try {
             if (editingObservation) {
-                await updateObservation(observation, { context: operationSession });
+                const savedObservation = await updateObservation(observation, { context: operationSession });
                 assertSessionContext(operationSession);
-                setObservations(prev => prev.map(obs => obs.id === observation.id ? observation : obs));
+                setObservations(prev => prev.map(obs => obs.id === observation.id ? savedObservation : obs));
             } else {
                 const savedObs = await saveObservation(observation, { context: operationSession });
                 assertSessionContext(operationSession);
                 // Merge the returned ID with the local observation data to ensure we have all fields (especially date)
-                const newObservation = { ...observation, id: savedObs.id };
+                const newObservation = { ...observation, ...savedObs };
                 setObservations(prev => [newObservation, ...prev]);
             }
             refreshOfflineQueueSnapshot();

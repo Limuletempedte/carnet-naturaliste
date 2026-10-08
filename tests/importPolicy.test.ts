@@ -111,3 +111,10 @@ describe('detectContentDuplicates (SR-19)', () => {
         expect(detectContentDuplicates(incoming, existing)).toEqual([]);
     });
 });
+
+
+it('la fusion utilise la version chargée, pas la version ancienne du fichier', () => {
+    const obs = makeObservation('123e4567-e89b-42d3-a456-426614174000');
+    const plan = buildImportPersistencePlan([{ ...obs, updatedAt: '2026-01-01T00:00:00Z' }], [{ ...obs, updatedAt: '2026-10-08T00:00:00Z' }]);
+    expect(plan[0].observation.updatedAt).toBe('2026-10-08T00:00:00Z');
+});

@@ -53,7 +53,13 @@ export const buildImportPersistencePlan = (
     options: ImportPlanOptions = {}
 ): PlannedImportObservation[] => {
     const knownIds = new Set(existingObservations.map(obs => obs.id));
-    return importedObservations.map(imported => applyImportedObservationPolicy(imported, knownIds, options));
+    const currentById = new Map(existingObservations.map(obs => [obs.id, obs]));
+    return importedObservations.map(imported => {
+        const plan = applyImportedObservationPolicy(imported, knownIds, options);
+        // Le mode fusion part de la version affichée, pas d'un horodatage du fichier.
+        if (plan.mode === 'update') plan.observation.updatedAt = currentById.get(plan.observation.id)?.updatedAt;
+        return plan;
+    });
 };
 
 // SR-19 : détection de doublons par contenu (même espèce, même date, même coordonnées GPS arrondies)

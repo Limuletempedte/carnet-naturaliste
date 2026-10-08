@@ -11,7 +11,8 @@ const selectEqMock = vi.fn(() => ({ order: orderMock }));
 const selectMock = vi.fn(() => ({ eq: selectEqMock, order: orderMock }));
 
 const updateSelectMock = vi.fn();
-const updateEqUserMock = vi.fn(() => ({ select: updateSelectMock }));
+const versionEqMock = vi.fn(() => ({ select: updateSelectMock }));
+const updateEqUserMock = vi.fn(() => ({ select: updateSelectMock, eq: versionEqMock }));
 const updateEqIdMock = vi.fn(() => ({ eq: updateEqUserMock }));
 const updateMock = vi.fn(() => ({ eq: updateEqIdMock }));
 
@@ -111,7 +112,8 @@ beforeEach(async () => {
     updateSelectMock.mockReset();
     updateSelectMock.mockResolvedValue({ error: null, data: [{ id: '123e4567-e89b-42d3-a456-426614174000' }] });
     updateEqUserMock.mockReset();
-    updateEqUserMock.mockReturnValue({ select: updateSelectMock });
+    updateEqUserMock.mockReturnValue({ select: updateSelectMock, eq: versionEqMock });
+    versionEqMock.mockClear();
 
     deleteMock.mockReset();
     deleteMock.mockReturnValue({ eq: deleteEqIdMock });
@@ -1060,5 +1062,40 @@ describe('sécurité : résultats tardifs et propriétaire immuable', () => {
             expect(service.getOfflineQueueSnapshot()).toHaveLength(1);
             expect(authGetUserMock).not.toHaveBeenCalled();
         } finally { Object.defineProperty(navigator, 'onLine', { configurable: true, value: true }); }
+    });
+});
+
+
+describe('concurrence des mises à jour', () => {
+    it('filtre atomiquement la version et renvoie le nouvel horodatage', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const service = await import('../services/storageService');
+        const obs = { ...makeObservation('123e4567-e89b-42d3-a456-426614174000'), updatedAt: '2026-10-08T10:00:00Z' };
+        updateSelectMock.mockResolvedValue({ data: [{ id: obs.id, updated_at: '2026-10-08T10:01:00Z' }], error: null });
+        const saved = await service.updateObservation(obs);
+        expect(versionEqMock).toHaveBeenCalledWith('updated_at', obs.updatedAt);
+        expect(saved.updatedAt).toBe('2026-10-08T10:01:00Z');
+    });
+
+    it('refuse la version obsolète sans la placer dans la file réseau', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const service = await import('../services/storageService');
+        updateSelectMock.mockResolvedValue({ data: [], error: null });
+        await expect(service.updateObservation({ ...makeObservation('123e4567-e89b-42d3-a456-426614174000'), updatedAt: '2026-10-08T10:00:00Z' })).rejects.toMatchObject({ name: 'ObservationConflictError' });
+        expect(service.getOfflineQueueSnapshot()).toHaveLength(0);
+    });
+
+    it('garde une modification hors ligne en conflit sans la réessayer en boucle', async () => {
+        vi.stubGlobal('navigator', { onLine: true });
+        const service = await import('../services/storageService');
+        service.setStorageNamespace('user-1');
+        const draft = { ...makeObservation('123e4567-e89b-42d3-a456-426614174000'), speciesName: 'Saisie à conserver', updatedAt: '2026-10-08T10:00:00Z' };
+        localStorage.setItem('offline_sync_queue:user-1', JSON.stringify([{ id: 'conflit', action: 'UPDATE', payload: draft, timestamp: Date.now() }]));
+        updateSelectMock.mockResolvedValue({ data: [], error: null });
+        const result = await service.processOfflineQueue();
+        expect(result.failed).toBe(1);
+        expect(result.failureReasons.join(' ')).toContain('modifiée ailleurs');
+        expect(updateMock).toHaveBeenCalledTimes(1);
+        expect(service.getOfflineQueueSnapshot()[0].payload).toMatchObject({ speciesName: 'Saisie à conserver' });
     });
 });
