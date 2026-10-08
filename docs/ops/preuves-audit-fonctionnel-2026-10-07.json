@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-07",
+  "base_commit": "8a614628edf83e8bdb4ff40553a84a30e0ddb16d",
+  "scope": "Première passe ciblée, pas clôture de la matrice générale",
+  "production_modified": false,
+  "pushed": true,
+  "checks": {
+    "npm_run_check": {
+      "status": "PASS",
+      "tests": 514,
+      "files": 73
+    },
+    "offline_full": [
+      "Connexion réelle au compte fictif A et affichage de ses 4 observations",
+      "Observation témoin de B absente de la liste de A",
+      "Pictogrammes locaux chargés, y compris les noms accentués",
+      "Worker controle la page persistante apres rechargement",
+      "Photo et son privés chargés avant coupure",
+      "Rechargement hors ligne : quatre observations visibles",
+      "Sauver + hors ligne : observation enregistrée, formulaire réinitialisé, lieu/date conservés",
+      "Deux saisies hors ligne présentes dans la file",
+      "Fermeture complète et réouverture hors ligne : session et nouvelles saisies conservées",
+      "Photo et son disponibles après réouverture hors ligne",
+      "Retour réseau : deux observations réelles, aucun doublon, file vidée"
+    ],
+    "functional_flows": [
+      "Connexion réelle au compte fictif A et affichage de ses 4 observations",
+      "Observation témoin de B absente de la liste de A",
+      "Pictogrammes locaux chargés, y compris les noms accentués",
+      "Worker controle la page persistante apres rechargement",
+      "Export JSON téléchargé et contenu réel vérifié",
+      "Export Excel téléchargé et contenu réel vérifié",
+      "Export PDF téléchargé et contenu réel vérifié",
+      "Export DwC téléchargé et contenu réel vérifié",
+      "Export GeoJSON téléchargé et contenu réel vérifié",
+      "ZIP utilisateur : quatre observations et photo/son identiques octet pour octet",
+      "Prévisualisation JSON puis annulation : aucune écriture",
+      "Import JSON confirmé : une seule observation sur Supabase local",
+      "Modification UI enregistrée et relue sur Supabase",
+      "Annulation de suppression sans effet, puis suppression confirmée en base"
+    ]
+  },
+  "mobile_bar_height": {
+    "before_390px": 197,
+    "after_320_360_390_430px": 61
+  },
+  "final_lab": {
+    "date": "2026-10-07",
+    "users": 2,
+    "accounts": [
+      {
+        "label": "A",
+        "observations": 4
+      },
+      {
+        "label": "B",
+        "observations": 2
+      }
+    ],
+    "bucketPrivate": true,
+    "temporaryObservationsRemoved": true
+  },
+  "evidence_sha256": {
+    "user-reports-before.json": "58c07d106f0fcb3f6cba227cee3fb6dfa0e20726601bc1a68299e42cd1a586bd",
+    "user-reports-after.json": "7b0fed74f1c04ba6d285f632d016fbdb0067ff1edab7d49f10c9dce549af3995",
+    "offline-full.json": "6e4c3b3fea1fb6e6ec3962d49dbfb2d4b64586fb488077f058044d345cc4c024",
+    "functional-flows.json": "d0443c9c69f8f546727c65ba64bdb9e80d0ee63f86a9bd9f2420455a17a32fee",
+    "final-lab-state.json": "0d6479ca5692439cce711538df5264705cfcb9266615e980e2bcfe0fedc06587",
+    "backup-runs.json": "24ed9d3ccf4a3a1204b9a94099efdb32bf839a4ddfd8de22e56cd1c24cb51709",
+    "backup-artifact-metadata.json": "d40aa5d51c936daa3dd361c3de7166d9b8e805be4c623b1fd94eb257d0cde81a",
+    "npm-check.log": "b112ba05b4b0bc9a0c7bc80769aa3936cc7924690f83aeb1f39320217690504a",
+    "after-mobile-form.png": "6c773c558fc72c0215eb6590c274046d885578ab15127183d525e50a1203cdb3",
+    "offline-full.png": "5a069594635dd9ba7f7105542cc931af1b6f0f87ef7144b3585c437fb7c6611c"
+  },
+  "delivery": {
+    "pr": 97,
+    "url": "https://github.com/Limuletempedte/carnet-naturaliste/pull/97",
+    "head_commit": "807bd40a7c1705bca762b72c77cab5668e240421",
+    "merge_performed": false,
+    "scope": "six fichiers des trois corrections UI et mentions des fournisseurs"
+  }
+}
