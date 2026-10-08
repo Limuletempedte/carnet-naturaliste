@@ -1,0 +1,653 @@
+{
+  "date": "2026-10-08",
+  "base": "db677f05b7124c3c8b4712a957cf6e6ead2b4c1c",
+  "production_data_used": false,
+  "production_modified": false,
+  "phone": "non testé : réponse utilisateur Pas encore testé",
+  "combined_check": {
+    "passed": true,
+    "tests": 524,
+    "files": 74
+  },
+  "open_findings": [
+    "PERF-01 : recherche à 10000 observations dépasse 15 s",
+    "validation sur téléphone réel non effectuée"
+  ],
+  "evidence": {
+    "database-restore.json": {
+      "sha256": "6874e1aec7ba1b74f64db5879432e76372b4e930d51c719cd187b2de5a69416c",
+      "result": {
+        "date": "2026-10-08",
+        "source": "supabase_db_cn_security_fixes_20260918",
+        "target": "supabase_db_cn_restore_audit_20261008",
+        "encrypted_roundtrip": true,
+        "restored": true,
+        "tables": {
+          "public.observations": {
+            "source_count": 6,
+            "target_count": 6,
+            "identical": true,
+            "source_sha256": "896100940df8401bfbdc03efdd2506c3ddb971522ce11409489446faf073d4b3",
+            "target_sha256": "896100940df8401bfbdc03efdd2506c3ddb971522ce11409489446faf073d4b3"
+          },
+          "auth.users": {
+            "source_count": 2,
+            "target_count": 2,
+            "identical": true,
+            "source_sha256": "df4bfda045377e1f949b1c1d66f6eaa713c347be7a443644840342554308c311",
+            "target_sha256": "df4bfda045377e1f949b1c1d66f6eaa713c347be7a443644840342554308c311"
+          },
+          "auth.identities": {
+            "source_count": 2,
+            "target_count": 2,
+            "identical": true,
+            "source_sha256": "6c20ecd0002ad93ffc3e9cd6b2bad56d7fbe2aac34a7cae7858b2bdfa6c1d3f1",
+            "target_sha256": "6c20ecd0002ad93ffc3e9cd6b2bad56d7fbe2aac34a7cae7858b2bdfa6c1d3f1"
+          },
+          "storage.buckets": {
+            "source_count": 1,
+            "target_count": 1,
+            "identical": true,
+            "source_sha256": "bc93a9420e00771070b1ff084d5f6b622ffd2cd80638bade1168ee97532c9a9a",
+            "target_sha256": "bc93a9420e00771070b1ff084d5f6b622ffd2cd80638bade1168ee97532c9a9a"
+          },
+          "storage.objects": {
+            "source_count": 2,
+            "target_count": 2,
+            "identical": true,
+            "source_sha256": "411392262b7a55f47e0699576f695a2fbc53fd5f477bdcc53c908b89c2960313",
+            "target_sha256": "411392262b7a55f47e0699576f695a2fbc53fd5f477bdcc53c908b89c2960313"
+          }
+        },
+        "observation_rls": true,
+        "public_policies": {
+          "source": 4,
+          "target": 4,
+          "identical": true
+        },
+        "storage_policies": {
+          "source": 4,
+          "target": 0,
+          "identical": false
+        },
+        "visible_by_account": [
+          {
+            "label": "A",
+            "rows": 4
+          },
+          {
+            "label": "B",
+            "rows": 2
+          }
+        ],
+        "storage_policies_after_supplement": {
+          "source": 4,
+          "target": 4,
+          "identical": true
+        },
+        "scope": "SQL fictif et politiques restaurés ; octets Storage non inclus dans SQL"
+      }
+    },
+    "restored-api.json": {
+      "sha256": "7cb8d98e2f227a7ec3682c8d9ef7cd8cebe94a96216144cd218af5960566c847",
+      "result": {
+        "counts": [
+          4,
+          2
+        ],
+        "storage": [
+          {
+            "role": "owner",
+            "status": 200,
+            "allowed": true
+          },
+          {
+            "role": "other",
+            "status": 400,
+            "allowed": false
+          },
+          {
+            "role": "anonymous",
+            "status": 400,
+            "allowed": false
+          }
+        ],
+        "publicUrlRefused": true
+      }
+    },
+    "browser-audit.json": {
+      "sha256": "fb14a311169669ca29e1dcec933eab8ea2d1f0f489ab9d861b781593244bc79e",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "ZIP restauré dans un compte neuf, données et médias identiques",
+            "status": "PASS",
+            "ms": 5218,
+            "details": {
+              "observations": 4,
+              "media": 2,
+              "newOwner": true,
+              "idsRegenerated": true
+            }
+          },
+          {
+            "label": "Recherche, filtres et vues cohérentes sur un carnet connu",
+            "status": "FAIL",
+            "ms": 2401,
+            "error": "Expected values to be strictly equal:\n\n'false' !== 'true'\n"
+          },
+          {
+            "label": "Champs facultatifs nuls : ouvrir, éditer et enregistrer",
+            "status": "FAIL",
+            "ms": 18429,
+            "error": "locator.fill: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#speciesName')\u001b[22m\n"
+          },
+          {
+            "label": "Mise à jour PWA proposée pendant une saisie sans rechargement imposé",
+            "status": "FAIL",
+            "ms": 16861,
+            "error": "locator.click: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Ajouter une observation', exact: true }).first()\u001b[22m\n"
+          }
+        ]
+      }
+    },
+    "null-reproduction.json": {
+      "sha256": "8c831cabd23d796dffb4f762aeb1085272983e429d14bb1a66d51ac814ef3fcc",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Champs facultatifs nuls : ouvrir, éditer et enregistrer",
+            "status": "FAIL",
+            "ms": 18118,
+            "error": "locator.fill: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#speciesName')\u001b[22m\n"
+          }
+        ]
+      }
+    },
+    "null-after.json": {
+      "sha256": "7257b8b0abed9010a0d711b473a9e080515373745d48c44d6c8a2d390f4ae94f",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Champs facultatifs nuls : ouvrir, éditer et enregistrer",
+            "status": "PASS",
+            "ms": 5108,
+            "details": {
+              "count": 1
+            }
+          }
+        ]
+      }
+    },
+    "views-complete.json": {
+      "sha256": "d8ec4ee815ebafb57e3eadb4fcd4a8ad8b7028e0e059324f13a7cf01e79406fa",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Recherche, filtres et vues cohérentes sur un carnet connu",
+            "status": "PASS",
+            "ms": 9474,
+            "details": {
+              "search": true,
+              "yearFilter": true,
+              "views": [
+                "Carte",
+                "Stats",
+                "Calendrier",
+                "Galerie",
+                "Liste"
+              ],
+              "errors": []
+            }
+          }
+        ]
+      }
+    },
+    "worker-update.json": {
+      "sha256": "098bceba0bc1205a2f69ae4c7ea7948e0468c4eb3d62df6ee67508eb6e8ae32b",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Mise à jour PWA proposée pendant une saisie sans rechargement imposé",
+            "status": "PASS",
+            "ms": 6264,
+            "details": {
+              "prompt": true,
+              "unsavedInputPreserved": true
+            }
+          }
+        ]
+      }
+    },
+    "network-audit.json": {
+      "sha256": "7c360bab8a1086f7567782c5a86627f8a8c8e4d1c39c0cfef1ec1cc64899a06f",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Deux onglets ne doivent pas écraser silencieusement une modification récente",
+            "status": "FAIL",
+            "ms": 7288,
+            "error": "La saisie obsolète a écrasé la modification récente\n+ actual - expected\n\n+ 'SAISIE_OBSOLETE'\n- 'MODIFICATION_RECENTE'\n"
+          },
+          {
+            "label": "HTTP 503 : modification conservée dans la file puis reprise sans doublon",
+            "status": "PASS",
+            "ms": 5255,
+            "details": {
+              "rows": 1,
+              "queueEmpty": true
+            }
+          },
+          {
+            "label": "Déconnexion A, connexion B, réponse A retardée : aucune contamination",
+            "status": "PASS",
+            "ms": 4976,
+            "details": {
+              "onlyB": true
+            }
+          },
+          {
+            "label": "Édition hors ligne, déconnexion annulée et reprise",
+            "status": "PASS",
+            "ms": 4035,
+            "details": {
+              "cancelLogoutPreservesDraft": true
+            }
+          }
+        ]
+      }
+    },
+    "network-after.json": {
+      "sha256": "5e3c902efce94a0a1e0fc6f5cf58c69ce562f930b64ca5fa261246ed15b446d8",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Deux onglets ne doivent pas écraser silencieusement une modification récente",
+            "status": "PASS",
+            "ms": 9042,
+            "details": {
+              "conflictVisible": true,
+              "draftPreserved": true
+            }
+          },
+          {
+            "label": "HTTP 503 : modification conservée dans la file puis reprise sans doublon",
+            "status": "PASS",
+            "ms": 6707,
+            "details": {
+              "rows": 1,
+              "queueEmpty": true
+            }
+          },
+          {
+            "label": "Déconnexion A, connexion B, réponse A retardée : aucune contamination",
+            "status": "PASS",
+            "ms": 7050,
+            "details": {
+              "onlyB": true
+            }
+          },
+          {
+            "label": "Édition hors ligne, déconnexion annulée et reprise",
+            "status": "PASS",
+            "ms": 5231,
+            "details": {
+              "cancelLogoutPreservesDraft": true
+            }
+          }
+        ]
+      }
+    },
+    "offline-conflict.json": {
+      "sha256": "de0ae46eb973557167a3099e2474a7b130053f0c9b81fe75f0d34c41b56f4829",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Conflit au retour réseau : file et brouillon conservés après réouverture",
+            "status": "PASS",
+            "ms": 17662,
+            "details": {
+              "serverPreserved": true,
+              "draftDurable": true,
+              "queuedItems": 1
+            }
+          }
+        ]
+      }
+    },
+    "media-audit.json": {
+      "sha256": "ae994f93d6bae1c1748a9a42445bfb35ffd3c2308ce0b591a3b8b9063ceb3efb",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Photo et son ajoutés hors ligne par ZIP, conservés au rechargement puis synchronisés",
+            "status": "PASS",
+            "ms": 9632,
+            "details": {
+              "rows": 4,
+              "media": 2,
+              "durableOfflineBlobs": true,
+              "byteEquality": true,
+              "ids": "neufs pour isoler le parcours média de la collision intercompte déjà testée en ligne"
+            }
+          },
+          {
+            "label": "Cache médias : plafonds 50 entrées / 100 Mio, expiration 30 jours",
+            "status": "PASS",
+            "ms": 10742,
+            "details": {
+              "maxEntries": 50,
+              "maxBytes": 83886842,
+              "expiredEntriesRemoved": true
+            }
+          }
+        ]
+      }
+    },
+    "import-edgecases.json": {
+      "sha256": "bc2199b88aa113f1f8674e4ed13188d6f9efc987315ddff9b168349b605de10e",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Imports refusés ou annulés sans écriture, Excel ancien et valeurs atypiques",
+            "status": "PASS",
+            "ms": 13799,
+            "details": [
+              {
+                "file": "malforme.json",
+                "preview": false,
+                "rowsWritten": 0
+              },
+              {
+                "file": "vide.json",
+                "preview": true,
+                "rowsWritten": 0
+              },
+              {
+                "file": "invalide.json",
+                "preview": true,
+                "rowsWritten": 0
+              },
+              {
+                "file": "trop.json",
+                "preview": false,
+                "rowsWritten": 0
+              },
+              {
+                "file": "poids.json",
+                "preview": false,
+                "rowsWritten": 0
+              },
+              {
+                "file": "ancien.xls",
+                "preview": false,
+                "rowsWritten": 0
+              },
+              {
+                "file": "atypique.xlsx",
+                "status": "PASS avec valeurs de repli",
+                "rowsWritten": 1
+              },
+              {
+                "legacyJson": "prévisualisation valide, annulation sans écriture"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "cancellation-audit.json": {
+      "sha256": "79d38f92e63aae1860c882c5a82fb2e6f90399a32f3d15b36fa101c1839c6a3e",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Annulation et délai de 30 s terminent le vrai Worker sans écriture",
+            "status": "PASS",
+            "ms": 38260,
+            "details": {
+              "started": 2,
+              "closed": 2,
+              "timeoutMs": 30118,
+              "injection": "Worker volontairement muet",
+              "writes": 0
+            }
+          }
+        ]
+      }
+    },
+    "imports-performance.json": {
+      "sha256": "e7d00d31e94da1379004716fc1743bf2ad55eb61047e895526cec77d35b5a551",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Imports refusés ou annulés sans écriture, Excel ancien et valeurs atypiques",
+            "status": "FAIL",
+            "ms": 2247,
+            "error": "The expression evaluated to a falsy value:\n\n  assert(await confirm.isDisabled())\n"
+          },
+          {
+            "label": "Import, chargement et recherche de 1000 observations",
+            "status": "PASS",
+            "ms": 90307,
+            "details": {
+              "observations": 1000,
+              "parseMs": 9228,
+              "importMs": 61851,
+              "timings": [
+                {
+                  "loadMs": 1948,
+                  "searchMs": 117
+                },
+                {
+                  "loadMs": 1954,
+                  "searchMs": 697
+                },
+                {
+                  "loadMs": 2045,
+                  "searchMs": 119
+                }
+              ],
+              "heapBytes": 15863172,
+              "databaseCount": 1000
+            }
+          },
+          {
+            "label": "Import, chargement et recherche de 10000 observations",
+            "status": "FAIL",
+            "ms": 186200,
+            "error": "Condition non atteinte en 180000 ms"
+          }
+        ]
+      }
+    },
+    "performance-10000.json": {
+      "sha256": "bb219c459bc497f2718bbdfa752a2c647c23a5143536e71765db5a9690e2faeb",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Import, chargement et recherche de 10000 observations",
+            "status": "FAIL",
+            "ms": 625363,
+            "error": "locator.fill: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByPlaceholder('Rechercher...').first()\u001b[22m\n\u001b[2m    - locator resolved to <input value=\"\" type=\"text\" id=\"search-input\" placeholder=\"Rechercher...\" class=\"w-full pl-12 pr-4 py-4 glass-input rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white placeholder-gray-400 outline-none\"/>\u001b[22m\n\u001b[2m    - fill(\"VOLUME_09999\")\u001b[22m\n\u001b[2m  - attempting fill action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and editable\u001b[22m\n"
+          }
+        ]
+      }
+    },
+    "creation-cancel.json": {
+      "sha256": "28896310cef4760d8b9c17c014b3b6bb6d34519468e4fc826fbad08b695d0895",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Créer faune/flore/fonge, dates limites et annuler une édition",
+            "status": "PASS",
+            "ms": 12472,
+            "details": {
+              "created": 3,
+              "groups": 3,
+              "leapDate": true,
+              "cancelPreservesServer": true
+            }
+          }
+        ]
+      }
+    },
+    "edge-views.json": {
+      "sha256": "17777f16478916bbde9bbb097a812843b1814afc4f79259f4b124e470c2a26a5",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Recherche, filtres et vues cohérentes sur un carnet connu",
+            "status": "PASS",
+            "ms": 7947,
+            "details": {
+              "search": true,
+              "yearFilter": true,
+              "views": [
+                "Carte",
+                "Stats",
+                "Calendrier",
+                "Galerie",
+                "Liste"
+              ],
+              "errors": []
+            }
+          }
+        ]
+      }
+    },
+    "edge-pwa.json": {
+      "sha256": "04668374638b59a2d9ab914a1351baf92fa1384f1f27e5a594740319b3c55f68",
+      "result": {
+        "date": "2026-10-08",
+        "results": [
+          {
+            "label": "Mise à jour PWA proposée pendant une saisie sans rechargement imposé",
+            "status": "PASS",
+            "ms": 20324,
+            "details": {
+              "prompt": true,
+              "unsavedInputPreserved": true
+            }
+          }
+        ]
+      }
+    },
+    "firefox.json": {
+      "sha256": "018521fb59b49af0b9a818cc63704ce5dc9e5562d48120d59621f545cc5f775d",
+      "result": {
+        "date": "2026-10-08",
+        "browser": "Firefox",
+        "checks": [
+          "Quatre observations chargées dans Firefox",
+          "Vue Carte accessible",
+          "Vue Stats accessible",
+          "Vue Galerie accessible",
+          "Vue Calendrier accessible",
+          "Vue Liste accessible"
+        ],
+        "version": "156.0.1",
+        "status": "PASS"
+      }
+    },
+    "source-lab-final.json": {
+      "sha256": "f1b4dc67160c2c9737c29a44c13e0605dd2248ffaa8b2f49ee1e0dfa2af5ac5c",
+      "result": {
+        "users": 2,
+        "counts": [
+          {
+            "label": "A",
+            "rows": 4
+          },
+          {
+            "label": "B",
+            "rows": 2
+          }
+        ],
+        "bucketPrivate": true,
+        "temporaryAccountsRemoved": true
+      }
+    },
+    "restore-lab-final.json": {
+      "sha256": "3fb8208a221ac160b4a972110c44bccbbe581b07e23e0f8476aa097e43aa32a6",
+      "result": {
+        "target": "cn_restore_audit_20261008",
+        "volumes_removed": false,
+        "containers": [
+          {
+            "name": "/supabase_rest_cn_restore_audit_20261008",
+            "running": false,
+            "exit_code": 255
+          },
+          {
+            "name": "/supabase_storage_cn_restore_audit_20261008",
+            "running": false,
+            "exit_code": 0
+          },
+          {
+            "name": "/supabase_auth_cn_restore_audit_20261008",
+            "running": false,
+            "exit_code": 0
+          },
+          {
+            "name": "/supabase_inbucket_cn_restore_audit_20261008",
+            "running": false,
+            "exit_code": 0
+          },
+          {
+            "name": "/supabase_kong_cn_restore_audit_20261008",
+            "running": false,
+            "exit_code": 137
+          },
+          {
+            "name": "/supabase_db_cn_restore_audit_20261008",
+            "running": false,
+            "exit_code": 137
+          }
+        ]
+      }
+    }
+  },
+  "note": "Conserver les reproductions initiales ; les rapports finaux nommés after/complete priment sur les échecs corrigés du dispositif de test.",
+  "delivery": {
+    "data": {
+      "pr": 98,
+      "commit": "6f6b61a"
+    },
+    "sync": {
+      "pr": 99,
+      "commit": "060845a"
+    },
+    "backup": {
+      "pr": 100,
+      "commit": "3302265"
+    },
+    "auto_merge": false
+  },
+  "scripts_sha256": {
+    "browser-audit.mjs": "280ec516c7e5d5bca2b1a946aa6338de4a94e290b7d2ef1c190188aa979974fe",
+    "network-audit.mjs": "523524e3dbc761d9ef21c64e96b485dc9f67eaf9a66cf389e5d7bcd46ccd6464",
+    "imports-performance.mjs": "ea9391779589c917477fa1b39f8a4ee7ca0f38666241d99cd7f5e84bdc35127e",
+    "firefox-audit.mjs": "aeeff85c607537d351a887f7876fc638c61d205c05734f8fa7c22fa852c85848",
+    "verify-restored-api.mjs": "5af0c41e429c3931ddd673a9ab89e5e83676f9ed17319a7df3c48730bcc4a64d",
+    "media-audit.mjs": "6cec8dea56819df86deda0eec0d557f62017bdd04468e6e5ffeb5aeebc403640",
+    "cancellation-audit.mjs": "86f59f8082db65aeeae12c45ca103153f78e0ea5aac18fe1045c0af7761d8f44",
+    "completion-cases.mjs": "c2ec96ec414ca3d96b77e327a98dc2a3bd09799c2a7c05ae2e1310bd629ccb83",
+    "check-project.mjs": "692f44a9b0c4693d51c4164d89b882e288cbc649d09149290de7e7363546de3f",
+    "harness.mjs": "4306dedcbcaae8e1673dc11f0d05cb0b712f3d31e582db311a6f540567dd5828"
+  }
+}

@@ -1,4 +1,30 @@
-# État de reprise — 1er octobre 2026
+# État de reprise — 8 octobre 2026
+
+La PR #97 est fusionnée et déployée (`db677f0`), vérifiée le 8 octobre.
+La campagne fonctionnelle locale et ses défauts sont décrits dans le
+[rapport du 8 octobre](AUDIT-FONCTIONNEL-2026-10-08.md) et la
+[matrice cumulée](PREPARATION-AUDIT-FONCTIONNEL-2026-10-07.md).
+
+Les correctifs sont proposés séparément : #98 (données anciennes/import Excel),
+#99 (conflits de synchronisation), #100 (restauration des sauvegardes).
+Aucune fusion ni mise en production de ces nouveaux lots n’a été effectuée.
+Restent ouverts : fluidité à 10 000 observations ([plan distinct](PLAN-PERFORMANCE-GROS-CARNETS.md))
+et essais sur le téléphone de l’utilisateur. Les tests au labo ne valident
+pas les archives réelles de production.
+
+Le laboratoire principal et ses deux comptes/six observations de préparation
+sont conservés ; les comptes et données temporaires de la campagne ont été
+retirés. La seconde instance de restauration est arrêtée, volumes conservés.
+Les clés, dumps et fichiers `.local` restent hors dépôt. La copie active reste
+`/home/eliotserive/Documents/Codex/2026-09-11/b/work/security-fixes`.
+Vérifier la branche et les PR avant une reprise ; ne pas repartir de l’ancienne
+copie du dossier Projet dev. Ne pas rejouer les régularisations de migrations
+ni rétablir des médias publics.
+
+---
+
+## Historique de la passation du 1er octobre
+
 
 Point d'entrée à lire avant de reprendre les travaux. Pour changer de discussion,
 utiliser la [passation vers l'audit fonctionnel](REPRISE-AUDIT-FONCTIONNEL.md).
