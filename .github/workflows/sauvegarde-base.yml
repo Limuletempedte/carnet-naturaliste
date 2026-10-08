@@ -118,7 +118,11 @@ jobs:
           # --use-copy : forme documentee par Supabase pour l'export de donnees.
           # Sans ce drapeau, la CLI produit des INSERT ligne a ligne — beaucoup
           # plus volumineux et bien plus lents a restaurer que des blocs COPY.
-          supabase db dump --db-url "${URL_BASE}" --use-copy --data-only -f sauvegarde/data.sql
+          # Tables internes du stockage vectoriel : leur COPY est refusé lors
+          # d'une restauration standard (procédure Supabase du 8 octobre 2026).
+          supabase db dump --db-url "${URL_BASE}" --use-copy --data-only \
+            --exclude storage.buckets_vectors --exclude storage.vector_indexes \
+            -f sauvegarde/data.sql
 
           ls -lh sauvegarde/
 
