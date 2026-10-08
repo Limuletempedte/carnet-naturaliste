@@ -137,3 +137,19 @@ describe('excelImportService — heure manquante (BUG-07)', () => {
         expect(obs.time).toBe('');
     });
 });
+
+
+describe('excelImportService — valeurs héritées des objets JavaScript', () => {
+    it.each(['constructor', '__proto__', 'toString'])('traite %s comme une valeur inconnue, sans casser le Worker', async (value) => {
+        const result = await parseExcel(await createExcelFile([{
+            "Nom de l'espèce": 'Espèce fictive', Date: '2026-10-08', Nombre: 1,
+            Protocole: value, Sexe: value, Habitat: value
+        }]));
+        expect(result.report.blockingErrors).toHaveLength(0);
+        expect(typeof result.observations[0].protocol).toBe('string');
+        expect(typeof result.observations[0].sexe).toBe('string');
+        expect(result.observations[0].habitat).toBeUndefined();
+        expect(() => structuredClone(result)).not.toThrow();
+        expect(result.report.warnings.length).toBeGreaterThan(0);
+    });
+});
