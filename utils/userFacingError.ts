@@ -6,6 +6,7 @@
 export const mapUserFacingError = (error: unknown): string => {
     const raw = error instanceof Error ? error.message : String(error ?? '');
     const lower = raw.toLowerCase();
+    if (error instanceof Error && error.name === 'ObservationConflictError') return raw;
 
     if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('network request failed')) {
         return 'Connexion au serveur impossible. Vérifiez votre connexion Internet et réessayez.';

@@ -1,3 +1,4 @@
+import { ObservationConflictError } from './observationConflict';
 import { captureSessionContext, assertSessionContext, setSessionIdentity, getSessionUserId, inSession, StaleSessionError, removeUnownedLegacyState, type SessionContext } from './sessionScope';
 import { readPendingMedia, isPendingMedia, clearPendingMedia } from './pendingMediaStore';
 import { downloadPrivateMedia } from './privateMediaService';
@@ -422,7 +423,7 @@ export const saveObservation = async (
 export const updateObservation = async (
     observation: Observation,
     options: PersistenceOptions = {}
-): Promise<void> => {
+): Promise<Observation> => {
     const context = options.context ?? captureSessionContext();
     assertSessionContext(context);
 
@@ -433,7 +434,7 @@ export const updateObservation = async (
         if (!options.skipCache) {
             upsertObservationInCache(observation, context);
         }
-        return;
+        return observation;
     }
 
     observation = await uploadObservationMedia(observation, context);
@@ -443,12 +444,15 @@ export const updateObservation = async (
     let data: unknown = null;
     let error: SupabaseLikeError | null = null;
     try {
-        const response = await inSession(context, () => withColumnFallback(row, (effectiveRow) => { assertSessionContext(context); return supabase
+        const response = await inSession(context, () => withColumnFallback(row, (effectiveRow) => {
+                assertSessionContext(context);
+                let query = supabase
                 .from('observations')
                 .update(effectiveRow)
                 .eq('id', observation.id)
-                .eq('user_id', userId)
-                .select('id, updated_at'); }
+                .eq('user_id', userId);
+                if (observation.updatedAt) query = query.eq('updated_at', observation.updatedAt);
+                return query.select('id, updated_at'); }
         ));
         data = response.data;
         error = response.error;
@@ -466,7 +470,7 @@ export const updateObservation = async (
                 upsertObservationInCache(observation, context);
             }
             notifyRecoverableError('mise à jour');
-            return;
+            return observation;
         }
         logger.error('Error updating observation:', error);
         const msg = isMissingColumnError(error)
@@ -474,11 +478,14 @@ export const updateObservation = async (
             : (error.message || 'Mise à jour impossible');
         throw new Error(msg);
     }
+    if (observation.updatedAt && Array.isArray(data) && data.length === 0) throw new ObservationConflictError();
     assertMutationAffectedRows(Array.isArray(data) ? data.length : 0, 'update');
-
+    const returned = (data as Array<{ updated_at?: string }>)[0];
+    const saved = { ...observation, updatedAt: returned.updated_at ?? observation.updatedAt };
     if (!options.skipCache) {
-        upsertObservationInCache(observation, context);
+        upsertObservationInCache(saved, context);
     }
+    return saved;
 };
 
 /**
@@ -690,16 +697,21 @@ const _processOfflineQueueInner = async (options: ProcessOfflineQueueOptions, co
 
             const row = await reUploadDataUrlMedia(mapToRow(payload, userId));
             assertSessionContext(context);
-            const { data, error } = await inSession(context, () => withColumnFallback(row, (effective) => { assertSessionContext(context); return supabase
+            const { data, error } = await inSession(context, () => withColumnFallback(row, (effective) => {
+                    assertSessionContext(context);
+                    let query = supabase
                     .from('observations')
                     .update(effective)
                     .eq('id', payload.id)
-                    .eq('user_id', userId)
-                    .select('id'); }
+                    .eq('user_id', userId);
+                    if (payload.updatedAt) query = query.eq('updated_at', payload.updatedAt);
+                    return query.select('id'); }
             ));
 
             assertSessionContext(context);
             if (error) throw error;
+            // Un conflit reste dans la file pour conserver la saisie.
+            if (payload.updatedAt && Array.isArray(data) && data.length === 0) throw new ObservationConflictError();
             // SI-07: Verify the UPDATE actually affected a row
             assertMutationAffectedRows(Array.isArray(data) ? data.length : 0, 'update');
         } else if (item.action === 'DELETE') {
@@ -749,6 +761,11 @@ const _processOfflineQueueInner = async (options: ProcessOfflineQueueOptions, co
             } catch (error) {
                 assertSessionContext(context);
                 const msg = error instanceof Error ? error.message : '';
+                if (error instanceof ObservationConflictError) {
+                    failedItems.push(mapQueueItemIds(rawItem, idMap));
+                    failureReasons.set(error.message, (failureReasons.get(error.message) || 0) + 1);
+                    break;
+                }
                 // Don't retry on skip or missing temp ID — collect as skipped
                 if (msg === 'SKIP_TEMP_ID') {
                     const p = item.payload as { id?: string; speciesName?: string };
@@ -773,7 +790,7 @@ const _processOfflineQueueInner = async (options: ProcessOfflineQueueOptions, co
         // SI-05: Update persisted queue after each processed item (crash protection)
         if (succeeded) {
             remainingItems.splice(remainingItems.indexOf(rawItem), 1);
-            setQueue([...preservedQueueItems, ...remainingItems, ...failedItems].sort((a, b) => a.timestamp - b.timestamp), context);
+            setQueue([...preservedQueueItems, ...remainingItems].sort((a, b) => a.timestamp - b.timestamp), context);
         }
     }
 
@@ -789,12 +806,12 @@ const _processOfflineQueueInner = async (options: ProcessOfflineQueueOptions, co
     assertSessionContext(context);
     if (!fetchError && refreshData) {
         setLocalCache(refreshData.map(mapToObservation), context);
-        // SI-12: Re-inject failed INSERT observations into cache so they remain visible
-        const failedInserts = failedItems
-            .filter(item => item.action === 'INSERT')
+        // Conserver aussi les modifications en conflit pour une réouverture hors ligne.
+        const failedDrafts = failedItems
+            .filter(item => item.action === 'INSERT' || item.action === 'UPDATE')
             .map(item => item.payload as Observation);
-        if (failedInserts.length > 0) {
-            bulkUpsertObservationsInCache(failedInserts, context);
+        if (failedDrafts.length > 0) {
+            bulkUpsertObservationsInCache(failedDrafts, context);
         }
     }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ObservationConflictError } from '../services/observationConflict';
 import { mapUserFacingError } from '../utils/userFacingError';
 
 describe('mapUserFacingError', () => {
@@ -20,4 +21,9 @@ describe('mapUserFacingError', () => {
         expect(mapUserFacingError(null)).toBe('Une erreur inconnue est survenue.');
         expect(mapUserFacingError('')).toBe('Une erreur inconnue est survenue.');
     });
+});
+
+
+it('explique le conflit et la conservation de la saisie', () => {
+    expect(mapUserFacingError(new ObservationConflictError())).toContain('Votre saisie est conservée');
 });
