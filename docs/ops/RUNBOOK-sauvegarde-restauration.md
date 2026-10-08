@@ -188,6 +188,30 @@ l'import. Sans cela, l'ordre des dépendances entre `auth.users` et
 > Ne jamais découper `data.sql` pour n'en restaurer qu'un morceau : les liens
 > entre les tables casseraient.
 
+### Étape 3 bis — Restaurer les droits du stockage privé
+
+Le dump CLI standard omet les policies personnalisées du schéma `storage`.
+Sur la **nouvelle cible uniquement**, après restauration SQL et avant de
+rebrancher l’application, exécuter le fichier versionné
+[`supabase/restore-storage-policies.sql`](../../supabase/restore-storage-policies.sql)
+avec `psql --variable ON_ERROR_STOP=1 --file supabase/restore-storage-policies.sql`
+et la connexion de cette cible. Il refuse un bucket `photos` absent ou public.
+Ne pas rejouer les anciennes migrations ni rendre le bucket public.
+
+Vérifier ensuite avec deux comptes fictifs que chacun ne voit que ses
+observations et ses propres médias. Les métadonnées `storage.objects` sont
+restaurées par SQL, **pas les octets des photos/sons** : leur récupération
+nécessite une copie séparée du stockage ou les ZIP utilisateur.
+
+Les exports de données du workflow excluent désormais les tables internes
+`storage.buckets_vectors` et `storage.vector_indexes`, conformément à la
+[procédure Supabase](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore).
+Leur présence faisait échouer la restauration avec `permission denied`, même
+vides. Le Carnet n'utilise pas le stockage vectoriel ; si cette fonctionnalité
+est ajoutée, prévoir sa sauvegarde spécifique avant de l'utiliser. Pour une
+ancienne archive, conserver l'original et vérifier ces deux tables avant
+toute adaptation de copie ; ne pas retirer d'autres blocs de données.
+
 ### Étape 4 — Rebrancher l'application
 
 1. Redéployer la fonction *edge* : `supabase functions deploy delete-account`.
