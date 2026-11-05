@@ -1,6 +1,7 @@
 # Assistant d'identification par IA — Phase 1
 
-- **Statut** : plan validé le 2026-11-05, **en pause** avant la mise en œuvre (à la demande du propriétaire).
+- **Statut** : plan validé le 2026-11-05. Étape 0 et PR A (back-end) réalisées le 2026-11-05, en attente de relecture et de fusion ; étapes en production et PR B non commencées.
+- **Écarts de mise en œuvre (PR A)** : `ai_reserve_call` reçoit aussi `p_model` ; l'anti double-clic (`busy`) laisse passer **une seule** des 25 réservations simultanées d'une même personne (le quota de 20 est vérifié en séquence, le budget en concurrence sur 5 personnes) ; la photo est refusée au-delà de 1 280 px ; `AI_EFFORT` n'a pas de valeur par défaut.
 - **Base** : `main` à `4d8a574`.
 - **Suite** : phases 2 (note → fiche) et 3 (bilan mensuel), hors périmètre ici.
 
