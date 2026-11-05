@@ -34,21 +34,35 @@ alors `upstream_unavailable` (aucune analyse comptée à l'utilisateur).
 
 ### 1.2 Migration
 
-Depuis le dossier du projet, relié au projet Supabase :
+La CLI Supabase est fournie par le projet (`npx supabase`, version figée dans
+`package-lock.json`) : rien à installer. Sur un poste neuf, la connecter puis
+relier le dossier au projet (le mot de passe de la base peut être demandé : le
+taper soi-même ; **ne pas le réinitialiser** sans mettre à jour le secret GitHub
+`SUPABASE_DB_URL` de la sauvegarde hebdomadaire) :
 
 ```bash
-supabase migration list --linked
+npx supabase login
 ```
 
 ```bash
-supabase db push --linked --dry-run
+npx supabase link --project-ref xowiezzqehadcfnbkijo
+```
+
+Puis, depuis le dossier du projet :
+
+```bash
+npx supabase migration list --linked
+```
+
+```bash
+npx supabase db push --linked --dry-run
 ```
 
 Le `--dry-run` doit lister **exactement un** fichier :
 `20261105161500_ai_identification.sql`. Si ce n'est pas le cas, s'arrêter.
 
 ```bash
-supabase db push --linked
+npx supabase db push --linked
 ```
 
 Ne jamais utiliser `--include-all` ni `db reset --linked`. Ne pas appliquer la
@@ -95,12 +109,24 @@ définir en production.
 
 ### 1.5 Déploiement
 
+`--use-api` fait préparer la fonction par Supabase : Docker n'est pas nécessaire.
+
 ```bash
-supabase functions deploy ai-identify
+npx supabase functions deploy ai-identify --use-api
 ```
 
 `verify_jwt = true` est lu dans `supabase/config.toml` : la plateforme refuse
 déjà toute requête sans jeton, et la fonction vérifie elle-même l'utilisateur.
+
+Contrôle sans frais (aucun jeton, aucune photo, aucun appel à Claude) : un
+`POST` sans jeton doit répondre **401** ; une requête préalable CORS (`OPTIONS`)
+depuis `https://carnet-naturaliste.vercel.app` doit répondre **204** avec
+`access-control-allow-origin` ; depuis une autre origine, **403**.
+
+Pour vérifier les secrets sans les afficher, `npx supabase secrets list` donne
+l'empreinte SHA-256 de chaque valeur : la comparer à celle de la valeur attendue
+(`printf '%s' 'claude-sonnet-5-5' | sha256sum`). Ne jamais le faire pour
+`ANTHROPIC_API_KEY`.
 
 ### 1.6 Premier essai
 
