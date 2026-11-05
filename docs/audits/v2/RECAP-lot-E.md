@@ -116,15 +116,18 @@ déclenche plus → mode `pending` → notif silencieuse (**comportement voulu**
 
 ---
 
-## 5. Reste à faire (idées en réserve — non commencées)
+## 5. Idées qui étaient en réserve — toutes livrées depuis
 
-| # | Idée | Effort |
-|---|---|---|
-| EE-3 | Code atlas en **liste déroulante** | S |
-| EE-5 | **Vrai logo** de l'app | S |
-| EE-4 | **Animations** discrètes + finitions visuelles | S→M |
-| EE-1 | **Saisir une obs en cliquant sur la carte** (pas via « se repérer ») | M |
-| EE-2 | **Vue lecture seule** au clic sur une obs (modif via bouton) | M |
+> Statut vérifié le 2026-11-05 dans les PR fusionnées (ce tableau les disait
+> « non commencées » à la date du récap).
+
+| # | Idée | Effort | Statut |
+|---|---|---|---|
+| EE-3 | Code atlas en **liste déroulante** | S | ✅ PR #38 |
+| EE-5 | **Vrai logo** de l'app | S | ✅ PR #49 |
+| EE-4 | **Animations** discrètes + finitions visuelles | S→M | ✅ PR #50, #52, #53, #54 (finition du fond encore ouverte, voir `DESIGN-liquid-glass-a-finaliser.md`) |
+| EE-1 | **Saisir une obs en cliquant sur la carte** (pas via « se repérer ») | M | ✅ PR #46 |
+| EE-2 | **Vue lecture seule** au clic sur une obs (modif via bouton) | M | ✅ PR #48 |
 
 Plus les propositions de l'audit gardées en réserve (météo auto, life list, TAXREF,
 partage par lien, Pl@ntNet, sessions eBird, Sentry, backup auto, E2E Playwright…) — voir
