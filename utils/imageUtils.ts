@@ -1,13 +1,15 @@
 /**
  * Compresses an image file to a specified quality and maximum width/height.
- * @param file The image file to compress.
+ * Accepte aussi un `Blob` (photo déjà enregistrée, relue pour l'assistant IA).
+ * Pour borner les deux côtés, passer une largeur et une hauteur maximales égales.
+ * @param file The image file (or Blob) to compress.
  * @param maxWidth The maximum width of the output image.
  * @param maxHeight The maximum height of the output image.
  * @param quality The quality of the JPEG output (0 to 1).
  * @returns A Promise that resolves to the compressed Blob.
  */
 export const compressImage = (
-    file: File,
+    file: File | Blob,
     maxWidth: number = 1920,
     maxHeight: number = 1080,
     quality: number = 0.7

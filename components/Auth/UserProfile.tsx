@@ -6,12 +6,14 @@ import { useLiquidGlassRefraction } from '../LiquidGlass';
 interface UserProfileProps {
     onExportData?: () => void;
     onDeleteAccount?: () => void;
+    /** Ouvre la fenêtre de l'assistant d'identification (accès, consentement). */
+    onOpenAiAssistant?: () => void;
     /** Affiche l'item « Installer l'application » (mobile : prompt natif ou consigne iOS). */
     canInstallApp?: boolean;
     onInstall?: () => void;
 }
 
-const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount, canInstallApp, onInstall }) => {
+const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount, onOpenAiAssistant, canInstallApp, onInstall }) => {
     const { user, signOut } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -110,6 +112,19 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                                 </svg>
                                 Exporter mes données
+                            </button>
+                        )}
+
+                        {onOpenAiAssistant && (
+                            <button
+                                role="menuitem"
+                                onClick={() => { setIsOpen(false); onOpenAiAssistant(); }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-nature-dark dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors"
+                            >
+                                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+                                </svg>
+                                Aide à l'identification (IA)
                             </button>
                         )}
 

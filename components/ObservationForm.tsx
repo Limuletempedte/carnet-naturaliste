@@ -19,6 +19,10 @@ import { useSpeciesLookup } from '../hooks/useSpeciesLookup';
 import { ToastType } from './ToastContainer';
 import FieldTooltip from './FieldTooltip';
 import FormSection from './FormSection';
+import AiIdentificationPanel from './AiIdentificationPanel';
+import ConfirmationDialog from './ConfirmationDialog';
+import { AiAssistError, identifySpecies, type AiCandidate, type AiIdentifyResult } from '../services/aiAssistService';
+import { suggestSpeciesAutocomplete, type SpeciesSuggestion } from '../services/speciesService';
 import { MapPinIcon, XMarkIcon } from './icons';
 
 const MapInput = lazy(() => import('./MapInput'));
@@ -30,9 +34,21 @@ interface ObservationFormProps {
     /** EE-1 : position de départ (clic sur la carte) pour une nouvelle observation. */
     initialPosition?: { lat: number; lon: number } | null;
     onToast: (type: ToastType, message: string, durationMs?: number) => void;
+    /** Transmis par App.tsx (le formulaire n'utilise pas useAuth). */
+    isOffline?: boolean;
+    /** Ouvre la fenêtre d'accès à l'assistant IA (demande, consentement). */
+    onOpenAiAccess?: () => void;
 }
 
-const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, initialPosition, onToast }) => {
+type AiPanelState =
+    | { phase: 'idle' }
+    | { phase: 'loading' }
+    | { phase: 'result'; result: AiIdentifyResult }
+    | { phase: 'error'; error: AiAssistError };
+
+const normalizeLatin = (value: string): string => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, initialPosition, onToast, isOffline = false, onOpenAiAccess }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
     const [formData, setFormData] = useState<ObservationFormData>(() => createEmptyFormData(defaultTaxonomicGroup));
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -347,6 +363,97 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     };
 
     const [formSession] = useState(() => { try { return captureSessionContext(); } catch { return null; } });
+
+    // --- Aide à l'identification (IA) -------------------------------------
+    // L'IA propose, l'observateur choisit : rien n'est rempli sans clic sur
+    // « Choisir ». Jamais de file d'attente hors ligne, et l'enregistrement de
+    // l'observation n'attend jamais l'analyse.
+    const [aiState, setAiState] = useState<AiPanelState>({ phase: 'idle' });
+    const [aiChoosingName, setAiChoosingName] = useState<string | null>(null);
+    const [pendingLatinReplacement, setPendingLatinReplacement] = useState<AiCandidate | null>(null);
+    const aiAbortRef = useRef<AbortController | null>(null);
+    const aiChooseAbortRef = useRef<AbortController | null>(null);
+
+    // Nouvelle photo (ou fermeture du formulaire) : les hypothèses ne valent plus.
+    useEffect(() => {
+        setAiState({ phase: 'idle' });
+        setAiChoosingName(null);
+        return () => {
+            aiAbortRef.current?.abort();
+            aiChooseAbortRef.current?.abort();
+        };
+    }, [formData.photo]);
+
+    const handleAiIdentify = async () => {
+        const photo = formData.photo;
+        if (!photo || isOffline || !formSession || !isSessionCurrent(formSession)) return;
+        aiAbortRef.current?.abort();
+        const controller = new AbortController();
+        aiAbortRef.current = controller;
+        setAiState({ phase: 'loading' });
+        try {
+            const result = await identifySpecies(photo, {
+                date: formData.date,
+                country: formData.country,
+                department: formData.department,
+                // « Oiseaux » est la valeur par défaut : ne l'envoyer que si
+                // l'utilisateur a choisi le groupe, sinon l'indice serait trompeur.
+                taxonomicGroup: fieldTouched.taxonomicGroup ? formData.taxonomicGroup : undefined,
+                habitat: formData.habitat,
+            }, { signal: controller.signal }, formSession);
+            if (controller.signal.aborted || !isSessionCurrent(formSession)) return;
+            setAiState({ phase: 'result', result });
+        } catch (error) {
+            if (controller.signal.aborted || !isSessionCurrent(formSession)) return;
+            setAiState({ phase: 'error', error: error instanceof AiAssistError ? error : new AiAssistError('unknown') });
+        } finally {
+            if (aiAbortRef.current === controller) aiAbortRef.current = null;
+        }
+    };
+
+    const applyAiCandidate = async (candidate: AiCandidate, replaceLatin: boolean) => {
+        aiChooseAbortRef.current?.abort();
+        const controller = new AbortController();
+        aiChooseAbortRef.current = controller;
+        setAiChoosingName(candidate.scientificName);
+        let match: SpeciesSuggestion | undefined;
+        try {
+            // Seul le nom scientifique EXACT est retenu.
+            const suggestions = await suggestSpeciesAutocomplete(candidate.scientificName, 5, { signal: controller.signal });
+            match = suggestions.find(item => normalizeLatin(item.latinName) === normalizeLatin(candidate.scientificName));
+        } catch (error) {
+            logger.warn('[aiAssist] vérification du nom impossible', error);
+        }
+        if (controller.signal.aborted) return;
+        aiChooseAbortRef.current = null;
+        setAiChoosingName(null);
+
+        if (match) {
+            const matched = match;
+            applySpeciesAutocompleteSuggestion(matched);
+            setFormData(prev => (replaceLatin || !(prev.latinName ?? '').trim()) ? { ...prev, latinName: matched.latinName } : prev);
+            onToast('success', `Espèce reprise : ${matched.displayName}. Vérifiez les critères avant d'enregistrer.`);
+        } else {
+            setFormData(prev => ({
+                ...prev,
+                speciesName: candidate.commonName || candidate.scientificName,
+                latinName: (replaceLatin || !fieldTouched.latinName || !(prev.latinName ?? '').trim()) ? candidate.scientificName : prev.latinName,
+            }));
+            onToast('warning', "Nom introuvable dans iNaturalist et GBIF : l'espèce a été remplie telle que proposée. Vérifiez-la avant d'enregistrer.", 7000);
+        }
+    };
+
+    const handleAiChoose = (candidate: AiCandidate) => {
+        const typedLatin = (formData.latinName ?? '').trim();
+        if (fieldTouched.latinName && typedLatin && normalizeLatin(typedLatin) !== normalizeLatin(candidate.scientificName)) {
+            setPendingLatinReplacement(candidate);
+            return;
+        }
+        void applyAiCandidate(candidate, false);
+    };
+
+    const aiNeedsAccess = aiState.phase === 'error'
+        && (aiState.error.code === 'not_approved' || aiState.error.code === 'consent_outdated');
     const performSave = async (addAnother: boolean) => {
         if (!formSession || !isSessionCurrent(formSession)) return;
         const context = formSession;
@@ -829,6 +936,40 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                                 <input type="file" id="photo" name="photo" accept="image/*" onChange={handleFileChange} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-nature-green/10 file:text-nature-green-text hover:file:bg-nature-green/20 transition cursor-pointer" />
                                 {privatePhoto && <img src={privatePhoto} alt="Aperçu" className="mt-4 h-32 w-32 object-cover rounded-2xl shadow-md ring-1 ring-black/5" />}
                             </div>
+                            {formData.photo && (
+                                <div className="md:col-span-3" data-testid="ai-identification">
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleAiIdentify()}
+                                        disabled={isOffline || aiState.phase === 'loading'}
+                                        aria-describedby="ai-identification-help"
+                                        className="min-h-[44px] inline-flex items-center gap-2 rounded-full border-2 border-nature-green px-4 py-2 text-sm font-semibold text-nature-green-text transition-all hover:bg-nature-green/10 disabled:cursor-not-allowed disabled:opacity-50 dark:border-green-500 dark:text-green-400"
+                                    >
+                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-5 h-5 ${aiState.phase === 'loading' ? 'animate-pulse' : ''}`}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+                                        </svg>
+                                        {aiState.phase === 'loading' ? 'Analyse en cours…' : "Aide à l'identification"}
+                                    </button>
+                                    <p id="ai-identification-help" className="mt-1 ml-1 text-xs text-gray-500 dark:text-gray-400">
+                                        {isOffline
+                                            ? 'Disponible en ligne uniquement.'
+                                            : "Envoie cette photo à l'assistant (IA) pour obtenir des hypothèses à vérifier. Une analyse lancée compte dans votre quota, même si la connexion est coupée pendant l'attente."}
+                                    </p>
+                                    {aiState.phase === 'error' && (
+                                        <div role="alert" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
+                                            <p>{aiState.error.message}</p>
+                                            {aiNeedsAccess && onOpenAiAccess && (
+                                                <button type="button" onClick={onOpenAiAccess} className="mt-2 font-semibold text-nature-green-text underline">
+                                                    Ouvrir l'accès à l'assistant
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {aiState.phase === 'result' && (
+                                        <AiIdentificationPanel result={aiState.result} onChoose={handleAiChoose} choosingName={aiChoosingName} />
+                                    )}
+                                </div>
+                            )}
                             <div className={formData.sound ? '' : 'opacity-50 pointer-events-none'}>
                                 <label className={labelClass}>Son</label>
                                 {formData.sound ? (
@@ -897,6 +1038,18 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                     </button>
                 </div>
             </form>
+
+            <ConfirmationDialog
+                isOpen={pendingLatinReplacement !== null}
+                onClose={() => setPendingLatinReplacement(null)}
+                onConfirm={() => {
+                    const candidate = pendingLatinReplacement;
+                    setPendingLatinReplacement(null);
+                    if (candidate) void applyAiCandidate(candidate, true);
+                }}
+                title="Remplacer le nom latin ?"
+                message={`Vous aviez saisi « ${(formData.latinName ?? '').trim()} ». Le remplacer par « ${pendingLatinReplacement?.scientificName ?? ''} » ?`}
+            />
 
             {/* Sticky Save/Cancel Bar */}
             {

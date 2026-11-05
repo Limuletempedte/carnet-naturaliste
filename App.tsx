@@ -55,6 +55,7 @@ const LegalTerms = lazy(() => import('./components/LegalPages').then(m => ({ def
 const LegalNotices = lazy(() => import('./components/LegalPages').then(m => ({ default: m.MentionsLegales })));
 const HelpPage = lazy(() => import('./components/HelpPage'));
 const OnboardingTour = lazy(() => import('./components/OnboardingTour'));
+const AiAccessDialog = lazy(() => import('./components/AiAccessDialog'));
 
 const createDefaultStatsExportDialogState = (): StatsExportDialogState => ({
     startDate: '',
@@ -91,6 +92,8 @@ const App: React.FC = () => {
     const [toasts, setToasts] = useState<ToastItem[]>([]);
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
     const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
+    const [isAiAccessOpen, setIsAiAccessOpen] = useState(false);
+    const closeAiAccessDialog = useCallback(() => setIsAiAccessOpen(false), []);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [isExportingStats, setIsExportingStats] = useState(false);
@@ -714,7 +717,7 @@ const App: React.FC = () => {
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
                 <header ref={headerGlassRef} className="fixed top-0 left-0 right-0 z-50 px-4 py-2 liquid-glass liquid-glass-sheen border-x-0 border-t-0 flex items-center justify-between transition-all duration-300">
-                    <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
+                    <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onOpenAiAssistant={() => setIsAiAccessOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     <div className="flex items-center gap-1.5">
                         {/* Server Status Mobile — pastille + libellé accessible (UIA-05) */}
                         <span role="status" className="flex items-center" title={statusTitle}>
@@ -771,7 +774,7 @@ const App: React.FC = () => {
                 /* Desktop Layout: Floating Buttons */
                 <>
                     <div className="fixed top-6 left-6 z-50">
-                        <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
+                        <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onOpenAiAssistant={() => setIsAiAccessOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     </div>
 
                     <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
@@ -836,6 +839,11 @@ const App: React.FC = () => {
                     title={confirmation.title}
                     message={confirmation.message}
                 />
+            )}
+            {isAiAccessOpen && (
+                <Suspense fallback={null}>
+                    <AiAccessDialog isOpen={isAiAccessOpen} onClose={closeAiAccessDialog} isOffline={isOffline} />
+                </Suspense>
             )}
             {isDeleteAccountOpen && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
@@ -1092,6 +1100,8 @@ const App: React.FC = () => {
                             initialData={editingObservation}
                             initialPosition={pendingPosition}
                             onToast={pushToast}
+                            isOffline={isOffline}
+                            onOpenAiAccess={() => setIsAiAccessOpen(true)}
                         />
                     )}
                 </Suspense>
