@@ -1,6 +1,6 @@
 # Documentation des regions d'hebergement de l'infrastructure
 
-**Date de mise a jour** : 2026-09-30
+**Date de mise a jour** : 2026-11-05
 
 ---
 
@@ -12,7 +12,8 @@ d'hebergement et les implications RGPD.
 
 **Synthese : les donnees personnelles (compte, observations, photos, sons) sont hebergees
 dans l'Union europeenne (Supabase, region `eu-central-1` / Francfort). Cela ne couvre pas les traitements tiers : Turnstile traite des signaux techniques
-sur une infrastructure mondiale ; les sauvegardes techniques sont décrites dans le registre.**
+sur une infrastructure mondiale ; l'assistant d'identification (Anthropic, facultatif, sur consentement) envoie la photo
+aux États-Unis ; les sauvegardes techniques sont décrites dans le registre.**
 
 ---
 
@@ -43,14 +44,27 @@ sur une infrastructure mondiale ; les sauvegardes techniques sont décrites dans
 > L'application est une SPA statique : tout le traitement des donnees personnelles est
 > assure par Supabase (UE). Aucune fonction serveur Vercel ne traite de donnees personnelles.
 
-## 3. Supabase Edge Functions (delete-account)
+## 3. Supabase Edge Functions (delete-account, ai-identify)
 
 | Composant | Detail |
 |---|---|
 | Service | Supabase Edge Functions |
 | Region | Meme region que le projet Supabase (`eu-central-1`, UE) |
-| Donnees traitees | JWT token (verification), user ID (suppression) |
-| Donnees persistees | Aucune — traitement ephemere |
+| Donnees traitees | `delete-account` : JWT token (verification), user ID (suppression). `ai-identify` : JWT token, photo réencodée et contexte (mois, pays, département, groupe, habitat), transmis à Anthropic. |
+| Donnees persistees | `delete-account` : aucune. `ai-identify` : ni photo ni hypothèses ; seulement une ligne de journal dans `ai_usage` (date, modèle, tokens, coût, statut), conservée 3 mois. |
+
+### 3 bis. Anthropic (assistant d'identification par IA)
+
+| Composant | Detail |
+|---|---|
+| Service | API Claude (Anthropic), appelée uniquement par la fonction `ai-identify` |
+| Sous-traitant | Anthropic, via Anthropic Ireland Ltd pour l'EEE (DPA intégré aux Commercial Terms) |
+| Region | Pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`) ; données stockées aux **États-Unis** |
+| Donnees recues | Photo réencodée (1 280 px max, sans EXIF ni GPS), mois, pays, département, groupe s'il a été choisi, habitat s'il est renseigné. Aucun identifiant ni email. |
+| Transfert hors UE | **Oui** — clauses contractuelles types de l'UE (modules 2 et 3) |
+| Conservation | Effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement par défaut. |
+
+Facultatif, sur consentement : voir le traitement 9 du [registre](registre-traitements.md).
 
 ---
 
@@ -70,7 +84,8 @@ le traitement 8 du [registre](registre-traitements.md). La durée de validité d
 |---|---|---|---|
 | Cloudflare Turnstile | Mondial | IP et signaux techniques anti-robots | Possible |
 | Supabase (BDD + Storage) | eu-central-1 (UE) | Observations, auth, photos, sons | Non |
-| Supabase Edge Fn | eu-central-1 (UE) | JWT (ephemere) | Non |
+| Supabase Edge Fn | eu-central-1 (UE) | JWT (ephemere), photo transmise à Anthropic | Non (la fonction elle-même) |
+| Anthropic (assistant IA) | US (stockage) | Photo réencodée + contexte, sur consentement | **Oui** (clauses contractuelles types) |
 | Vercel (CDN) | Global | Frontend public (aucune donnee perso) | Sans objet |
 | iNaturalist | US | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |
 | GBIF | UE/Global | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |

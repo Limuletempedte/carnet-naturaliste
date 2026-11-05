@@ -56,3 +56,20 @@ describe('UserProfile — déconnexion et file offline (H7)', () => {
         expect(signOutMock).toHaveBeenCalledTimes(1);
     });
 });
+
+describe("UserProfile — entrée « Aide à l'identification (IA) »", () => {
+    it("ouvre la fenêtre de l'assistant et ferme le menu", () => {
+        const onOpenAiAssistant = vi.fn();
+        render(<UserProfile onOpenAiAssistant={onOpenAiAssistant} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Menu utilisateur' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: "Aide à l'identification (IA)" }));
+        expect(onOpenAiAssistant).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('menu')).toBeNull();
+    });
+
+    it("n'affiche pas l'entrée sans gestionnaire", () => {
+        render(<UserProfile />);
+        fireEvent.click(screen.getByRole('button', { name: 'Menu utilisateur' }));
+        expect(screen.queryByRole('menuitem', { name: "Aide à l'identification (IA)" })).toBeNull();
+    });
+});

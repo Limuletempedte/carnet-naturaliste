@@ -8,7 +8,8 @@ Ce document dit **comment mettre en service, gérer et couper** l'assistant.
 | Tables, droits, fonctions SQL | `supabase/migrations/20261105161500_ai_identification.sql` |
 | Fonction Edge | `supabase/functions/ai-identify/index.ts` (appel) et `logic.ts` (règles) |
 | Réglage `verify_jwt` | `supabase/config.toml`, section `[functions.ai-identify]` |
-| Tests unitaires | `tests/aiIdentifyLogic.test.ts` (lancés par `npm run check`) |
+| Application | `services/aiAssistService.ts`, `components/AiAccessDialog.tsx` (accès, consentement), `components/AiIdentificationPanel.tsx`, bouton dans `components/ObservationForm.tsx`, entrée du menu du compte |
+| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx` (lancés par `npm run check`) |
 | Tests de sécurité locaux | `tests/security/ai-access-rls.mjs` |
 
 En bref : une personne **demande** l'accès (ligne `pending` dans `ai_access`),
@@ -211,9 +212,13 @@ redemande, elle revient `pending`. Son compteur du mois, lui, ne bouge pas.
 - **Changer de clé** : créer la nouvelle clé dans la Console, remplacer
   `ANTHROPIC_API_KEY`, redéployer, vérifier une analyse, puis **désactiver
   l'ancienne clé** dans la Console.
-- **Changer le texte du consentement** (PR B et suivantes) : changer
-  `CONSENT_VERSION` côté fonction **et** côté application. Les accès existants
-  sont alors refusés (`consent_outdated`) jusqu'à une nouvelle demande.
+- **Changer le texte du consentement** (`AiConsentText` dans
+  `components/AiAccessDialog.tsx`) : changer `CONSENT_VERSION` côté fonction
+  (`logic.ts`) **et** `AI_CONSENT_VERSION` côté application
+  (`services/aiAssistService.ts`) ; un test vérifie qu'elles sont égales.
+  Mettre à jour les textes légaux si le fond change. Les accès existants sont
+  alors refusés (`consent_outdated`) : chacun voit « Renouveler mon accord »,
+  puis repasse en attente de validation.
 
 ---
 

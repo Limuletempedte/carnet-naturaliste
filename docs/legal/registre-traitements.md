@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-09-30
+**Date de mise a jour** : 2026-11-05
 
 ---
 
@@ -103,6 +103,21 @@
 
 Sources : [politique Turnstile](https://www.cloudflare.com/turnstile-privacy-policy/), [validation serveur](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
 
+## Traitement 9 : Aide à l'identification par IA (Anthropic)
+
+| Champ | Valeur |
+|---|---|
+| Finalité | Proposer, à la demande de l'utilisateur, jusqu'à 3 hypothèses d'espèce à partir de la photo d'une observation. L'utilisateur choisit lui-même ; rien n'est rempli automatiquement, aucune décision automatisée. |
+| Base légale | **Consentement** (art. 6.1.a) pour l'envoi des photos : case obligatoire, texte versionné (`CONSENT_VERSION`), retrait à tout moment (« Retirer mon accord »). **Intérêt légitime** (art. 6.1.f) pour le journal d'usage : contrôle des coûts et des abus. |
+| Données | Envoyées à Anthropic : photo réencodée en JPEG (1 280 px au plus, sans EXIF ni GPS), mois, pays, département, groupe taxonomique s'il a été choisi, habitat s'il est renseigné. **Jamais** : GPS, commune, lieu-dit, altitude, date exacte, commentaire, email, identifiant. Conservées par le Carnet : `ai_access` (statut de la demande, quota, version du consentement, dates, note) et `ai_usage` (date, modèle, tokens, coût, statut), sans photo ni hypothèses. |
+| Destinataires | Anthropic (modèle Claude), via **Anthropic Ireland Ltd** pour l'EEE, sous-traitant ; DPA intégré aux Commercial Terms, droit irlandais. Supabase (fonction `ai-identify` et tables, UE). |
+| Transfert hors UE | **Oui** — données stockées aux États-Unis, pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`). Transfert encadré par les clauses contractuelles types de l'UE (modules 2 et 3) du DPA. |
+| Conservation | Chez Anthropic : entrées et sorties effacées sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement sur les données de l'API par défaut. Dans le Carnet : `ai_access` jusqu'au retrait de l'accord ou à la suppression du compte ; `ai_usage` 3 mois (purge à chaque nouvelle réservation). |
+| Mesures | Accès sur demande validée à la main ; quota mensuel (20 par défaut) et budget global plafonné ; clé API uniquement côté serveur ; droits et RLS empêchant de s'approuver soi-même ; journaux sans utilisateur, photo, prompt ni hypothèses ; avertissement d'éviter les photos où des personnes sont reconnaissables ; une photo envoyée ne peut pas être rappelée (dit dans le consentement). |
+| AIPD | Non nécessaire : petite échelle, pas de données sensibles recherchées, l'utilisateur décide de chaque envoi et du choix final. |
+
+> Exploitation : [`docs/ops/ASSISTANT-IA.md`](../ops/ASSISTANT-IA.md). Plan : [`docs/plans/assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md) (sources des faits vérifiés le 2026-11-05).
+
 ## Droits des personnes concernees
 
 Les utilisateurs peuvent exercer leurs droits (acces, rectification, effacement, portabilite, opposition) :
@@ -118,3 +133,10 @@ contenir les donnees jusqu'a leur expiration automatique, soit **35 jours au
 plus**. Ces sauvegardes sont chiffrees et servent exclusivement a une
 restauration apres sinistre : elles ne sont jamais utilisees pour recreer un
 compte supprime.
+
+Assistant IA (Traitement 9) : à la suppression du compte, la ligne `ai_access`
+est supprimée et les lignes `ai_usage` sont **rendues anonymes** (l'identifiant
+est effacé, la dépense du mois reste comptée). Les sauvegardes techniques
+conservent les deux tables **35 jours au plus**. Les photos déjà envoyées à
+Anthropic suivent sa propre durée (30 jours, jusqu'à 2 ans en cas de contrôle
+de sécurité) et ne peuvent pas être rappelées par le Carnet.
