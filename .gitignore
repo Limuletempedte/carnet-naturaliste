@@ -24,6 +24,13 @@ coverage
 *.sln
 *.sw?
 
+# Variables d'environnement : elles peuvent contenir des secrets (clés,
+# mots de passe). Couvre aussi supabase/functions/.env. Seul un modèle sans
+# valeurs réelles (.env.example) peut être versionné.
+.env
+.env.*
+!.env.example
+
 # Local AI / MCP tooling (do not commit secrets)
 .mcp.json
 .claude/
@@ -66,3 +73,12 @@ roles-*.sql
 schema-*.sql
 data-*.sql
 cle-sauvegarde-privee.txt
+# Fichiers en clair produits par la restauration du runbook (age --decrypt
+# puis tar -xzf) quand elle est lancée depuis la racine du dépôt.
+/sauvegarde.tar.gz
+/roles.sql
+/schema.sql
+/data.sql
+# Artefacts téléchargés depuis l'onglet Actions (archive ou dossier).
+sauvegarde-base-*.zip
+sauvegarde-base-*/
