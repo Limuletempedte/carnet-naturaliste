@@ -116,7 +116,9 @@ Puis vérifier, dans l'ordre :
 | Structure, index, règles de sécurité (RLS), déclencheurs | ✅ oui |
 | Rôles de la base | ✅ oui |
 | **Photos et sons** (fichiers du stockage) | ❌ **non** |
+| Accès et journal de l'assistant IA (`public.ai_access`, `public.ai_usage`) | ✅ oui |
 | Fonction *edge* `delete-account` | ❌ non (à redéployer) |
+| Fonction *edge* `ai-identify` et ses secrets (`ANTHROPIC_API_KEY`, `AI_MODEL`, `AI_EFFORT`, `AI_MONTHLY_BUDGET_USD`, `ALLOWED_ORIGINS`) | ❌ non (à redéployer et ressaisir, voir [`ASSISTANT-IA.md`](./ASSISTANT-IA.md)) |
 | Réglages de la plateforme (URL de redirection, e-mails, SMTP) | ❌ non |
 
 > 🔴 **Les photos ne sont pas dans la sauvegarde.** Seules les *références* aux
@@ -214,7 +216,12 @@ toute adaptation de copie ; ne pas retirer d'autres blocs de données.
 
 ### Étape 4 — Rebrancher l'application
 
-1. Redéployer la fonction *edge* : `supabase functions deploy delete-account`.
+1. Redéployer les fonctions *edge* : `supabase functions deploy delete-account`
+   et `supabase functions deploy ai-identify`. Ressaisir **avant** les secrets
+   de `ai-identify` dans le tableau de bord (*Edge Functions → Secrets*,
+   liste dans [`ASSISTANT-IA.md`](./ASSISTANT-IA.md) §1.4) : sans eux la
+   fonction refuse tout (`misconfigured`). Mettre dans `ALLOWED_ORIGINS`
+   l'adresse du site rebranché.
 2. Reconfigurer l'authentification (URL du site, redirections) dans le
    tableau de bord.
 3. Mettre à jour `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` dans Vercel

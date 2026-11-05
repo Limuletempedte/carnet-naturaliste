@@ -53,6 +53,12 @@ mobile ET desktop. Zéro dépendance ajoutée (verre = CSS + SVG + canvas pur).
      `index.css`, discrète, thème nature) ;
    - dégradé plus riche (beige → vert très pâle) ;
    - autre direction artistique à imaginer.
+
+   > **Statut vérifié le 2026-11-05** : ni la PR #52 ni la #54 n'ont tranché.
+   > La #52 a **gardé le fond uni** et compensé par du relief sur le verre ; la
+   > #54 ne touche pas au fond. Le motif `.bg-topography` n'est utilisé qu'en
+   > filigrane à 3 % dans `components/ObservationList.tsx`. La décision reste
+   > **ouverte**, reportée à la finition design finale (checklist ci-dessous).
 2. **Réfraction + éclat = Chromium uniquement** (Chrome / Edge / **Android**).
    Safari / Firefox → repli verre CSS sans distorsion. Limite navigateur, pas du
    code.
