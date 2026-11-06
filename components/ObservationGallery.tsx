@@ -73,7 +73,9 @@ const ObservationGallery: React.FC<ObservationGalleryProps> = React.memo(({ obse
                                 {logo && <img src={logo} alt={obs.taxonomicGroup} loading="lazy" className="w-6 h-6 object-contain" />}
                             </div>
                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-5 pt-12">
-                                <h3 className="text-white font-bold text-lg truncate drop-shadow-md">{obs.speciesName}</h3>
+                                {/* Graisse normale sur téléphone (cartes étroites, 2 colonnes) : en gras,
+                                    les noms courants (« Anax empereur ») étaient coupés. */}
+                                <h3 className="text-white font-normal sm:font-bold text-lg truncate drop-shadow-md">{obs.speciesName}</h3>
                                 <p className="text-white/90 text-xs font-medium italic truncate">{obs.latinName}</p>
                             </div>
                         </div>

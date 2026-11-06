@@ -38,7 +38,7 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
     return (
         <tr
             onClick={() => onView(id)}
-            className={`border-b border-gray-100/50 dark:border-white/5 hover:bg-white/40 dark:hover:bg-white/5 transition-all duration-300 group relative backdrop-blur-sm cursor-pointer ${selected ? 'bg-nature-green/10 dark:bg-nature-green/20' : ''}`}
+            className={`border-b border-gray-100/50 dark:border-white/5 hover:bg-gray-100/80 dark:hover:bg-white/5 transition-all duration-300 group relative backdrop-blur-sm cursor-pointer ${selected ? 'bg-nature-green/10 dark:bg-nature-green/20' : ''}`}
         >
             {showSelection && (
                 // stopPropagation : cocher/décocher ne doit pas ouvrir la vue détail.

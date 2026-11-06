@@ -44,7 +44,7 @@ const ImportPreviewDialog: React.FC<ImportPreviewDialogProps> = ({
     const hasBlockingErrors = result.report.blockingErrors.length > 0;
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
             <div ref={dialogRef} {...dialogProps} className="w-full max-w-3xl max-h-[90vh] overflow-y-auto liquid-glass-opaque animate-scaleIn rounded-2xl p-6">
                 <h3 id="import-preview-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Prévisualisation de l'import</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">

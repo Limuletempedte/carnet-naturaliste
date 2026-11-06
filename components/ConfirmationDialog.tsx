@@ -25,8 +25,11 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({ isOpen, onClose
     const primaryButtonClass = `${buttonClass} ${isDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-nature-green hover:bg-nature-dark'}`;
     const secondaryButtonClass = `${buttonClass} bg-gray-400 hover:bg-gray-500 text-gray-800`;
 
+    // z-[80] : au-dessus du header, de la barre d'onglets et des boutons flottants
+    // (z-50) et des bandeaux (z-60), sous les toasts (z-100). Même niveau pour les
+    // fenêtres IA, export, import et suppression du compte.
     return (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[80] flex justify-center items-center p-4">
             <div
                 ref={(node) => { dialogRef.current = node; glassRef(node); }}
                 {...dialogProps}
