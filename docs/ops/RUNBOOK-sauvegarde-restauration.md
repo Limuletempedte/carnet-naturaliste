@@ -1,18 +1,63 @@
 # Sauvegarde et restauration de la base
 
-Mode d'emploi de la sauvegarde automatique
-([`.github/workflows/sauvegarde-base.yml`](../../.github/workflows/sauvegarde-base.yml)).
+Mode d'emploi de la sauvegarde automatique.
 
 > **Pourquoi ce dispositif** : l'offre gratuite de Supabase ne fournit **aucune
 > sauvegarde**. Sans lui, une fausse manipulation ou un incident chez Supabase
 > ferait perdre définitivement les observations de tous les utilisateurs.
 
 **En une phrase** : chaque dimanche, une copie de la base est exportée,
-vérifiée, chiffrée, puis conservée 35 jours dans l'onglet *Actions* de GitHub.
+vérifiée, chiffrée, puis conservée 35 jours dans l'onglet *Actions* du dépôt
+**privé** [`Limuletempedte/carnet-naturaliste-sauvegardes`](https://github.com/Limuletempedte/carnet-naturaliste-sauvegardes).
+
+> 🔴 **Pourquoi un dépôt à part** : une archive déposée dans l'onglet *Actions*
+> a la même visibilité que son dépôt. Le dépôt de code `carnet-naturaliste` est
+> public, donc n'importe quel compte GitHub pourrait y télécharger les
+> sauvegardes. Le workflow tourne donc **uniquement** dans le dépôt privé, qui
+> porte aussi le secret et la clé publique. Il vérifie lui-même que son dépôt
+> est privé et s'arrête sinon.
+>
+> Le dépôt de code garde une **copie de référence**, jamais exécutée, de tout
+> le contenu du dépôt privé :
+> [`docs/ops/depot-sauvegardes/`](./depot-sauvegardes/) (le workflow
+> [`sauvegarde-base.yml`](./depot-sauvegardes/.github/workflows/sauvegarde-base.yml)
+> et un [`README.md`](./depot-sauvegardes/README.md)). Pour la modifier, voir le §6.
 
 ---
 
 ## 1. Mise en service (à faire une seule fois)
+
+### Étape 0 — Créer le dépôt privé
+
+Commandes à lancer depuis le dossier du projet, sur un ordinateur où `gh` est
+connecté :
+
+```bash
+gh repo create Limuletempedte/carnet-naturaliste-sauvegardes --private --description "Sauvegardes chiffrées de la base du Carnet Naturaliste (privé)"
+```
+
+```bash
+git clone https://github.com/Limuletempedte/carnet-naturaliste-sauvegardes.git ../carnet-naturaliste-sauvegardes
+```
+
+Cette commande copie la version de référence publiée sur `main`, quelle que
+soit la branche ouverte en local :
+
+```bash
+git fetch origin && git archive origin/main:docs/ops/depot-sauvegardes | tar -x -C ../carnet-naturaliste-sauvegardes
+```
+
+```bash
+git -C ../carnet-naturaliste-sauvegardes add .gitignore README.md .github && git -C ../carnet-naturaliste-sauvegardes commit -m "feat: sauvegarde hebdomadaire chiffrée de la base" && git -C ../carnet-naturaliste-sauvegardes push -u origin HEAD
+```
+
+> 🔴 On ajoute les fichiers **par leur nom**, jamais avec `git add -A`. Une
+> archive déchiffrée oubliée dans ce dossier serait sinon versionnée, et elle
+> resterait dans l'historique bien au-delà des 35 jours. Le `.gitignore` du dépôt
+> privé est une liste blanche qui sert de second filet.
+
+Vérifier ensuite sur la page du dépôt que le cadenas **Private** apparaît à
+côté de son nom.
 
 ### Étape A — Récupérer la chaîne de connexion
 
@@ -77,20 +122,41 @@ l'outil [age](https://github.com/FiloSottile/age).
 
 ### Étape C — Renseigner les deux valeurs dans GitHub
 
-Aller dans le dépôt → **Settings** → **Secrets and variables** → **Actions**.
+Dans le dépôt **privé** `carnet-naturaliste-sauvegardes` (jamais dans le dépôt
+de code public) → **Settings** → **Secrets and variables** → **Actions**.
 
 | Onglet | Nom | Valeur |
 |---|---|---|
 | **Secrets** (*New repository secret*) | `SUPABASE_DB_URL` | la chaîne de l'étape A, mot de passe compris |
 | **Variables** (*New repository variable*) | `BACKUP_AGE_PUBLIC_KEY` | la clé publique `age1…` de l'étape B |
 
+Équivalent en ligne de commande. `gh` demande la valeur du secret sans
+l'afficher, et rien n'est enregistré dans l'historique du terminal :
+
+```bash
+gh secret set SUPABASE_DB_URL --repo Limuletempedte/carnet-naturaliste-sauvegardes
+```
+
+```bash
+gh variable set BACKUP_AGE_PUBLIC_KEY --repo Limuletempedte/carnet-naturaliste-sauvegardes --body "age1..."
+```
+
 > ⚠️ Ne jamais coller la chaîne de connexion dans une conversation, un ticket ou
 > un message : elle donne un accès complet à la base. Elle se saisit uniquement
-> dans la page *Secrets* de GitHub.
+> dans la page *Secrets* de GitHub ou dans l'invite masquée de `gh secret set`.
 
 ### Étape D — Premier lancement et contrôles
 
-Onglet **Actions** → *Sauvegarde de la base* → bouton **Run workflow**.
+Dans le dépôt privé : onglet **Actions** → *Sauvegarde de la base* → bouton
+**Run workflow**. En ligne de commande :
+
+```bash
+gh workflow run sauvegarde-base.yml --repo Limuletempedte/carnet-naturaliste-sauvegardes
+```
+
+> Si la toute première étape, *Verifier que le depot est prive*, échoue, le
+> dépôt est public ou GitHub n'a pas répondu. Vérifier le cadenas **Private**,
+> puis relancer.
 
 Puis vérifier, dans l'ordre :
 
@@ -98,8 +164,10 @@ Puis vérifier, dans l'ordre :
       **cohérent avec le tableau de bord Supabase**. C'est le contrôle qui prouve
       que rien n'a été silencieusement filtré.
 - [ ] Noter ici la taille réelle de l'archive (visible dans les journaux) :
-      `__________ Mo`. Si elle est inférieure à ~15 Mo, passer
-      `retention-days` de 35 à **90** dans le workflow (90 est le maximum).
+      `__________ Mo` (environ 0,25 Mo en octobre 2026). Garder
+      `retention-days: 35` : c'est la durée annoncée aux utilisateurs
+      (`components/LegalPages.tsx`) et dans le registre des traitements. La
+      changer oblige à mettre à jour ces deux textes en même temps.
 - [ ] Télécharger l'artefact et **vérifier qu'il se déchiffre** (voir §4). Tant
       que ce test n'a pas été fait, on n'a pas une sauvegarde : on a un fichier.
 - [ ] Faire une fois l'exercice de restauration complet (§4) sur un projet
@@ -134,9 +202,11 @@ Puis vérifier, dans l'ordre :
 
 - **En cas d'échec**, GitHub envoie un e-mail au propriétaire du dépôt.
   **Traiter cet e-mail comme urgent** : c'est le seul filet du projet.
-- ⚠️ **Piège connu** : GitHub **désactive les workflows planifiés** d'un dépôt
-  resté sans activité pendant 60 jours. Un e-mail prévient avant. Il suffit de
-  les réactiver depuis l'onglet Actions.
+- **Désactivation après 60 jours** : GitHub désactive les workflows planifiés
+  d'un dépôt **public** resté 60 jours sans activité. Le dépôt de sauvegarde est
+  privé, donc il n'est pas concerné d'après la documentation GitHub. Si un
+  e-mail de GitHub annonce malgré tout une désactivation, réactiver le
+  workflow depuis l'onglet Actions du dépôt privé.
 - ⚠️ **Autre piège** : un projet Supabase gratuit est **mis en pause après ~7
   jours de faible activité**. La sauvegarde échouerait alors bruyamment — ce qui
   est une bonne nouvelle, mais il faut réagir vite.
@@ -156,8 +226,19 @@ Puis vérifier, dans l'ordre :
 
 ### Étape 1 — Récupérer et déchiffrer l'archive
 
-Onglet **Actions** → ouvrir l'exécution voulue → télécharger l'artefact
-`sauvegarde-base-AAAA-MM-JJ`.
+Dans le dépôt privé `carnet-naturaliste-sauvegardes` : onglet **Actions** →
+ouvrir l'exécution voulue → télécharger l'artefact `sauvegarde-base-AAAA-MM-JJ`
+(puis décompresser le `.zip` que fournit GitHub). Ou bien, en ligne de
+commande :
+
+```bash
+gh run download --repo Limuletempedte/carnet-naturaliste-sauvegardes --name sauvegarde-base-AAAA-MM-JJ --dir ~/restauration-carnet
+```
+
+> ⚠️ Travailler dans un dossier **à part**, comme `~/restauration-carnet` (`cd ~/restauration-carnet`
+> avant les commandes ci-dessous). Ne jamais le faire dans le dossier d'un dépôt
+> git : une fois déchiffrés, les fichiers contiennent les données personnelles
+> en clair. Supprimer ce dossier une fois la restauration terminée.
 
 ```bash
 age --decrypt -i cle-sauvegarde-privee.txt -o sauvegarde.tar.gz sauvegarde-2026-07-27.tar.gz.age
@@ -241,3 +322,54 @@ toute adaptation de copie ; ne pas retirer d'autres blocs de données.
 | | Mise en service (§1, étape D) | |
 | | Exercice de restauration (§4) | |
 | | Copie hors-ligne trimestrielle | |
+| | Passage au dépôt privé dédié : premier lancement réussi, archive déchiffrée | |
+| | Secret et variable retirés du dépôt de code, anciens artefacts supprimés (§6) | |
+
+---
+
+## 6. Modifier le workflow, et historique du déménagement
+
+### Règle de modification
+
+La version de référence est `docs/ops/depot-sauvegardes/`, dans le dépôt de
+code. Le dépôt privé en est une copie **à l'identique**.
+
+1. Modifier la copie de référence par une PR dans le dépôt de code, puis la
+   fusionner.
+2. Recopier dans le dépôt privé, depuis le dossier du dépôt de code :
+
+   ```bash
+   git fetch origin && git archive origin/main:docs/ops/depot-sauvegardes | tar -x -C ../carnet-naturaliste-sauvegardes
+   ```
+
+   ```bash
+   git -C ../carnet-naturaliste-sauvegardes add .gitignore README.md .github && git -C ../carnet-naturaliste-sauvegardes commit -m "chore: recopie de la version de référence" && git -C ../carnet-naturaliste-sauvegardes push
+   ```
+
+   La recopie ajoute et remplace des fichiers, mais **n'en supprime aucun**. Si
+   un fichier a été retiré de la référence, le supprimer aussi à la main dans
+   le dépôt privé.
+
+3. Lancer une exécution manuelle (§1, étape D) et vérifier qu'elle est verte.
+
+Ne jamais remettre ce workflow dans `.github/workflows/` du dépôt de code. Il
+refuserait de tourner (contrôle « dépôt privé »), mais il faudrait aussi y
+remettre le secret, ce qu'on veut justement éviter.
+
+### Déménagement de novembre 2026
+
+Jusqu'en novembre 2026, le workflow tournait dans le dépôt de code, qui était
+alors privé. Gestes à faire **avant** de rendre ce dépôt public, dans cet ordre
+(cocher et dater au §5) :
+
+- [ ] Dépôt privé créé, secret et variable renseignés, premier lancement vert,
+      archive téléchargée **et déchiffrée** (§1, étapes 0 à D).
+- [ ] Secret `SUPABASE_DB_URL` et variable `BACKUP_AGE_PUBLIC_KEY` supprimés du
+      dépôt de code. À partir de là, l'ancien workflow ne peut plus produire
+      d'archive.
+- [ ] Toutes les exécutions de *Sauvegarde de la base* supprimées du dépôt de
+      code, ce qui supprime aussi leurs artefacts. Contrôle :
+      `gh api repos/Limuletempedte/carnet-naturaliste/actions/artifacts -q .total_count`
+      doit afficher `0`.
+- [ ] PR de déménagement fusionnée : le workflow n'est plus dans
+      `.github/workflows/` du dépôt de code.

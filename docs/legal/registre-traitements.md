@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-11-05
+**Date de mise a jour** : 2026-11-06
 
 ---
 
@@ -83,7 +83,7 @@
 | Duree de conservation | 35 jours — suppression automatique de l'archive par GitHub a l'expiration |
 | Destinataires | GitHub Inc. (Microsoft), sous-traitant, stockage de l'archive |
 | Transfert hors UE | **Oui** — les artefacts GitHub sont heberges aux Etats-Unis (la residence des donnees en UE n'existe que sur l'offre Enterprise Cloud). |
-| Mesures | Archive **chiffree** (age, chiffrement asymetrique) avant tout depot : GitHub ne detient que du contenu chiffre, la cle privee reste chez le responsable de traitement. Depot prive, workflow sans droit d'ecriture. |
+| Mesures | Archive **chiffree** (age, chiffrement asymetrique) avant tout depot : GitHub ne detient que du contenu chiffre, la cle privee reste chez le responsable de traitement. Archive conservee dans un **depot prive dedie** (`Limuletempedte/carnet-naturaliste-sauvegardes`), distinct du depot de code public : seul son proprietaire peut la telecharger. Le workflow n'a aucun droit d'ecriture et refuse de s'executer dans un depot public. Les archives produites dans l'ancien emplacement (le depot de code, alors prive) sont supprimees avant que ce depot ne devienne public. |
 
 > Procedure d'exploitation : [`docs/ops/RUNBOOK-sauvegarde-restauration.md`](../ops/RUNBOOK-sauvegarde-restauration.md)
 

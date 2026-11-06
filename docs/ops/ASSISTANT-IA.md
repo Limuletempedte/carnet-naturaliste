@@ -39,7 +39,8 @@ La CLI Supabase est fournie par le projet (`npx supabase`, version figée dans
 `package-lock.json`) : rien à installer. Sur un poste neuf, la connecter puis
 relier le dossier au projet (le mot de passe de la base peut être demandé : le
 taper soi-même ; **ne pas le réinitialiser** sans mettre à jour le secret GitHub
-`SUPABASE_DB_URL` de la sauvegarde hebdomadaire) :
+`SUPABASE_DB_URL` de la sauvegarde hebdomadaire, dans le dépôt privé
+`carnet-naturaliste-sauvegardes`) :
 
 ```bash
 npx supabase login

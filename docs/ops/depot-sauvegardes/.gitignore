@@ -1,0 +1,11 @@
+# Liste blanche : ce dépôt ne doit versionner QUE son workflow et sa notice.
+# Une archive téléchargée ou déchiffrée par erreur dans ce dossier (roles.sql,
+# data.sql, sauvegarde.tar.gz, *.age...) contient des données personnelles :
+# poussée dans git, elle y resterait indéfiniment, au-delà des 35 jours
+# annoncés aux utilisateurs.
+*
+!.gitignore
+!README.md
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
