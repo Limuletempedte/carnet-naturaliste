@@ -32,8 +32,10 @@ Configurer `.env.local`:
 
 ## Sauvegarde de la base
 
-Le workflow `.github/workflows/sauvegarde-base.yml` prévoit une sauvegarde
-hebdomadaire : export chiffré de la base Supabase, conservé en artefact GitHub.
+Une sauvegarde hebdomadaire exporte la base Supabase, la chiffre et la conserve
+35 jours en artefact GitHub. Le workflow tourne dans un **dépôt privé dédié**,
+pour que les archives ne soient pas téléchargeables depuis ce dépôt public. Sa
+copie de référence est dans [`docs/ops/depot-sauvegardes/`](docs/ops/depot-sauvegardes/).
 Mise en service, surveillance et **procédure de
 restauration** : [`docs/ops/RUNBOOK-sauvegarde-restauration.md`](docs/ops/RUNBOOK-sauvegarde-restauration.md).
 

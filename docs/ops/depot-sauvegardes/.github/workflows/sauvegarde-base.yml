@@ -2,7 +2,17 @@ name: Sauvegarde de la base
 
 # Sauvegarde hebdomadaire de la base Supabase (l'offre gratuite n'en fournit
 # aucune). Le resultat est chiffre puis conserve en artefact GitHub.
-# Mode d'emploi complet, restauration comprise :
+#
+# OU CE WORKFLOW S'EXECUTE : uniquement dans le depot PRIVE
+# Limuletempedte/carnet-naturaliste-sauvegardes, qui porte aussi le secret et
+# la cle publique. Un artefact herite de la visibilite de son depot : dans un
+# depot public, n'importe quel compte GitHub pourrait telecharger l'archive.
+# Le depot de code public (carnet-naturaliste) n'en garde qu'une copie de
+# reference, jamais executee : docs/ops/depot-sauvegardes/.
+# Toute modification se fait d'abord la-bas (PR), puis se recopie a
+# l'identique dans le depot prive.
+#
+# Mode d'emploi complet, restauration comprise (dans le depot de code) :
 # docs/ops/RUNBOOK-sauvegarde-restauration.md
 
 on:
@@ -14,7 +24,8 @@ on:
   # Permet de lancer une sauvegarde a la demande depuis l'onglet Actions.
   workflow_dispatch:
 
-# Ce job ne lit pas le code du depot et n'y ecrit rien : aucun droit necessaire.
+# Ce job ne lit pas le code du depot et n'y ecrit rien : aucun droit necessaire
+# (le controle de visibilite lit seulement la fiche du depot : public ou prive).
 permissions: {}
 
 concurrency:
@@ -31,6 +42,43 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Verifier que le depot est prive
+        env:
+          JETON: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Garde-fou : si ce fichier est un jour recopie dans un depot public,
+          # le job s'arrete AVANT de toucher a la base. Un depot public se lit
+          # sans restriction (reponse 200, "private": false) ; un depot prive
+          # renvoie 200 avec "private": true, ou 404 si le jeton ne voit pas
+          # ses metadonnees. Toute autre reponse : on reessaie, puis on arrete.
+          for tentative in 1 2 3; do
+            code=$(curl -sS -o depot.json -w '%{http_code}' \
+              -H "Authorization: Bearer ${JETON}" \
+              -H "Accept: application/vnd.github+json" \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}" || echo "000")
+            if [ "${code}" = "404" ]; then
+              prive=true
+              break
+            fi
+            if [ "${code}" = "200" ]; then
+              prive=$(jq -r '.private' depot.json)
+              break
+            fi
+            if [ "${tentative}" -eq 3 ]; then
+              echo "::error::Impossible de verifier la visibilite du depot (reponse HTTP ${code}). Relancer le workflow plus tard."
+              exit 1
+            fi
+            sleep 20
+          done
+          rm -f depot.json
+
+          if [ "${prive}" != "true" ]; then
+            echo "::error::Ce depot est PUBLIC : l'archive serait telechargeable par tout le monde. Ce workflow ne doit tourner que dans le depot prive carnet-naturaliste-sauvegardes. Voir docs/ops/RUNBOOK-sauvegarde-restauration.md."
+            exit 1
+          fi
+          echo "Depot prive : OK."
+
       - name: Verifier la configuration
         env:
           URL_BASE: ${{ secrets.SUPABASE_DB_URL }}
@@ -67,8 +115,9 @@ jobs:
       - name: Installer la CLI Supabase
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
-          # Version figee = meme resultat chaque semaine. Elle suit celle du
-          # package.json, donc Dependabot la fait remonter avec le reste.
+          # Version figee = meme resultat chaque semaine. Dependabot ne la
+          # suit pas (le depot prive n'a pas de package.json) : l'aligner a la
+          # main sur celle du package.json du depot de code lors d'une recopie.
           version: 2.109.1
 
       - name: Installer age (chiffrement)
