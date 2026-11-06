@@ -121,7 +121,7 @@ Sources : [politique Turnstile](https://www.cloudflare.com/turnstile-privacy-pol
 ## Droits des personnes concernees
 
 Les utilisateurs peuvent exercer leurs droits (acces, rectification, effacement, portabilite, opposition) :
-- **Export** : bouton "Exporter mes donnees" dans le menu profil
+- **Export** : bouton "Exporter mes donnees" dans le menu profil. L'archive ZIP contient les observations (`data.json`, `data.csv`), leurs medias et, pour l'assistant IA (Traitement 9), le fichier `assistant_ia.json` : ligne `ai_access` (statut, version du consentement, dates, note, quota) et lignes `ai_usage` (date, fonctionnalite, modele, tokens, cout, statut) de l'utilisateur, lues avec ses propres droits (RLS). Section presente meme vide ; le journal ne couvre que les 3 derniers mois (duree de conservation). Toute nouvelle table IA liee a l'utilisateur doit y etre ajoutee (`AI_EXPORT_SOURCES` dans `services/aiDataExportService.ts`).
 - **Suppression** : bouton "Supprimer mon compte" (suppression cascade de toutes les donnees)
 - **Contact DPO** : carnetnaturaliste.app@gmail.com
 
