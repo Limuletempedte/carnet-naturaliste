@@ -27,7 +27,9 @@ dépôt de code.
 L'essentiel, au cas où il serait inaccessible :
 
 1. Télécharger l'archive voulue (onglet **Actions** → l'exécution → artefact
-   `sauvegarde-base-AAAA-MM-JJ`), puis la décompresser.
+   `sauvegarde-base-AAAA-MM-JJ`), puis la décompresser **dans un dossier à part,
+   hors de tout dépôt git**. Une fois déchiffrés, les fichiers contiennent les
+   données en clair : ils ne doivent jamais être versionnés.
 2. Déchiffrer :
    `age --decrypt -i cle-sauvegarde-privee.txt -o sauvegarde.tar.gz sauvegarde-AAAA-MM-JJ.tar.gz.age`
    puis `tar -xzf sauvegarde.tar.gz` → `roles.sql`, `schema.sql`, `data.sql`.

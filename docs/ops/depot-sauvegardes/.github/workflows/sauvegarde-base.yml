@@ -53,7 +53,8 @@ jobs:
           # renvoie 200 avec "private": true, ou 404 si le jeton ne voit pas
           # ses metadonnees. Toute autre reponse : on reessaie, puis on arrete.
           for tentative in 1 2 3; do
-            code=$(curl -sS -o depot.json -w '%{http_code}' \
+            # -L : suit la redirection d'un depot renomme.
+            code=$(curl -sSL -o depot.json -w '%{http_code}' \
               -H "Authorization: Bearer ${JETON}" \
               -H "Accept: application/vnd.github+json" \
               "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}" || echo "000")
@@ -115,9 +116,10 @@ jobs:
       - name: Installer la CLI Supabase
         uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
         with:
-          # Version figee = meme resultat chaque semaine. Dependabot ne la
-          # suit pas (le depot prive n'a pas de package.json) : l'aligner a la
-          # main sur celle du package.json du depot de code lors d'une recopie.
+          # Version figee = meme resultat chaque semaine. Dependabot ne suit
+          # ni elle ni les actions epinglees par SHA de ce fichier (le depot
+          # prive n'a pas de veille) : les mettre a jour a la main lors d'une
+          # recopie, la CLI au niveau de celle du package.json du depot de code.
           version: 2.109.1
 
       - name: Installer age (chiffrement)

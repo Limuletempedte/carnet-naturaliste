@@ -48,8 +48,13 @@ git fetch origin && git archive origin/main:docs/ops/depot-sauvegardes | tar -x 
 ```
 
 ```bash
-cd ../carnet-naturaliste-sauvegardes && git add -A && git commit -m "feat: sauvegarde hebdomadaire chiffrée de la base" && git push -u origin HEAD
+git -C ../carnet-naturaliste-sauvegardes add .gitignore README.md .github && git -C ../carnet-naturaliste-sauvegardes commit -m "feat: sauvegarde hebdomadaire chiffrée de la base" && git -C ../carnet-naturaliste-sauvegardes push -u origin HEAD
 ```
+
+> 🔴 On ajoute les fichiers **par leur nom**, jamais avec `git add -A`. Une
+> archive déchiffrée oubliée dans ce dossier serait sinon versionnée, et elle
+> resterait dans l'historique bien au-delà des 35 jours. Le `.gitignore` du dépôt
+> privé est une liste blanche qui sert de second filet.
 
 Vérifier ensuite sur la page du dépôt que le cadenas **Private** apparaît à
 côté de son nom.
@@ -227,8 +232,13 @@ ouvrir l'exécution voulue → télécharger l'artefact `sauvegarde-base-AAAA-MM
 commande :
 
 ```bash
-gh run download --repo Limuletempedte/carnet-naturaliste-sauvegardes --name sauvegarde-base-AAAA-MM-JJ
+gh run download --repo Limuletempedte/carnet-naturaliste-sauvegardes --name sauvegarde-base-AAAA-MM-JJ --dir ~/restauration-carnet
 ```
+
+> ⚠️ Travailler dans un dossier **à part**, comme `~/restauration-carnet` (`cd ~/restauration-carnet`
+> avant les commandes ci-dessous). Ne jamais le faire dans le dossier d'un dépôt
+> git : une fois déchiffrés, les fichiers contiennent les données personnelles
+> en clair. Supprimer ce dossier une fois la restauration terminée.
 
 ```bash
 age --decrypt -i cle-sauvegarde-privee.txt -o sauvegarde.tar.gz sauvegarde-2026-07-27.tar.gz.age
@@ -333,8 +343,12 @@ code. Le dépôt privé en est une copie **à l'identique**.
    ```
 
    ```bash
-   cd ../carnet-naturaliste-sauvegardes && git add -A && git commit -m "chore: recopie de la version de référence" && git push
+   git -C ../carnet-naturaliste-sauvegardes add .gitignore README.md .github && git -C ../carnet-naturaliste-sauvegardes commit -m "chore: recopie de la version de référence" && git -C ../carnet-naturaliste-sauvegardes push
    ```
+
+   La recopie ajoute et remplace des fichiers, mais **n'en supprime aucun**. Si
+   un fichier a été retiré de la référence, le supprimer aussi à la main dans
+   le dépôt privé.
 
 3. Lancer une exécution manuelle (§1, étape D) et vérifier qu'elle est verte.
 
@@ -345,14 +359,17 @@ remettre le secret, ce qu'on veut justement éviter.
 ### Déménagement de novembre 2026
 
 Jusqu'en novembre 2026, le workflow tournait dans le dépôt de code, qui était
-alors privé. Avant le passage de ce dépôt en public :
+alors privé. Gestes à faire **avant** de rendre ce dépôt public, dans cet ordre
+(cocher et dater au §5) :
 
-- le workflow a été déplacé dans le dépôt privé `carnet-naturaliste-sauvegardes` ;
-- le secret `SUPABASE_DB_URL` et la variable `BACKUP_AGE_PUBLIC_KEY` ont été
-  retirés du dépôt de code ;
-- toutes les exécutions de *Sauvegarde de la base* du dépôt de code ont été
-  supprimées, ce qui supprime aussi leurs artefacts. Contrôle :
-  `gh api repos/Limuletempedte/carnet-naturaliste/actions/artifacts` doit
-  répondre `"total_count": 0`.
-
-Les dates réelles de ces gestes sont notées au §5.
+- [ ] Dépôt privé créé, secret et variable renseignés, premier lancement vert,
+      archive téléchargée **et déchiffrée** (§1, étapes 0 à D).
+- [ ] Secret `SUPABASE_DB_URL` et variable `BACKUP_AGE_PUBLIC_KEY` supprimés du
+      dépôt de code. À partir de là, l'ancien workflow ne peut plus produire
+      d'archive.
+- [ ] Toutes les exécutions de *Sauvegarde de la base* supprimées du dépôt de
+      code, ce qui supprime aussi leurs artefacts. Contrôle :
+      `gh api repos/Limuletempedte/carnet-naturaliste/actions/artifacts -q .total_count`
+      doit afficher `0`.
+- [ ] PR de déménagement fusionnée : le workflow n'est plus dans
+      `.github/workflows/` du dépôt de code.
