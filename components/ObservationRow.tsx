@@ -90,12 +90,12 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
                 <span className="text-sm text-gray-600 dark:text-gray-400">{isoToFrDisplay(date)}</span>
             </td>
             <td className="p-6 align-middle text-center">
-                <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-sm font-bold bg-nature-green/10 text-nature-green-text dark:bg-nature-green/20 dark:text-nature-green backdrop-blur-md">
+                <span className="inline-flex items-center justify-center px-3 py-1 rounded-full text-sm font-normal bg-nature-green/10 text-nature-green-text dark:bg-nature-green/20 dark:text-nature-green backdrop-blur-md">
                     {count}
                 </span>
             </td>
             <td className="p-6 align-middle text-center">
-                <span title={`Statut de conservation : ${observation.status}`} className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md ${getStatusBadgeClass(observation.status)}`}>
+                <span title={`Statut de conservation : ${observation.status}`} className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-normal backdrop-blur-md ${getStatusBadgeClass(observation.status)}`}>
                     {observation.status}
                 </span>
             </td>

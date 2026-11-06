@@ -491,7 +491,9 @@ const ObservationMap: React.FC<ObservationMapProps> = ({ observations, isDarkMod
 
     return (
         // CO-22: hauteur fluide en desktop pour ne pas deborder sur petits ecrans (laptop 13" 768px)
-        <div className={`relative w-full rounded-3xl shadow-ios border border-white/20 dark:border-white/5 overflow-hidden group ${isMobileView ? 'h-[calc(100vh-200px)]' : 'h-[min(600px,calc(100vh-200px))]'}`}>
+        // `isolate` : confine les calques Leaflet (z-index 400 a 1000) dans la carte, sinon
+        // ils passent par-dessus la barre d'onglets, le header et les boutons flottants (z-50).
+        <div className={`relative isolate w-full rounded-3xl shadow-ios border border-white/20 dark:border-white/5 overflow-hidden group ${isMobileView ? 'h-[calc(100vh-200px)]' : 'h-[min(600px,calc(100vh-200px))]'}`}>
             <div ref={mapContainerRef} className="h-full w-full" />
 
             {/* Search Overlay */}

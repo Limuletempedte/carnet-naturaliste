@@ -14,8 +14,30 @@ import { buildImportPersistencePlan, ImportConflictMode } from '../services/impo
 import { logger } from '../utils/logger';
 import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from '../utils/chunkLoadError';
 import { useLiquidGlassRefraction } from './LiquidGlass';
-import { SpinnerIcon, PlusIcon } from './icons';
+import { SpinnerIcon, PlusIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './icons';
 import EmptyState from './EmptyState';
+
+// Formats d'export : une couleur par format, partagée entre le menu « Exporter »
+// du téléphone et les pastilles teintées de l'en-tête ordinateur.
+const EXPORT_FORMATS: ReadonlyArray<{
+    type: ObservationExportType;
+    label: string;
+    menuLabel: string;
+    hint: string;
+    title?: string;
+    menuText: string;
+    chip: string;
+    dot: string;
+}> = [
+    { type: 'json', label: 'JSON', menuLabel: 'JSON', hint: 'Sauvegarde brute', menuText: 'text-blue-600', chip: 'bg-blue-500/10 text-blue-700 hover:bg-blue-500/20 dark:bg-blue-400/15 dark:text-blue-300 dark:hover:bg-blue-400/25', dot: 'bg-blue-500' },
+    { type: 'excel', label: 'Excel', menuLabel: 'Excel', hint: 'Tableur (.xlsx)', menuText: 'text-emerald-600', chip: 'bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:bg-emerald-400/15 dark:text-emerald-300 dark:hover:bg-emerald-400/25', dot: 'bg-emerald-500' },
+    { type: 'pdf', label: 'PDF', menuLabel: 'PDF', hint: 'Document imprimable', menuText: 'text-red-600', chip: 'bg-red-500/10 text-red-700 hover:bg-red-500/20 dark:bg-red-400/15 dark:text-red-300 dark:hover:bg-red-400/25', dot: 'bg-red-500' },
+    { type: 'darwincore', label: 'DwC', menuLabel: 'Darwin Core', hint: 'Standard GBIF/TDWG', title: 'Darwin Core — standard GBIF/TDWG', menuText: 'text-amber-600', chip: 'bg-amber-500/15 text-amber-800 hover:bg-amber-500/25 dark:bg-amber-400/15 dark:text-amber-300 dark:hover:bg-amber-400/25', dot: 'bg-amber-500' },
+    { type: 'geojson', label: 'GeoJSON', menuLabel: 'GeoJSON', hint: 'QGIS / geojson.io', title: 'GeoJSON — QGIS / geojson.io', menuText: 'text-indigo-600', chip: 'bg-indigo-500/10 text-indigo-700 hover:bg-indigo-500/20 dark:bg-indigo-400/15 dark:text-indigo-300 dark:hover:bg-indigo-400/25', dot: 'bg-indigo-500' },
+];
+
+// Surface des panneaux ordinateur : même carte blanche que les fiches du téléphone.
+const DESKTOP_PANEL_CLASS = 'bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-xl shadow-ios border border-white/40 dark:border-white/5 rounded-[2rem]';
 
 interface ObservationListProps {
     observations: Observation[];
@@ -277,9 +299,6 @@ const ObservationList: React.FC<ObservationListProps> = ({
         );
     };
 
-    const buttonClass = "px-4 py-2 rounded-full shadow-ios font-semibold text-white transition-all duration-300 transform hover:scale-105 active:scale-95";
-    const primaryButtonClass = `${buttonClass} bg-nature-green hover:bg-green-600`;
-    const secondaryButtonClass = `${buttonClass} bg-nature-gray hover:bg-gray-600`;
     const taxonFilterEntries = Object.entries(TAXON_LOGOS) as Array<[TaxonomicGroup, string]>;
 
     const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
@@ -436,13 +455,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 className="fixed z-[9999] w-48 liquid-glass liquid-glass-sheen animate-scaleIn rounded-xl overflow-hidden"
                                 style={{ top: mobileExportMenuPos.top, right: mobileExportMenuPos.right }}
                             >
-                                {([
-                                    { type: 'json' as const, label: 'JSON', hint: 'Sauvegarde brute', color: 'text-blue-600' },
-                                    { type: 'excel' as const, label: 'Excel', hint: 'Tableur (.xlsx)', color: 'text-emerald-600' },
-                                    { type: 'pdf' as const, label: 'PDF', hint: 'Document imprimable', color: 'text-red-600' },
-                                    { type: 'darwincore' as const, label: 'Darwin Core', hint: 'Standard GBIF/TDWG', color: 'text-amber-600' },
-                                    { type: 'geojson' as const, label: 'GeoJSON', hint: 'QGIS / geojson.io', color: 'text-indigo-600' }
-                                ]).map(item => (
+                                {EXPORT_FORMATS.map(item => (
                                     <button
                                         key={item.type}
                                         type="button"
@@ -450,7 +463,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         onClick={() => { setShowMobileExportMenu(false); openExportDialog(item.type); }}
                                         className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-white/5 flex flex-col border-b border-gray-100 dark:border-white/5 last:border-b-0"
                                     >
-                                        <span className={`font-semibold ${item.color}`}>{item.label}</span>
+                                        <span className={`font-semibold ${item.menuText}`}>{item.menuLabel}</span>
                                         <span className="text-xs text-gray-500 dark:text-gray-400">{item.hint}</span>
                                     </button>
                                 ))}
@@ -576,13 +589,17 @@ const ObservationList: React.FC<ObservationListProps> = ({
                 </div>
 
                 <div className="space-y-8 animate-fadeIn relative z-10">
-                    <header className="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0 p-4 md:p-8 glass-panel rounded-[2rem]">
-                        <h1 className="text-4xl font-bold tracking-tight text-nature-dark dark:text-white drop-shadow-sm">
-                            Carnet <span className="text-transparent bg-clip-text bg-gradient-to-r from-nature-green to-emerald-600">Naturaliste</span>
-                        </h1>
-                        <div className="flex items-center flex-wrap gap-3">
+                    {/* En-tête ordinateur : reprend la direction artistique du téléphone
+                        (carte blanche, pastilles teintées, bouton vert en dégradé). */}
+                    <header className={`flex flex-col xl:flex-row justify-between items-center gap-5 p-5 md:px-8 md:py-6 ${DESKTOP_PANEL_CLASS}`}>
+                        <div className="text-center xl:text-left">
+                            <h1 className="text-[2.5rem] leading-tight font-medium tracking-tight text-nature-dark dark:text-white">
+                                Carnet <span className="text-transparent bg-clip-text bg-gradient-to-r from-nature-green to-emerald-600">Naturaliste</span>
+                            </h1>
+                        </div>
+                        <div className="flex items-center flex-wrap justify-center gap-3">
                             {selectedIds.size > 0 && (
-                                <button onClick={handleDeleteSelected} disabled={isBulkDeleting} className={`${secondaryButtonClass} bg-red-500/80 hover:bg-red-600 backdrop-blur-md disabled:opacity-50 disabled:cursor-not-allowed`}>
+                                <button onClick={handleDeleteSelected} disabled={isBulkDeleting} className="h-10 px-4 rounded-full text-sm font-semibold inline-flex items-center gap-1.5 text-red-600 bg-red-500/10 hover:bg-red-500/20 dark:text-red-300 dark:bg-red-400/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                     {isBulkDeleting ? 'Suppression...' : `Supprimer (${selectedIds.size})`}
                                 </button>
                             )}
@@ -595,23 +612,37 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             />
                             <button
                                 onClick={handleImportClick}
-
-                                className={`${secondaryButtonClass} bg-gray-500/80 hover:bg-gray-600 backdrop-blur-md disabled:opacity-60 disabled:cursor-not-allowed`}
+                                className="h-10 px-4 rounded-full text-sm font-semibold inline-flex items-center gap-2 text-gray-700 bg-white/90 ring-1 ring-black/5 shadow-sm hover:bg-white hover:shadow-ios-hover dark:text-gray-200 dark:bg-white/10 dark:ring-white/10 dark:hover:bg-white/15 transition-all"
                             >
+                                <ArrowUpTrayIcon className="w-4 h-4 text-nature-green-text dark:text-nature-green" />
                                 {isParsingImport ? 'Annuler analyse' : 'Importer'}
                             </button>
-                            <button onClick={() => openExportDialog('json')} disabled={isExporting} className={`${secondaryButtonClass} bg-blue-500/80 hover:bg-blue-600 backdrop-blur-md disabled:opacity-60`}>JSON</button>
-                            <button onClick={() => openExportDialog('excel')} disabled={isExporting} className={`${secondaryButtonClass} bg-emerald-500/80 hover:bg-emerald-600 backdrop-blur-md disabled:opacity-60`}>Excel</button>
-                            <button onClick={() => openExportDialog('pdf')} disabled={isExporting} className={`${secondaryButtonClass} bg-red-500/80 hover:bg-red-600 backdrop-blur-md disabled:opacity-60`}>PDF</button>
-                            <button onClick={() => openExportDialog('darwincore')} disabled={isExporting} title="Darwin Core — standard GBIF/TDWG" className={`${secondaryButtonClass} bg-amber-600/80 hover:bg-amber-700 backdrop-blur-md disabled:opacity-60`}>DwC</button>
-                            <button onClick={() => openExportDialog('geojson')} disabled={isExporting} title="GeoJSON — QGIS / geojson.io" className={`${secondaryButtonClass} bg-indigo-500/80 hover:bg-indigo-600 backdrop-blur-md disabled:opacity-60`}>GeoJSON</button>
-                            <button onClick={onAdd} className={`${primaryButtonClass} shadow-lg shadow-nature-green/30`}>
-                                <span className="mr-1">+</span> Observation
+                            <div role="group" aria-label="Exporter" className="flex items-center gap-1 p-1 pl-3 rounded-full bg-white/90 ring-1 ring-black/5 shadow-sm dark:bg-white/10 dark:ring-white/10">
+                                <span className="inline-flex items-center gap-1 mr-1 text-[11px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                                    <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                    Exporter
+                                </span>
+                                {EXPORT_FORMATS.map(format => (
+                                    <button
+                                        key={format.type}
+                                        onClick={() => openExportDialog(format.type)}
+                                        disabled={isExporting}
+                                        title={format.title}
+                                        className={`h-8 px-3 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-60 ${format.chip}`}
+                                    >
+                                        <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full ${format.dot}`} />
+                                        {isExporting && pendingExportType === format.type ? 'Export...' : format.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <button onClick={onAdd} className="h-11 px-5 rounded-full text-sm font-semibold text-white inline-flex items-center gap-1.5 bg-gradient-to-br from-nature-green to-emerald-600 shadow-lg shadow-nature-green/30 ring-1 ring-white/30 hover:brightness-110 hover:scale-105 active:scale-95 transition-all duration-200">
+                                <PlusIcon className="w-5 h-5" strokeWidth={2.5} />
+                                Observation
                             </button>
                         </div>
                     </header>
 
-                    <div className="p-4 md:p-8 glass-panel rounded-[2rem] space-y-8">
+                    <div className={`p-4 md:p-8 space-y-8 ${DESKTOP_PANEL_CLASS}`}>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
                             <div className="relative md:col-span-1 group">
                                 <label htmlFor="search-input" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-3 ml-1 group-focus-within:text-nature-green transition-colors">Recherche</label>
@@ -625,7 +656,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         placeholder="Rechercher..."
                                         value={searchTerm}
                                         onChange={e => onSearchChange(e.target.value)}
-                                        className="w-full pl-12 pr-4 py-4 glass-input rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white placeholder-gray-400 outline-none"
+                                        className="w-full pl-12 pr-4 py-4 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white placeholder-gray-400 outline-none"
                                     />
                                 </div>
                             </div>
@@ -636,7 +667,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         id="year-filter"
                                         value={yearFilter}
                                         onChange={e => onYearChange(e.target.value)}
-                                        className="w-full py-4 px-5 glass-input rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white appearance-none cursor-pointer outline-none"
+                                        className="w-full py-4 px-5 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white appearance-none cursor-pointer outline-none"
                                     >
                                         <option value="all">Toutes les années</option>
                                         {availableYears.map(year => (
@@ -655,14 +686,14 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         type="date"
                                         value={startDateFilter}
                                         onChange={e => onStartDateChange(e.target.value)}
-                                        className="w-full py-4 px-3 glass-input rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white outline-none text-xs"
+                                        className="w-full py-4 px-3 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white outline-none text-xs"
                                         placeholder="Du"
                                     />
                                     <input
                                         type="date"
                                         value={endDateFilter}
                                         onChange={e => onEndDateChange(e.target.value)}
-                                        className="w-full py-4 px-3 glass-input rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white outline-none text-xs"
+                                        className="w-full py-4 px-3 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white outline-none text-xs"
                                         placeholder="Au"
                                     />
                                 </div>
@@ -674,7 +705,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         id="status-filter"
                                         value={statusFilter}
                                         onChange={e => onStatusChange(e.target.value as Status | 'all')}
-                                        className="w-full py-4 px-5 glass-input rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white appearance-none cursor-pointer outline-none"
+                                        className="w-full py-4 px-5 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white appearance-none cursor-pointer outline-none"
                                     >
                                         <option value="all">Tous les statuts</option>
                                         {Object.values(Status).map(status => (
@@ -693,7 +724,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 onClick={() => onTaxonomicGroupChange('all')}
                                 aria-label="Filtrer tous les groupes"
                                 aria-pressed={taxonomicGroupFilter === 'all'}
-                                className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-300 shadow-sm ${taxonomicGroupFilter === 'all' ? 'bg-nature-dark text-white shadow-lg scale-105 ring-2 ring-white/20' : 'glass-input text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}`}>
+                                className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-300 shadow-sm ${taxonomicGroupFilter === 'all' ? 'bg-nature-green text-white shadow-lg shadow-nature-green/30 scale-105 ring-2 ring-nature-green/25' : 'bg-gray-100/80 dark:bg-white/10 border border-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-200/80 dark:hover:bg-white/15'}`}>
                                 Tous
                             </button>
                             {taxonFilterEntries.map(([group, logoPath]) => {
@@ -707,7 +738,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                             onClick={() => onTaxonomicGroupChange(group)}
                                             aria-label={ariaLabel}
                                             aria-pressed={isActive}
-                                            className={`p-2 rounded-full transition-all duration-300 transform hover:scale-110 ${isActive ? 'bg-nature-green ring-4 ring-nature-green/20 shadow-lg scale-110' : 'glass-input hover:bg-white/40 dark:hover:bg-white/10 grayscale hover:grayscale-0 opacity-70 hover:opacity-100'}`}
+                                            className={`p-2 rounded-full transition-all duration-300 transform hover:scale-110 ${isActive ? 'bg-nature-green ring-4 ring-nature-green/20 shadow-lg scale-110' : 'bg-gray-100/80 dark:bg-white/10 border border-transparent hover:bg-gray-200/80 dark:hover:bg-white/15 grayscale hover:grayscale-0 opacity-70 hover:opacity-100'}`}
                                             title={group}
                                         >
                                             <img src={logoPath} alt={group} className="w-8 h-8 object-contain drop-shadow-sm" />
@@ -721,7 +752,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         onClick={() => onTaxonomicGroupChange(group)}
                                         aria-label={ariaLabel}
                                         aria-pressed={isActive}
-                                        className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${isActive ? 'bg-nature-green text-white shadow-md ring-2 ring-nature-green/25' : 'glass-input text-gray-600 dark:text-gray-300 hover:bg-white/40 dark:hover:bg-white/10'}`}
+                                        className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 ${isActive ? 'bg-nature-green text-white shadow-md ring-2 ring-nature-green/25' : 'bg-gray-100/80 dark:bg-white/10 border border-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-200/80 dark:hover:bg-white/15'}`}
                                         title={group}
                                     >
                                         {group}
@@ -731,7 +762,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                         </div>
                     </div>
 
-                    <div ref={tableRef} className="overflow-hidden glass-panel rounded-[2rem]">
+                    <div ref={tableRef} className={`overflow-hidden ${DESKTOP_PANEL_CLASS}`}>
                         <table className="w-full text-left border-collapse">
                             <thead className="bg-white/10 dark:bg-black/20 border-b border-white/10 dark:border-white/5 backdrop-blur-md">
                                 <tr>

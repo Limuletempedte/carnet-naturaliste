@@ -65,7 +65,7 @@ const DetailMiniMap: React.FC<DetailMiniMapProps> = ({ lat, lon, speciesName }) 
     return (
         <div
             ref={mapContainerRef}
-            className="h-48 sm:h-64 w-full rounded-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10"
+            className="isolate h-48 sm:h-64 w-full rounded-2xl overflow-hidden ring-1 ring-black/5 dark:ring-white/10"
             role="img"
             aria-label={`Carte de localisation de l'observation de ${speciesName}`}
         />
