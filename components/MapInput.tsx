@@ -377,7 +377,7 @@ const MapInput: React.FC<MapInputProps> = ({ onLocationChange, onToast }) => {
     };
 
     return (
-        <div className="relative h-[400px] w-full">
+        <div className="relative isolate h-[400px] w-full">
             <div ref={mapContainerRef} style={{ height: '100%', width: '100%' }} />
 
             {/* Search Overlay */}

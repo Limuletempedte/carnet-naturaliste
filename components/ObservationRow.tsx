@@ -103,7 +103,7 @@ const ObservationRow: React.FC<ObservationRowProps> = React.memo(({ observation,
                 <div className="flex justify-center items-center gap-3 transition-all duration-300">
                     <button
                         onClick={(e) => { e.stopPropagation(); onEdit(id); }}
-                        className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-blue-600 bg-blue-50/50 hover:bg-blue-100/80 dark:text-blue-400 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 rounded-full transition-all shadow-sm backdrop-blur-md hover:scale-110"
+                        className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-nature-green-text bg-nature-green/10 hover:bg-nature-green/20 dark:text-nature-green dark:bg-nature-green/15 dark:hover:bg-nature-green/25 rounded-full transition-all shadow-sm backdrop-blur-md hover:scale-110"
                         aria-label="Modifier"
                         title="Modifier"
                     >

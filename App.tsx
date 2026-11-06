@@ -491,29 +491,6 @@ const App: React.FC = () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }, []);
 
-    const handleRefresh = async () => {
-        if (!operationSession || !isSessionCurrent(operationSession)) return;
-        try {
-            setIsLoading(true);
-            const loadResult = await getObservations(operationSession!);
-            setObservations(loadResult.observations);
-            setConnectionStatus(
-                isOffline
-                    ? 'offline'
-                    : loadResult.source === 'cache'
-                        ? 'degraded'
-                        : 'online'
-            );
-            pushToast('success', 'Données actualisées.');
-            refreshOfflineQueueSnapshot();
-        } catch (e) {
-            pushToast('error', 'Impossible d\'actualiser les données.');
-            logger.error(e);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     const handleOpenSyncCenter = () => {
         refreshOfflineQueueSnapshot();
         setIsSyncCenterOpen(true);
@@ -749,15 +726,6 @@ const App: React.FC = () => {
                         </button>
 
                         <button
-                            onClick={handleRefresh}
-                            className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
-                            title="Actualiser les données"
-                            aria-label="Actualiser les données"
-                        >
-                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                        </button>
-
-                        <button
                             onClick={() => setIsDarkMode(!isDarkMode)}
                             className="p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-white/50 dark:bg-white/10 hover:bg-white/80 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-500 dark:text-gray-400"
                             title={isDarkMode ? 'Mode Clair' : 'Mode Sombre'}
@@ -805,15 +773,6 @@ const App: React.FC = () => {
                             aria-label="Filtres avancés"
                         >
                             <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M6 12h12M10 20h4" /></svg>
-                        </button>
-
-                        <button
-                            onClick={handleRefresh}
-                            className="p-3 rounded-full liquid-glass-clear liquid-glass-sheen hover:shadow-ios-hover transition-all duration-300 transform hover:scale-105 active:scale-95 text-gray-500 dark:text-gray-400"
-                            title="Actualiser les données"
-                            aria-label="Actualiser les données"
-                        >
-                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                         </button>
 
                         <button

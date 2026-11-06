@@ -133,7 +133,9 @@ const ObservationDetail: React.FC<ObservationDetailProps> = ({ observation, onBa
                 >
                     <ChevronLeftIcon className="w-4 h-4" /> Retour
                 </button>
-                <div className="flex gap-2">
+                {/* Sur téléphone, les deux boutons passent à la ligne : le léger retrait
+                    (pl-3) les garde à l'intérieur de l'arrondi de la bulle. */}
+                <div className={`flex gap-2 ${isMobileView ? 'pl-3' : ''}`}>
                     <button
                         type="button"
                         onClick={() => onEdit(observation.id)}
