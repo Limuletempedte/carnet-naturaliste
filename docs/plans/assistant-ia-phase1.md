@@ -3,7 +3,7 @@
 - **Statut** : plan validé le 2026-11-05. Étape 0 et PR A (back-end) fusionnées (#111). Mise en production faite le 2026-11-05 : migration appliquée et droits vérifiés, 5 secrets enregistrés (`AI_EFFORT=low` pour commencer), fonction `ai-identify` déployée et contrôlée sans frais (401 / CORS). Personne n'est encore approuvé. PR B réalisée (bouton, panneau, textes légaux). **Reste** : le premier essai réel depuis le site (§1.6 du guide d'exploitation) et le choix définitif de l'effort.
 - **Écarts de mise en œuvre (PR A)** : `ai_reserve_call` reçoit aussi `p_model` ; l'anti double-clic (`busy`) laisse passer **une seule** des 25 réservations simultanées d'une même personne (le quota de 20 est vérifié en séquence, le budget en concurrence sur 5 personnes) ; la photo est refusée au-delà de 1 280 px ; `AI_EFFORT` n'a pas de valeur par défaut.
 - **Base** : `main` à `4d8a574`.
-- **Suite** : phases 2 (note → fiche) et 3 (bilan mensuel), hors périmètre ici.
+- **Suite** : phases 2 à 4 (bilan du mois, note → fiche, recherche en langage naturel), planifiées dans [`assistant-ia-phases-2-4.md`](./assistant-ia-phases-2-4.md).
 
 ## Contexte
 
