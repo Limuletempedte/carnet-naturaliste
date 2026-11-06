@@ -20,6 +20,7 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 - `npm test` : tests Vitest en watch mode
 - `npm run build` : build production
 - `npm run dev` : serveur de dev
+- `npm run icons` : regenere les icones PNG et le favicon.ico depuis les SVG du logo (Linux, voir `scripts/icons/README.md`)
 
 ## Structure
 - `/components/` : composants React (PascalCase.tsx)
@@ -49,7 +50,7 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 
 ## Tests
 - Framework : Vitest + Testing Library React
-- Dernière validation du 5 novembre 2026 : 79 fichiers de tests (632 tests) couvrant composants, services et utils
+- Dernière validation du 6 novembre 2026 : 80 fichiers de tests (646 tests) couvrant composants, services et utils
 - Lancer `npm run test:run` pour valider les changements
 
 ## Deploiement et pieges a connaitre
