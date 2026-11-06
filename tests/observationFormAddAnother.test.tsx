@@ -88,8 +88,9 @@ describe('ObservationForm — « Enregistrer et ajouter une autre »', () => {
         await user.type(speciesInput, 'Mésange bleue');
         // Date = champ « contexte » conservé entre deux saisies (discriminant vs date du jour).
         fireEvent.change(dateInput, { target: { value: '2026-01-15' } });
-        // Commentaire = champ propre à l’individu, doit être vidé.
-        await user.type(commentInput, 'premier individu');
+        // Commentaire = champ propre à l’individu, doit être vidé. Saisi d’un bloc :
+        // la frappe lettre par lettre dépassait parfois 5 s sous charge.
+        fireEvent.change(commentInput, { target: { value: 'premier individu' } });
 
         await user.click(screen.getByRole('button', { name: /Enregistrer et ajouter une autre/i }));
 
@@ -112,7 +113,7 @@ describe('ObservationForm — « Enregistrer et ajouter une autre »', () => {
         expect((screen.getByLabelText(/Date \*/i) as HTMLInputElement).value).toBe('2026-01-15');
         // Champ propre à l’individu vidé.
         expect((screen.getByLabelText(/Commentaire/i) as HTMLTextAreaElement).value).toBe('');
-    });
+    }, 15_000);
 
     it('le bouton « Sauvegarder » classique n’active pas keepFormOpen', async () => {
         const onSave = vi.fn(async (_obs: Observation, _options?: { keepFormOpen?: boolean }) => { });
