@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 import { parseImportFile } from '../services/importFileParser';
 import { setSessionIdentity } from '../services/sessionScope';
-vi.mock('../supabaseClient', () => ({ supabase: { storage: { from: () => ({ download: async () => ({ data: { size: 3, type: 'image/jpeg', arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }, error: null }) }) } } }));
+// Requête Supabase chaînable : select().eq().order() résout { data: [], error: null }
+// (utilisateur qui n'a jamais utilisé l'assistant IA).
+const emptyQuery = () => { const q = { select: () => q, eq: () => q, order: async () => ({ data: [], error: null }) }; return q; };
+vi.mock('../supabaseClient', () => ({ supabase: { from: () => emptyQuery(), storage: { from: () => ({ download: async () => ({ data: { size: 3, type: 'image/jpeg', arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }, error: null }) }) } } }));
 import { Age, Comportement, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
 
 const saveAsMock = vi.fn();
@@ -70,10 +73,26 @@ describe('backupService.createBackup', () => {
         expect(fileNames).toContain('data.json');
         expect(fileNames).toContain('data.csv');
         expect(fileNames).toContain('backup_manifest.json');
+        expect(fileNames).toContain('assistant_ia.json');
         expect(fileNames.some(name => name.startsWith('images/'))).toBe(true);
+        expect(result.aiDataComplete).toBe(true);
+
+        // Section IA présente et vide pour un utilisateur qui ne s'en est jamais servi.
+        const ai = JSON.parse(await zip.file('assistant_ia.json')!.async('string'));
+        expect(ai.complet).toBe(true);
+        expect(ai.acces.rows).toEqual([]);
+        expect(ai.utilisations.rows).toEqual([]);
 
         const restored = await parseImportFile(new File([savedBlob], 'backup.zip'));
         expect(restored.media[0].blob.type).toBe('image/jpeg');
+    });
+
+    it("n'inclut pas la section IA quand includeAiData vaut false", async () => {
+        const { createBackup } = await import('../services/backupService');
+        const result = await createBackup([makeObservation()], { includeAiData: false });
+        const zip = await JSZip.loadAsync(saveAsMock.mock.calls[0][0] as Blob);
+        expect(Object.keys(zip.files)).not.toContain('assistant_ia.json');
+        expect(result.aiDataComplete).toBeUndefined();
     });
 
     it('neutralizes CSV formula injection payloads in exported CSV', async () => {

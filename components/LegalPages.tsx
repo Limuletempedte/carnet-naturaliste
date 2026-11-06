@@ -31,7 +31,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 
 export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
     <LegalPageWrapper title="Politique de confidentialite" onBack={onBack}>
-        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 5 novembre 2026</p>
+        <p className="text-xs text-gray-400 italic">Derniere mise a jour : 6 novembre 2026</p>
 
         <Section title="1. Responsable du traitement">
             <p>Eliot SERIVE — editeur particulier (service non commercial). Contact : carnetnaturaliste.app@gmail.com</p>
@@ -85,7 +85,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
             <p>Vous disposez des droits suivants :</p>
             <ul className="list-disc pl-5 space-y-1">
                 <li><strong>Acces</strong> : consulter vos donnees depuis votre profil</li>
-                <li><strong>Portabilite</strong> : exporter toutes vos donnees (JSON, Excel, ZIP) depuis le menu profil</li>
+                <li><strong>Portabilite</strong> : exporter toutes vos donnees (JSON, Excel, ZIP) depuis le menu profil. L'archive ZIP « Exporter mes données » contient vos observations, leurs photos et sons, et les données de l'assistant IA (fichier <code>assistant_ia.json</code> : votre demande d'accès et le journal de vos utilisations des 3 derniers mois, vide si vous ne vous en êtes jamais servi)</li>
                 <li><strong>Rectification</strong> : modifier vos observations a tout moment</li>
                 <li><strong>Effacement</strong> : supprimer votre compte et toutes les donnees associees depuis le menu profil</li>
                 <li><strong>Retrait du consentement</strong> : bouton « Retirer mon accord » dans la fenêtre « Aide à l'identification (IA) » du menu profil. Le retrait vaut pour l'avenir : les photos déjà envoyées ne peuvent pas être rappelées.</li>

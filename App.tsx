@@ -549,13 +549,16 @@ const App: React.FC = () => {
             const result = await createBackup(observations, { includeImages, context: operationSession });
             assertSessionContext(operationSession);
             removeToast(exportToastId);
+            const aiDataMissing = result.aiDataComplete === false;
             pushToast(
-                result.failedImages > 0 ? 'warning' : 'success',
-                result.skippedImages
-                    ? `Export RGPD créé sans les images (${result.fileName}).`
-                    : result.failedImages > 0
-                        ? `Export RGPD terminé (${result.fileName}) avec ${result.failedImages} image(s) manquante(s).`
-                        : `Export RGPD terminé : ${result.fileName}.`,
+                result.failedImages > 0 || aiDataMissing ? 'warning' : 'success',
+                aiDataMissing
+                    ? `Export RGPD créé (${result.fileName}), mais les données de l'assistant IA n'ont pas pu être lues. Relancez l'export en ligne pour les obtenir.`
+                    : result.skippedImages
+                        ? `Export RGPD créé sans les images (${result.fileName}).`
+                        : result.failedImages > 0
+                            ? `Export RGPD terminé (${result.fileName}) avec ${result.failedImages} image(s) manquante(s).`
+                            : `Export RGPD terminé : ${result.fileName}.`,
                 7000
             );
         } catch (err) {

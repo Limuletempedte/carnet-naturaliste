@@ -9,6 +9,7 @@ import { downloadPrivateMedia } from './privateMediaService';
 import { assertSessionContext, captureSessionContext, type SessionContext } from './sessionScope';
 import { isPublicEncyclopediaImage } from '../utils/urlUtils';
 import { isPendingMedia } from './pendingMediaStore';
+import { buildAiExportFile, fetchAiDataForExport } from './aiDataExportService';
 
 export interface BackupResult {
     fileName: string;
@@ -20,6 +21,8 @@ export interface BackupResult {
     inlineMediaCount: number;
     skippedImages?: boolean;
     skippedSounds?: boolean;
+    /** `false` si les données de l'assistant IA n'ont pas pu être lues en entier. */
+    aiDataComplete?: boolean;
 }
 
 export interface BackupOptions {
@@ -28,6 +31,8 @@ export interface BackupOptions {
     includeImages?: boolean;
     /** Inclure les sons dans le ZIP. Défaut : true. */
     includeSounds?: boolean;
+    /** Inclure les données de l'assistant IA (`assistant_ia.json`). Défaut : true. */
+    includeAiData?: boolean;
 }
 
 const IMAGE_FETCH_TIMEOUT_MS = 15000;
@@ -164,7 +169,7 @@ export const createBackup = async (
 ): Promise<BackupResult> => {
     const context = options.context ?? captureSessionContext();
     assertSessionContext(context);
-    const { includeImages = true, includeSounds = true } = options;
+    const { includeImages = true, includeSounds = true, includeAiData = true } = options;
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
 
@@ -387,6 +392,16 @@ export const createBackup = async (
         zip.file('MEDIAS_MANQUANTS.txt', lines.join('\n'));
     }
 
+    // Données de l'assistant IA (accès, journal d'utilisation) : section
+    // présente même vide, pour que l'export contienne « toutes vos données ».
+    let aiDataComplete: boolean | undefined;
+    if (includeAiData) {
+        const aiData = await fetchAiDataForExport(context);
+        assertSessionContext(context);
+        aiDataComplete = aiData.complete;
+        zip.file('assistant_ia.json', JSON.stringify(buildAiExportFile(aiData, new Date().toISOString()), null, 2));
+    }
+
     // SR-16b : inclure le journal d'évènements pour faciliter le debug post-mortem
     try {
         zip.file('event_log.json', JSON.stringify(getEventLog(), null, 2));
@@ -412,6 +427,7 @@ export const createBackup = async (
                 failedSoundUrls,
                 inlineMediaCount,
                 blobOnlyAssets,
+                aiData: includeAiData ? { included: true, complete: aiDataComplete } : { included: false },
             },
             null,
             2
@@ -442,5 +458,6 @@ export const createBackup = async (
         inlineMediaCount,
         skippedImages: !includeImages,
         skippedSounds: !includeSounds,
+        aiDataComplete,
     };
 };
