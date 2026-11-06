@@ -1,21 +1,30 @@
-# Assistant d'identification par IA — exploitation
+# Assistant IA — exploitation
 
-Plan validé : [`docs/plans/assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md).
+Plans validés : [`assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md)
+(aide à l'identification par photo) et
+[`assistant-ia-phases-2-4.md`](../plans/assistant-ia-phases-2-4.md)
+(fonctionnalités texte : bilan du mois, puis note → fiche et recherche).
 Ce document dit **comment mettre en service, gérer et couper** l'assistant.
+Les sections 1 à 5 décrivent le socle et la photo ; la section 6, la fonction
+texte `ai-text`.
 
 | Élément | Fichier |
 |---|---|
-| Tables, droits, fonctions SQL | `supabase/migrations/20261105161500_ai_identification.sql` |
-| Fonction Edge | `supabase/functions/ai-identify/index.ts` (appel) et `logic.ts` (règles) |
-| Réglage `verify_jwt` | `supabase/config.toml`, section `[functions.ai-identify]` |
+| Tables, droits, fonctions SQL | `supabase/migrations/20261105161500_ai_identification.sql` (socle, photo) et `supabase/migrations/20261106220000_ai_text_features.sql` (consentements texte, `ai_reserve_call` à 6 arguments) |
+| Retour arrière SQL du lot texte | `docs/ops/retour-arriere-ai-text-features.sql` (hors `migrations/`, voir §6.6) |
+| Fonctions Edge | `supabase/functions/ai-identify/` (photo) et `supabase/functions/ai-text/` (texte) : `index.ts` (appel) et `logic.ts` (règles) |
+| Réglage `verify_jwt` | `supabase/config.toml`, sections `[functions.ai-identify]` et `[functions.ai-text]` |
 | Application | `services/aiAssistService.ts`, `components/AiAccessDialog.tsx` (accès, consentement), `components/AiIdentificationPanel.tsx`, bouton dans `components/ObservationForm.tsx`, entrée du menu du compte |
-| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx` (lancés par `npm run check`) |
-| Tests de sécurité locaux | `tests/security/ai-access-rls.mjs` |
+| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiTextLogic.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx` (lancés par `npm run check`) |
+| Tests de sécurité locaux | `tests/security/ai-access-rls.mjs` (Supabase local) et `tests/security/ai-text-bench.mjs` (`ai-text` seule, sans Supabase) |
 
 En bref : une personne **demande** l'accès (ligne `pending` dans `ai_access`),
 le propriétaire **approuve à la main** dans le tableau de bord Supabase. Chaque
 analyse est d'abord **réservée** (accès, consentement, quota de 20 par mois,
-budget du mois), puis le coût réel est écrit dans `ai_usage`.
+budget du mois), puis le coût réel est écrit dans `ai_usage`. La photo et
+les fonctionnalités texte partagent l'accès, le quota de 20 utilisations par
+mois et le budget ; chaque fonctionnalité texte demande en plus son propre
+consentement (table `ai_consents`).
 
 ---
 
@@ -80,15 +89,18 @@ select
   has_column_privilege('authenticated', 'public.ai_access', 'status', 'INSERT') as choisir_statut, -- faux
   has_table_privilege('authenticated', 'public.ai_usage', 'DELETE')         as effacer_journal,    -- faux
   has_table_privilege('anon', 'public.ai_access', 'SELECT')                 as anon_lit,           -- faux
-  has_function_privilege('authenticated', 'public.ai_reserve_call(uuid, text, text, numeric, numeric)', 'EXECUTE') as reserver,  -- faux
+  has_function_privilege('authenticated', 'public.ai_reserve_call(uuid, text, text, numeric, numeric, text)', 'EXECUTE') as reserver,  -- faux
   has_function_privilege('authenticated', 'public.ai_finalize_call(uuid, text, integer, integer, numeric)', 'EXECUTE') as finaliser, -- faux
   has_function_privilege('anon', 'public.ai_my_status()', 'EXECUTE')        as anon_statut,        -- faux
   has_function_privilege('authenticated', 'public.ai_my_status()', 'EXECUTE') as statut;           -- vrai
 ```
 
-Tout doit être **faux** sauf la dernière colonne. Puis ouvrir
-*Advisors → Security* dans le tableau de bord : aucune alerte nouvelle sur
-`ai_access`, `ai_usage` ou les trois fonctions.
+Tout doit être **faux** sauf la dernière colonne. La signature à 6 arguments
+de `ai_reserve_call` est celle posée par la migration texte ; avant elle,
+c'était `(uuid, text, text, numeric, numeric)`. Les contrôles propres au lot
+texte (`ai_consents`, version unique de `ai_reserve_call`) sont au §6.2. Puis
+ouvrir *Advisors → Security* dans le tableau de bord : aucune alerte nouvelle
+sur `ai_access`, `ai_usage`, `ai_consents` ou les trois fonctions.
 
 ### 1.4 Secrets de la fonction
 
@@ -102,10 +114,17 @@ terminal (l'historique les garderait) ni dans une conversation.
 | `AI_EFFORT` | `low` ou `medium` | **obligatoire**, choisi après l'essai réel |
 | `AI_MONTHLY_BUDGET_USD` | `18` | budget du mois ; `0` coupe l'assistant |
 | `ALLOWED_ORIGINS` | `https://carnet-naturaliste.vercel.app` | sites autorisés, séparés par des virgules |
+| `AI_TEXT_MODEL` | `claude-sonnet-5-5` ou `claude-haiku-5-5` | modèle des fonctionnalités texte (`ai-text`) ; **obligatoire**, sans valeur par défaut |
+| `AI_DISABLED_FEATURES` | ex. `summary` ; absent = rien de coupé | fonctionnalités texte coupées, séparées par des virgules (`summary`, `note`, `search`) |
 
-La fonction **refuse de tourner** (`misconfigured`) si le modèle n'a pas de
-prix connu dans `logic.ts`, si l'effort n'est pas `low` ou `medium`, ou si le
-budget est illisible. Aucun nom de secret ne doit commencer par `SUPABASE_` ni
+Les secrets valent pour **tout le projet** : `ANTHROPIC_API_KEY`, `AI_EFFORT`,
+`AI_MONTHLY_BUDGET_USD` et `ALLOWED_ORIGINS` servent aux deux fonctions, et le
+budget est commun (somme `cost_usd` du mois, toutes fonctionnalités).
+
+Chaque fonction **refuse de tourner** (`misconfigured`) si son modèle n'a pas
+de prix connu dans son `logic.ts`, si l'effort n'est pas `low` ou `medium`, ou
+si le budget est illisible ; `ai-text` aussi si `AI_TEXT_MODEL` est absent ou
+si `AI_DISABLED_FEATURES` contient un nom inconnu (faute de frappe). Aucun nom de secret ne doit commencer par `SUPABASE_` ni
 par `VITE_`. `ANTHROPIC_BASE_URL` ne sert qu'aux tests locaux : ne jamais le
 définir en production.
 
@@ -117,8 +136,11 @@ définir en production.
 npx supabase functions deploy ai-identify --use-api
 ```
 
+La fonction texte se déploie de la même façon (voir §6.2) :
+`npx supabase functions deploy ai-text --use-api`.
+
 `verify_jwt = true` est lu dans `supabase/config.toml` : la plateforme refuse
-déjà toute requête sans jeton, et la fonction vérifie elle-même l'utilisateur.
+déjà toute requête sans jeton, et chaque fonction vérifie elle-même l'utilisateur.
 
 Contrôle sans frais (aucun jeton, aucune photo, aucun appel à Claude) : un
 `POST` sans jeton doit répondre **401** ; une requête préalable CORS (`OPTIONS`)
@@ -197,8 +219,30 @@ where g.created_at >= date_trunc('month', now() at time zone 'utc') at time zone
 group by u.email order by analyses desc;
 ```
 
+**Usage par fonctionnalité ce mois-ci** (`identify` = photo, `summary` =
+bilan, `note`, `search`) :
+
+```sql
+select feature, status, count(*) as appels, sum(cost_usd) as dollars
+from public.ai_usage
+where created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
+group by rollup (feature, status)
+order by feature, status;
+```
+
+**Consentements texte donnés** (une ligne par personne et par fonctionnalité) :
+
+```sql
+select u.email, c.feature, c.version, c.given_at
+from public.ai_consents c join auth.users u on u.id = c.user_id
+order by u.email, c.feature;
+```
+
 Une personne qui retire son accord supprime sa ligne `ai_access` ; si elle
 redemande, elle revient `pending`. Son compteur du mois, lui, ne bouge pas.
+Retirer l'accès photo ne retire pas ses consentements texte (ils restent
+inutiles tant que l'accès n'est pas de nouveau approuvé) ; ils disparaissent
+quand elle les retire un par un ou supprime son compte.
 
 ---
 
@@ -209,7 +253,11 @@ redemande, elle revient `pending`. Son compteur du mois, lui, ne bouge pas.
   avoir son prix dans `MODEL_PRICES_USD_PER_MTOK` (`logic.ts`), sinon la
   fonction refuse tout.
 - **Couper l'assistant immédiatement** : `AI_MONTHLY_BUDGET_USD` = `0`, puis
-  redéployer. Tous les appels sont refusés avec `budget_exhausted`.
+  redéployer **les deux** fonctions. Tous les appels sont refusés avec
+  `budget_exhausted`.
+- **Couper une seule fonctionnalité texte** : l'ajouter à
+  `AI_DISABLED_FEATURES` (ex. `summary`), puis redéployer `ai-text`. Elle
+  répond `feature_disabled` ; la photo et les autres continuent.
 - **Changer de clé** : créer la nouvelle clé dans la Console, remplacer
   `ANTHROPIC_API_KEY`, redéployer, vérifier une analyse, puis **désactiver
   l'ancienne clé** dans la Console.
@@ -220,6 +268,11 @@ redemande, elle revient `pending`. Son compteur du mois, lui, ne bouge pas.
   Mettre à jour les textes légaux si le fond change. Les accès existants sont
   alors refusés (`consent_outdated`) : chacun voit « Renouveler mon accord »,
   puis repasse en attente de validation.
+- **Changer le texte d'un consentement texte** : changer la version de cette
+  fonctionnalité dans `CONSENT_VERSIONS` (`supabase/functions/ai-text/logic.ts`)
+  **et** côté application (`AI_TEXT_CONSENT_VERSIONS`, livrée en PR B), puis
+  redéployer `ai-text`. Seule cette fonctionnalité redemande l'accord ;
+  l'approbation (`ai_access`) n'est pas touchée.
 
 ---
 
@@ -258,14 +311,14 @@ chaque nouvelle réservation. Supprimer un compte supprime sa ligne
 
 **Journaux** de la fonction : id de la ligne d'usage, statut, modèle, tokens,
 coût, type d'erreur. Jamais l'utilisateur, la photo, le prompt ni les
-hypothèses.
+hypothèses. Règles propres à `ai-text` : §6.5.
 
 ---
 
 ## 5. Vérification locale
 
 Sur un Supabase **local** uniquement (le script refuse toute autre adresse),
-migration appliquée :
+les deux migrations appliquées (`supabase db reset`) :
 
 ```bash
 LOCAL_STATUS_FILE=/chemin/local-status.json \
@@ -277,8 +330,188 @@ node tests/security/ai-access-rls.mjs
 - `LOCAL_STATUS_FILE` : sortie de `supabase status -o json`, jamais versionnée.
 - `POSTGRES_MODULE` (facultatif) : paquet npm `postgres`, pour les contrôles
   `has_*_privilege`.
-- `DENO_BIN` (facultatif) : lance la fonction sur le port 8000 avec un **faux
-  serveur Anthropic** local (port 55440) ; aucune clé réelle, aucun appel payant.
+- `DENO_BIN` (facultatif) : lance `ai-identify` puis `ai-text` sur le port
+  8000 avec un **faux serveur Anthropic** local (port 55440) ; aucune clé
+  réelle, aucun appel payant.
+
+Le script couvre aussi le lot texte : droits et RLS de `ai_consents`,
+réservation à 6 arguments, consentement par fonctionnalité, anti double-clic
+par fonctionnalité, quota partagé, `feature` enregistrée, `ai-identify`
+inchangée sur la base migrée, une seule version de `ai_reserve_call`, et
+`ai-text` de bout en bout (401, CORS, 413, 400, `feature_disabled`,
+`misconfigured`, coût réel, journaux sans texte saisi).
+
+**Sans Supabase local ni Docker**, un banc plus léger fait tourner `ai-text`
+seule contre un faux Supabase et un faux serveur Anthropic (enchaînement de
+`index.ts`, arguments de la réservation, appel envoyé à Claude, finalisation,
+codes d'erreur, journaux) :
+
+```bash
+DENO_BIN=$(command -v deno) node tests/security/ai-text-bench.mjs
+```
 
 Le script crée ses comptes de test par l'API d'administration locale et les
 supprime à la fin.
+
+---
+
+## 6. Fonctions texte (`ai-text`)
+
+Une seule fonction pour les trois fonctionnalités texte, choisie par le champ
+`feature` du corps : `summary` (bilan du mois, livré en premier), puis `note`
+et `search`. `ai-identify` n'est **pas** modifiée : un défaut côté texte ne
+peut pas casser la photo.
+
+### 6.1 Ce que change la migration `20261106220000_ai_text_features.sql`
+
+- `ai_usage.feature` accepte `identify`, `summary`, `note` et `search`.
+- Nouvelle table `ai_consents` : une ligne par personne et par fonctionnalité
+  texte (`version`, `given_at` posé par le serveur). L'utilisateur peut la
+  lire, la supprimer (retrait) et l'insérer pour lui seul ; jamais la
+  modifier. Supprimée avec le compte.
+- `ai_reserve_call` reçoit un 6ᵉ argument `p_feature` (`identify` par
+  défaut) : consentement de la fonctionnalité exigé, anti double-clic par
+  fonctionnalité, quota et budget toujours communs. L'`ai-identify` en service
+  continue de fonctionner sans redéploiement.
+- `ai_my_status()` ajoute `used_by_feature` (détail du compteur) et
+  `consents` (versions acceptées). Les champs existants sont inchangés.
+
+C'est la **seule** migration des phases 2 à 4 : la note et la recherche n'en
+auront pas.
+
+### 6.2 Mise en production du lot (propriétaire, dans l'ordre)
+
+1. **Repère de retour arrière** : poser le tag `ai-identify-v1` sur la
+   version d'`ai-identify` en service (commit `a8cddfa`, le seul qui ait
+   modifié ce dossier) :
+
+   ```bash
+   git tag ai-identify-v1 a8cddfa
+   ```
+
+   ```bash
+   git push origin ai-identify-v1
+   ```
+
+2. **Migration** (même règles qu'au §1.2) :
+
+   ```bash
+   npx supabase migration list --linked
+   ```
+
+   ```bash
+   npx supabase db push --linked --dry-run
+   ```
+
+   Le `--dry-run` doit lister **exactement un** fichier :
+   `20261106220000_ai_text_features.sql`. Sinon, s'arrêter.
+
+   ```bash
+   npx supabase db push --linked
+   ```
+
+3. **Vérifications en lecture seule** (éditeur SQL), en plus du §1.3 :
+
+   ```sql
+   select
+     has_table_privilege('anon', 'public.ai_consents', 'SELECT')                     as anon_lit,          -- faux
+     has_table_privilege('authenticated', 'public.ai_consents', 'UPDATE')            as modifier,          -- faux
+     has_column_privilege('authenticated', 'public.ai_consents', 'given_at', 'INSERT') as choisir_date,    -- faux
+     has_table_privilege('authenticated', 'public.ai_consents', 'TRUNCATE')          as vider,             -- faux
+     has_function_privilege('anon', 'public.ai_reserve_call(uuid, text, text, numeric, numeric, text)', 'EXECUTE') as anon_reserver, -- faux
+     has_function_privilege('service_role', 'public.ai_reserve_call(uuid, text, text, numeric, numeric, text)', 'EXECUTE') as service_reserver, -- vrai
+     (select count(*) from pg_proc where proname = 'ai_reserve_call' and pronamespace = 'public'::regnamespace) as versions_reserver; -- 1
+   ```
+
+   Puis *Advisors → Security* : aucune alerte nouvelle. Enfin, faire une
+   analyse photo depuis le site : elle doit marcher comme avant (ligne
+   `ai_usage` avec `feature = 'identify'`).
+
+4. **Secrets** (*Edge Functions → Secrets*, jamais dans un terminal ni une
+   conversation) : `AI_TEXT_MODEL` (valeur provisoire jusqu'à l'essai du §6.3,
+   par exemple `claude-haiku-5-5`) et `AI_DISABLED_FEATURES` = `summary` tant
+   que l'application (PR B) n'est pas en ligne : la fonction est alors
+   déployée mais fermée.
+
+5. **Déploiement** puis contrôles sans frais :
+
+   ```bash
+   npx supabase functions deploy ai-text --use-api
+   ```
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://xowiezzqehadcfnbkijo.supabase.co/functions/v1/ai-text
+   ```
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X OPTIONS -H 'Origin: https://carnet-naturaliste.vercel.app' -H 'Access-Control-Request-Method: POST' https://xowiezzqehadcfnbkijo.supabase.co/functions/v1/ai-text
+   ```
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X OPTIONS -H 'Origin: https://pirate.example' -H 'Access-Control-Request-Method: POST' https://xowiezzqehadcfnbkijo.supabase.co/functions/v1/ai-text
+   ```
+
+   Attendu : **401**, **204**, **403**. Ce premier déploiement éprouve aussi
+   `--use-api` sans aucun risque. Le 401 ne prouve pas à lui seul que
+   `verify_jwt` est actif (la fonction refuse aussi d'elle-même) : vérifier
+   dans le tableau de bord (*Edge Functions → ai-text → Details*) que
+   « Verify JWT » est activé.
+
+### 6.3 Essai et choix du modèle (avant la PR B)
+
+En local, avec la clé de l'espace d'essai (plafond 2–5 $) : 12 mois de chiffres
+réels, dont des pièges (nom d'espèce contenant une consigne, mois vide, mois
+chargé). Comparer Sonnet 5.5 et Haiku 5.5 en effort `low` : qualité, temps,
+tokens, coût réel, nombre de réponses refusées (`invalid_output`). Puis fixer
+`AI_TEXT_MODEL` et redéployer `ai-text`.
+
+### 6.4 Après la PR B
+
+Retirer `summary` de `AI_DISABLED_FEATURES`, redéployer `ai-text`, rédiger un
+bilan depuis le site en ligne (les aperçus Vercel ne peuvent pas appeler les
+fonctions), puis contrôler la ligne `ai_usage` (`feature = 'summary'`) et la
+dépense dans la Console.
+
+### 6.5 Comment `ai-text` décide
+
+Ordre : CORS → identité → corps (JSON, **16 Ko** au plus) → fonctionnalité
+connue, livrée et non coupée → configuration → validation de la charge utile
+(au-delà d'une limite : **refus**, jamais de troncature) → réservation →
+appel à Claude → coût réel → réponse `{ result, remaining }`.
+
+Corps attendu : `{ "feature": "summary", "payload": { … } }`. Pour le bilan,
+la charge utile ne contient que le mois (`YYYY-MM`), des totaux, la
+répartition par groupe, au plus 15 espèces les plus observées et 30 espèces
+nouvelles (« + N autres »), et la comparaison avec l'an passé. Tout autre
+champ (lieu, GPS, commentaire…) est ignoré et n'atteint jamais Claude.
+
+Codes : ceux du §4 (sauf `invalid_image`), plus **`feature_disabled`
+(503)** : fonctionnalité coupée par `AI_DISABLED_FEATURES`. Une fonctionnalité
+pas encore livrée (`note`, `search` aujourd'hui) répond `invalid_request`
+(400).
+
+Réponse du bilan refusée (`invalid_output`, comptée car facturée) si le texte
+dépasse 1 200 caractères ou cite un nombre absent des chiffres fournis.
+
+**Journaux** : id de la ligne d'usage, fonctionnalité, statut, modèle,
+tokens, coût, type d'erreur. Jamais l'utilisateur, la note, la phrase, les
+chiffres ni le texte produit.
+
+### 6.6 Retour arrière
+
+- **Couper le texte sans rien défaire** : `AI_DISABLED_FEATURES` (une
+  fonctionnalité) ou `AI_MONTHLY_BUDGET_USD` = `0` (tout l'assistant), puis
+  redéployer.
+- **`ai-identify`** n'est pas modifiée par ce lot. Si elle l'était un jour :
+  `git checkout ai-identify-v1 -- supabase/functions/ai-identify`, puis
+  `npx supabase functions deploy ai-identify --use-api`.
+- **SQL**, seulement en cas de problème sérieux : couper d'abord `ai-text`,
+  puis passer d'un bloc, dans l'éditeur SQL,
+  [`retour-arriere-ai-text-features.sql`](./retour-arriere-ai-text-features.sql).
+  Il remet `ai_reserve_call` à 5 arguments et `ai_my_status` de la phase 1 à
+  l'identique, dans une transaction. Il **garde** `ai_consents` (preuves de
+  consentement ; suppression définitive en décommentant la ligne prévue) et
+  la contrainte élargie de `ai_usage.feature` (l'ancienne échouerait dès
+  qu'une ligne `summary` existe). Il ne touche pas l'historique des
+  migrations : toute correction ultérieure passe par une **nouvelle**
+  migration.
