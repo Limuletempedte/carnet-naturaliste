@@ -113,7 +113,7 @@ describe('ObservationForm — « Enregistrer et ajouter une autre »', () => {
         expect((screen.getByLabelText(/Date \*/i) as HTMLInputElement).value).toBe('2026-01-15');
         // Champ propre à l’individu vidé.
         expect((screen.getByLabelText(/Commentaire/i) as HTMLTextAreaElement).value).toBe('');
-    }, 15_000);
+    });
 
     it('le bouton « Sauvegarder » classique n’active pas keepFormOpen', async () => {
         const onSave = vi.fn(async (_obs: Observation, _options?: { keepFormOpen?: boolean }) => { });
