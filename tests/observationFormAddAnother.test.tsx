@@ -88,8 +88,9 @@ describe('ObservationForm — « Enregistrer et ajouter une autre »', () => {
         await user.type(speciesInput, 'Mésange bleue');
         // Date = champ « contexte » conservé entre deux saisies (discriminant vs date du jour).
         fireEvent.change(dateInput, { target: { value: '2026-01-15' } });
-        // Commentaire = champ propre à l’individu, doit être vidé.
-        await user.type(commentInput, 'premier individu');
+        // Commentaire = champ propre à l’individu, doit être vidé. Saisi d’un bloc :
+        // la frappe lettre par lettre dépassait parfois 5 s sous charge.
+        fireEvent.change(commentInput, { target: { value: 'premier individu' } });
 
         await user.click(screen.getByRole('button', { name: /Enregistrer et ajouter une autre/i }));
 

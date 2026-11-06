@@ -1,6 +1,6 @@
 # RÉCAP — Lot E (audit v2 : futures améliorations)
 
-> **Dernière mise à jour : 2026-06-20.**
+> **Dernière mise à jour : 2026-11-05.**
 > Synthèse de tout le travail réalisé sur le lot E (bugs + features + légal/RGPD).
 > Backlog source : [`lot-e-futures-ameliorations.md`](./lot-e-futures-ameliorations.md).
 > Statut global : **tout le lot E est livré et mergé sur `main` (PR #24 → #35)** — y compris la
