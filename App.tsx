@@ -635,7 +635,7 @@ const App: React.FC = () => {
                 <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface p-4">
                     <div className="w-full max-w-md liquid-glass-opaque rounded-2xl p-8 text-center">
                         {/* EE-5 : logo de l'app au-dessus du titre */}
-                        <img src="/logo.svg" alt="" aria-hidden="true" className="w-16 h-16 mx-auto mb-3 rounded-2xl shadow-sm" />
+                        <img src="/logo.svg" alt="" aria-hidden="true" className="w-16 h-16 mx-auto mb-3 rounded-[26%] shadow-sm" />
                         <h1 className="text-3xl font-bold mb-2 text-nature-dark dark:text-white">Carnet Naturaliste</h1>
                         <SignalOffIcon className="w-16 h-16 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
                         <p className="text-gray-600 dark:text-gray-400 mb-4">Vous êtes hors-ligne. Connectez-vous à Internet pour vous identifier.</p>

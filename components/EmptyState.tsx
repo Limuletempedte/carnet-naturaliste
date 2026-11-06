@@ -22,24 +22,23 @@ const VARIANT_BADGE: Record<EmptyStateVariant, React.ReactNode> = {
     stats: <ChartBarIcon className="w-4 h-4" />
 };
 
-/** La mascotte : l'oiseau de `public/logo.svg`, silhouette en currentColor.
-    L'œil est « percé » par un masque (comme le vert qui transparaît sur le
-    logo), pour rester lisible sur n'importe quel fond, sombre compris. */
+/** La mascotte : l'oiseau de `public/logo.svg` (mêmes tracés), silhouette en
+    currentColor. L'œil et l'aile sont « percés » par un masque (comme le vert
+    qui transparaît sur le logo), pour rester lisibles sur n'importe quel fond,
+    sombre compris. */
 const BirdMascot: React.FC<{ className?: string }> = ({ className }) => {
     // useId peut contenir « : » → assainir avant de l'injecter dans url(#…).
-    const maskId = `es-eye-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    const maskId = `es-cut-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
     return (
-        <svg viewBox="0 0 120 120" className={className} aria-hidden="true">
-            <mask id={maskId}>
-                <rect width="120" height="120" fill="white" />
-                <circle cx="49" cy="27" r="3.5" fill="black" />
+        <svg viewBox="70 80 342 342" className={className} aria-hidden="true">
+            <mask id={maskId} maskUnits="userSpaceOnUse" x="70" y="80" width="342" height="342">
+                <rect x="70" y="80" width="342" height="342" fill="white" />
+                <circle cx="311.2" cy="150.6" r="13.5" fill="black" />
+                <path d="M280.6 217 C291.6 282 211.6 332 135.4 308 C201.4 302 263.4 264 280.6 217 Z" fill="black" />
             </mask>
-            <g transform="translate(8,2)" fill="currentColor" mask={`url(#${maskId})`}>
-                <path d="M46 16 C62 16 75 28 79 44 C81 52 82 59 80 65 L94 74 L78 77 C72 90 59 98 46 98 C28 98 15 84 15 65 C15 45 27 30 40 27 Z" />
-                <circle cx="45" cy="28" r="17" />
-                <path d="M30 22 L14 29 L30 35 Z" />
-                <path d="M41 97 v8 h7" stroke="currentColor" strokeWidth="4.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M56 97 v8 h7" stroke="currentColor" strokeWidth="4.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <g fill="currentColor" mask={`url(#${maskId})`}>
+                <path d="M86 293 C130.5 267 194 184.5 223.2 132.5 C238 106 262 96.5 293.2 96.6 C322 96 346 117 357.4 134.8 L396.4 138.1 L361 167.8 C357.8 185 362.4 205 361.6 228 C360.6 300.5 310 365.4 234 365.4 C180 367.5 118 338 86 293 Z" />
+                <path d="M200.8 358 L200.8 398 Q200.8 402.3 205 402.3 L236 402.3 Q240.5 402.3 240 398.5 Q239.3 394.6 234 394 L222 393 Q215.4 392.4 215.4 386 L215.4 358 Z M251 358 L251 401 Q251 405.6 255.5 405.6 L288 405.6 Q293 405.6 292.7 401.5 Q292.2 397.6 287 396.9 L273 395.3 Q265.6 394.5 265.6 388 L265.6 358 Z" />
             </g>
         </svg>
     );

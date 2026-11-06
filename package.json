@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm run lint && npm run test:run && npm run build",
     "dev:test": "vite --mode test",
+    "icons": "python3 scripts/generate-icons.py",
     "prepare": "husky",
     "licenses": "license-checker --production --summary",
     "licenses:check": "license-checker --production --excludePrivatePackages --onlyAllow \"MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC-BY-4.0;CC0-1.0;0BSD;Unlicense;Python-2.0;MPL-2.0;BlueOak-1.0.0\" --excludePackages \"buffers@0.1.1\""

@@ -72,7 +72,8 @@ export default defineConfig(() => {
         registerType: 'prompt',
         // CO-01: masked-icon.svg n'existe pas (feature Safari pinned-tab deprecated), retire de la liste.
         // EE-5: logo.svg precache (affiche sur l'ecran de connexion et l'ecran hors-ligne).
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'logo.svg'],
+        // Icones generees par `npm run icons` (scripts/generate-icons.py).
+        includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'logo.svg'],
         manifest: {
           name: 'Carnet Naturaliste',
           short_name: 'CarnetNat',

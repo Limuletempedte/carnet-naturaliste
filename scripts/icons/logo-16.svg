@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Favicon 16 px : la silhouette et l'œil seulement (l'aile ferait une tache grise). -->
+  <title>Carnet Naturaliste</title>
+  <defs>
+    <!-- Vert vif : jaune-vert en haut à gauche, vert profond en bas à droite. -->
+    <linearGradient id="fond" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6ADD45"/>
+      <stop offset="0.42" stop-color="#22BF3A"/>
+      <stop offset="1" stop-color="#03A02E"/>
+    </linearGradient>
+    <!-- L'œil et l'aile sont percés : le vert du fond transparaît. -->
+    <mask id="decoupes" maskUnits="userSpaceOnUse" x="-100" y="-100" width="712" height="712">
+      <rect x="-100" y="-100" width="712" height="712" fill="#fff"/>
+      <circle cx="311.2" cy="150.6" r="20"/>
+    </mask>
+    <clipPath id="tuile"><rect width="512" height="512" rx="132"/></clipPath>
+  </defs>
+  <g clip-path="url(#tuile)">
+    <rect width="512" height="512" fill="url(#fond)"/>
+    <g transform="translate(256 258) scale(1.3) translate(-241 -231)" fill="#FFFFFF" mask="url(#decoupes)">
+      <path d="M86 293 C130.5 267 194 184.5 223.2 132.5 C238 106 262 96.5 293.2 96.6 C322 96 346 117 357.4 134.8 L396.4 138.1 L361 167.8 C357.8 185 362.4 205 361.6 228 C360.6 300.5 310 365.4 234 365.4 C180 367.5 118 338 86 293 Z"/>
+    </g>
+  </g>
+</svg>
