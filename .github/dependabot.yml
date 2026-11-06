@@ -16,3 +16,9 @@ updates:
       dependances:
         patterns:
           - "*"
+    # Tailwind 4 est une migration complète (configuration en CSS, module
+    # PostCSS @tailwindcss/postcss, styles renommés) : PR #103 fermée le
+    # 2026-11-06. On garde les correctifs 3.x, pas la version majeure.
+    ignore:
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
