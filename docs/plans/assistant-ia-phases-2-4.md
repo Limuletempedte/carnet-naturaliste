@@ -1,6 +1,20 @@
 # Assistant IA — Phases 2 à 4 (bilan du mois, note → fiche, recherche en langage naturel)
 
-- **Statut** : plan validé le 2026-11-06. **Aucune mise en œuvre commencée** : pause avant le premier lot, comme en phase 1.
+- **Statut** : plan validé le 2026-11-06. Premier lot en cours : étape 0 rangée et **PR A du bilan** (socle commun, back-end invisible) ouverte le 2026-11-06, non fusionnée. **Rien en production** : tag, migration, secrets et déploiement suivent `docs/ops/ASSISTANT-IA.md` §6.2, avec le propriétaire.
+- **Écarts de mise en œuvre (PR A du bilan)** :
+  - la migration finit par `notify pgrst, 'reload schema'`, et `ai_my_status` est remplacée par `create or replace` (droits conservés) ;
+  - la migration de secours (`docs/ops/retour-arriere-ai-text-features.sql`) **garde** la contrainte élargie et la table `ai_consents` : remettre l'ancienne contrainte échouerait dès qu'une ligne `summary` existe ;
+  - `AI_TEXT_MODEL` n'a pas de valeur par défaut, et un nom inconnu dans `AI_DISABLED_FEATURES` donne `misconfigured` ;
+  - corps `{ feature, payload }`, validé **avant** la réservation : une requête invalide ne coûte rien ;
+  - bilan : le texte peut citer les écarts avec l'an passé (calculés par la fonction), l'année et l'année précédente ; il est refusé s'il contient des chiffres non ASCII ou un décimal ; `max_tokens` 2 500 ;
+  - coût maximum réservé calculé sur la **taille réelle du prompt** (0,032 $ avec Sonnet pour un bilan courant, davantage pour une entrée extrême) ;
+  - suite à la relecture sécurité : tous les caractères invisibles de format (classe Unicode Cf) sont retirés, `<` est échappé dans les données envoyées, et la migration pose `lock_timeout = 5s` ;
+  - conseil pour la mise en production : `AI_DISABLED_FEATURES=summary` jusqu'à la PR B ;
+  - `tests/security/ai-access-rls.mjs` est étendu mais **pas encore lancé** (Docker indisponible sur le portable) ; un banc sans Supabase, `tests/security/ai-text-bench.mjs`, a été lancé avec succès.
+- **Pour la PR B du bilan** (relevé pendant la PR A) :
+  - retirer l'accès photo (« Retirer mon accord ») devrait aussi supprimer les lignes `ai_consents` ;
+  - un renouvellement de consentement texte se fait toujours par suppression puis insertion, jamais par upsert ;
+  - le texte du bilan peut contenir du HTML ou du markdown bruts : l'afficher en texte React, et l'échapper (`escHtml`) s'il entre un jour dans l'export PDF des statistiques (`services/statsExportService.ts`, qui passe par `innerHTML`).
 - **Base** : `main` à `57bbbe5`. La phase 1 (`docs/plans/assistant-ia-phase1.md`) est en production : fonction `ai-identify`, tables `ai_access` et `ai_usage`, fonctions SQL `ai_reserve_call`, `ai_finalize_call` et `ai_my_status`.
 - **Ordre de livraison** : **bilan du mois (phase 3) → note → fiche (phase 2) → recherche (phase 4)**. La première livraison porte le socle commun ; le bilan est la fonctionnalité la moins risquée pour l'éprouver, puisqu'il ne remplit aucun champ et n'envoie que des chiffres.
 - **Exploitation** : `docs/ops/ASSISTANT-IA.md`, à compléter dans chaque PR A.

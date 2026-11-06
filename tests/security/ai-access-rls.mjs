@@ -1,9 +1,11 @@
 // Laboratoire exclusivement local : vrai Supabase local + faux serveur Anthropic.
 // Vérifie les droits, la RLS, la réservation (quota, budget, anti double-clic)
-// de l'assistant IA, puis la fonction `ai-identify` de bout en bout.
+// de l'assistant IA, les consentements par fonctionnalité (`ai_consents`),
+// puis les fonctions `ai-identify` et `ai-text` de bout en bout.
 // Mode d'emploi : docs/ops/ASSISTANT-IA.md, section « Vérification locale ».
 //
-// Prérequis : migration *_ai_identification.sql appliquée (supabase db reset).
+// Prérequis : migrations *_ai_identification.sql et *_ai_text_features.sql
+// appliquées (supabase db reset).
 // LOCAL_STATUS_FILE : JSON produit par `supabase status -o json` (jamais versionné).
 // POSTGRES_MODULE (facultatif) : chemin du paquet npm `postgres` ; active les
 //   contrôles has_table/column/function_privilege via DB_URL.
@@ -23,6 +25,8 @@ assert(LOCAL_HOSTS.includes(new URL(api).hostname), 'Laboratoire local obligatoi
 if (config.DB_URL) assert(LOCAL_HOSTS.includes(new URL(config.DB_URL).hostname), 'Laboratoire local obligatoire (base)');
 
 const CONSENT = '2026-11-v1';
+// Version du consentement texte (CONSENT_VERSIONS de ai-text/logic.ts).
+const TEXT_CONSENT = '2026-11-v1';
 const MAX_COST = 0.042;
 const FAKE_ANTHROPIC_PORT = 55440;
 const FUNCTION_URL = 'http://127.0.0.1:8000';
@@ -54,6 +58,10 @@ const reserve = (userId, overrides = {}) => asService('/rest/v1/rpc/ai_reserve_c
 const finalize = (id, status, cost = 0.001) => asService('/rest/v1/rpc/ai_finalize_call', {
     method: 'POST',
     body: { p_id: id, p_status: status, p_input_tokens: 100, p_output_tokens: 50, p_cost_usd: cost },
+});
+const giveConsent = (user, feature, version = TEXT_CONSENT, extra = {}) => rest('/rest/v1/ai_consents', {
+    method: 'POST', token: user.token, prefer: 'return=representation',
+    body: { user_id: user.id, feature, version, ...extra },
 });
 const denied = (r, label) => {
     assert(r.status === 401 || r.status === 403, `${label} : attendu 401/403, reçu ${r.status} ${JSON.stringify(r.json)}`);
@@ -111,7 +119,9 @@ const fakeAnthropic = http.createServer((req, res) => {
             res.end(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }));
             return;
         }
-        const output = fakeMode === 'refusal' ? '' : JSON.stringify({
+        const output = fakeMode === 'refusal' ? '' : fakeMode === 'summary' ? JSON.stringify({
+            text: 'En mai 2026, vous avez noté 42 observations de 17 espèces.',
+        }) : JSON.stringify({
             candidates: [{
                 scientificName: 'Erithacus rubecula', commonName: 'Rougegorge familier', confidence: 'elevee',
                 visibleCriteria: ['poitrine orange'], criteriaToCheck: ['chant'],
@@ -139,10 +149,10 @@ function jpegBase64(width, height) {
 
 let functionProcess = null;
 let functionLogs = '';
-async function startFunction(extraEnv = {}) {
+async function startFunction(extraEnv = {}, name = 'ai-identify') {
     await stopFunction();
     functionLogs = '';
-    const entry = path.resolve('supabase/functions/ai-identify/index.ts');
+    const entry = path.resolve(`supabase/functions/${name}/index.ts`);
     functionProcess = spawn(process.env.DENO_BIN, ['run', '--allow-net', '--allow-env', '--allow-read', '--allow-sys', '--no-config', entry], {
         env: {
             PATH: process.env.PATH, HOME: process.env.HOME, DENO_DIR: process.env.DENO_DIR ?? '',
@@ -321,6 +331,86 @@ try {
     assert.deepEqual((await asService(`/rest/v1/ai_access?user_id=eq.${owner}`)).json, []);
     passed("Suppression d'un compte : accès supprimé, journal anonymisé, dépense du mois inchangée");
 
+    // --- Consentements par fonctionnalité (ai_consents) ---------------------
+    const t = await createUser('t');
+    denied(await rest('/rest/v1/ai_consents?select=*'), 'anon lit ai_consents');
+    denied(await rest('/rest/v1/ai_consents', { method: 'POST', body: { user_id: t.id, feature: 'summary', version: TEXT_CONSENT } }), 'anon insère un consentement');
+    denied(await giveConsent(t, 'summary', TEXT_CONSENT, { given_at: '2020-01-01T00:00:00Z' }), 'choisir given_at');
+    denied(await rest('/rest/v1/ai_consents', { method: 'POST', token: t.token, body: { user_id: b.id, feature: 'summary', version: TEXT_CONSENT } }), 'consentir pour autrui');
+    const badFeature = await giveConsent(t, 'identify');
+    assert(badFeature.status >= 400, `consentement « identify » : attendu un refus, reçu ${badFeature.status}`);
+    const consent = await giveConsent(t, 'summary');
+    assert.equal(consent.status, 201, JSON.stringify(consent.json));
+    assert.equal(consent.json[0].version, TEXT_CONSENT);
+    assert(Math.abs(Date.parse(consent.json[0].given_at) - Date.now()) < 120_000, 'given_at posé par le serveur');
+    denied(await rest(`/rest/v1/ai_consents?user_id=eq.${t.id}`, { method: 'PATCH', token: t.token, body: { version: '2099-01-v9' } }), 'PATCH de son consentement');
+    denied(await rest('/rest/v1/ai_consents', { method: 'POST', token: t.token, body: { user_id: t.id, feature: 'summary', version: '2099-01-v9' }, prefer: 'resolution=merge-duplicates' }), 'upsert de son consentement');
+    // « ignore-duplicates » (on conflict do nothing) n'exige que INSERT : il peut
+    // répondre sans erreur, mais ne doit jamais changer la version enregistrée.
+    await rest('/rest/v1/ai_consents', { method: 'POST', token: t.token, body: { user_id: t.id, feature: 'summary', version: '2099-01-v9' }, prefer: 'resolution=ignore-duplicates' });
+    assert.deepEqual((await asService(`/rest/v1/ai_consents?user_id=eq.${t.id}&select=feature,version`)).json, [{ feature: 'summary', version: TEXT_CONSENT }]);
+    assert.deepEqual((await rest('/rest/v1/ai_consents?select=user_id', { token: b.token })).json, []);
+    assert.deepEqual((await rest(`/rest/v1/ai_consents?user_id=eq.${t.id}`, { method: 'DELETE', token: b.token, prefer: 'return=representation' })).json, []);
+    passed('ai_consents : anonyme refusé ; ni given_at choisi, ni consentement pour autrui, ni PATCH, ni upsert (version inchangée) ; invisible pour les autres');
+
+    // --- Réservation par fonctionnalité -------------------------------------
+    const reserveText = (user, feature, overrides = {}) => reserve(user.id, { p_consent_version: TEXT_CONSENT, p_feature: feature, ...overrides });
+    assert.equal((await reserveText(t, 'summary')).json.reason, 'not_approved');
+    await approve(t.id);
+    assert.equal((await reserveText(t, 'note')).json.reason, 'consent_outdated', 'sans consentement « note »');
+    assert.equal((await reserveText(t, 'summary', { p_consent_version: '2099-01-v9' })).json.reason, 'consent_outdated', 'version différente');
+    const bogus = await reserveText(t, 'bogus');
+    assert(bogus.status >= 400, `fonctionnalité inconnue : attendu une erreur, reçu ${bogus.status}`);
+    const summaryCall = await reserveText(t, 'summary');
+    assert.equal(summaryCall.json.ok, true, JSON.stringify(summaryCall.json));
+    const summaryRow = (await asService(`/rest/v1/ai_usage?id=eq.${summaryCall.json.usage_id}&select=feature,status`)).json[0];
+    assert.deepEqual(summaryRow, { feature: 'summary', status: 'pending' });
+    passed('Réservation : accès exigé, consentement de la fonctionnalité exigé en égalité stricte, fonctionnalité inconnue refusée, feature enregistrée');
+
+    // « busy » par fonctionnalité : un bilan en cours ne bloque pas la photo.
+    assert.equal((await reserveText(t, 'summary')).json.reason, 'busy');
+    const photoCall = await reserve(t.id);
+    assert.equal(photoCall.json.ok, true, `photo pendant un bilan : ${JSON.stringify(photoCall.json)}`);
+    assert.equal((await asService(`/rest/v1/ai_usage?id=eq.${photoCall.json.usage_id}&select=feature`)).json[0].feature, 'identify');
+    assert.equal((await reserve(t.id)).json.reason, 'busy');
+    passed('« busy » par fonctionnalité ; sans p_feature, la réservation reste « identify » (ai-identify inchangée)');
+
+    // Quota partagé : 3 utilisations au total, toutes fonctionnalités confondues.
+    const quotaPatch = await asService(`/rest/v1/ai_access?user_id=eq.${t.id}`, { method: 'PATCH', body: { monthly_quota: 3 } });
+    assert(quotaPatch.status === 204 || quotaPatch.status === 200);
+    assert.equal((await finalize(summaryCall.json.usage_id, 'ok')).json, true);
+    assert.equal((await finalize(photoCall.json.usage_id, 'ok')).json, true);
+    const third = await reserveText(t, 'summary');
+    assert.equal(third.json.ok, true);
+    assert.equal(third.json.remaining, 0);
+    assert.equal((await finalize(third.json.usage_id, 'invalid_output')).json, true);
+    assert.equal((await reserveText(t, 'summary')).json.reason, 'quota_exceeded');
+    assert.equal((await reserve(t.id)).json.reason, 'quota_exceeded');
+    const tStatus = (await rest('/rest/v1/rpc/ai_my_status', { method: 'POST', token: t.token, body: {} })).json;
+    assert.equal(tStatus.used, 3);
+    assert.equal(tStatus.remaining, 0);
+    assert.equal(tStatus.consent_version, CONSENT);
+    assert.deepEqual(tStatus.used_by_feature, { identify: 1, summary: 2 });
+    assert.deepEqual(tStatus.consents, { summary: TEXT_CONSENT });
+    passed('Quota partagé entre fonctionnalités ; ai_my_status détaille l’usage et les consentements');
+
+    // Retrait du consentement : la fonctionnalité est refusée, l'accès reste.
+    await asService(`/rest/v1/ai_access?user_id=eq.${t.id}`, { method: 'PATCH', body: { monthly_quota: 20 } });
+    const withdrawn = await rest(`/rest/v1/ai_consents?user_id=eq.${t.id}&feature=eq.summary`, { method: 'DELETE', token: t.token, prefer: 'return=representation' });
+    assert.equal(withdrawn.json.length, 1);
+    assert.equal((await reserveText(t, 'summary')).json.reason, 'consent_outdated');
+    assert.equal((await asService(`/rest/v1/ai_access?user_id=eq.${t.id}&select=status`)).json[0].status, 'approved');
+    const renewed = await giveConsent(t, 'summary');
+    assert.equal(renewed.status, 201);
+    passed('Retrait puis nouvel accord : refus entre les deux, approbation conservée');
+
+    // Suppression du compte : ses consentements disparaissent.
+    const tId = t.id;
+    assert.equal((await asService(`/auth/v1/admin/users/${tId}`, { method: 'DELETE' })).status, 200);
+    users.delete('t');
+    assert.deepEqual((await asService(`/rest/v1/ai_consents?user_id=eq.${tId}`)).json, []);
+    passed("Suppression d'un compte : consentements supprimés");
+
     // --- Contrôles des privilèges en SQL (facultatif) -----------------------
     if (process.env.POSTGRES_MODULE) {
         const postgres = (await import(process.env.POSTGRES_MODULE)).default;
@@ -338,28 +428,38 @@ try {
                 has_table_privilege('authenticated', 'public.ai_usage', 'TRUNCATE') as auth_truncate_usage,
                 has_table_privilege('anon', 'public.ai_access', 'SELECT') as anon_select_access,
                 has_table_privilege('anon', 'public.ai_usage', 'SELECT') as anon_select_usage,
-                has_function_privilege('authenticated', 'public.ai_reserve_call(uuid, text, text, numeric, numeric)', 'EXECUTE') as auth_reserve,
-                has_function_privilege('anon', 'public.ai_reserve_call(uuid, text, text, numeric, numeric)', 'EXECUTE') as anon_reserve,
+                has_function_privilege('authenticated', 'public.ai_reserve_call(uuid, text, text, numeric, numeric, text)', 'EXECUTE') as auth_reserve,
+                has_function_privilege('anon', 'public.ai_reserve_call(uuid, text, text, numeric, numeric, text)', 'EXECUTE') as anon_reserve,
                 has_function_privilege('authenticated', 'public.ai_finalize_call(uuid, text, integer, integer, numeric)', 'EXECUTE') as auth_finalize,
                 has_function_privilege('anon', 'public.ai_my_status()', 'EXECUTE') as anon_status,
                 has_function_privilege('authenticated', 'public.ai_my_status()', 'EXECUTE') as auth_status,
-                has_function_privilege('service_role', 'public.ai_reserve_call(uuid, text, text, numeric, numeric)', 'EXECUTE') as service_reserve,
-                (select bool_and(relrowsecurity) from pg_class where oid in ('public.ai_access'::regclass, 'public.ai_usage'::regclass)) as rls_on`;
+                has_function_privilege('service_role', 'public.ai_reserve_call(uuid, text, text, numeric, numeric, text)', 'EXECUTE') as service_reserve,
+                has_table_privilege('anon', 'public.ai_consents', 'SELECT') as anon_select_consents,
+                has_table_privilege('authenticated', 'public.ai_consents', 'UPDATE') as auth_update_consents,
+                has_table_privilege('authenticated', 'public.ai_consents', 'TRUNCATE') as auth_truncate_consents,
+                has_column_privilege('authenticated', 'public.ai_consents', 'given_at', 'INSERT') as auth_insert_given_at,
+                has_column_privilege('authenticated', 'public.ai_consents', 'version', 'INSERT') as auth_insert_version,
+                has_table_privilege('authenticated', 'public.ai_consents', 'DELETE') as auth_delete_consents,
+                (select count(*)::int from pg_proc where proname = 'ai_reserve_call' and pronamespace = 'public'::regnamespace) as reserve_versions,
+                (select bool_and(relrowsecurity) from pg_class where oid in ('public.ai_access'::regclass, 'public.ai_usage'::regclass, 'public.ai_consents'::regclass)) as rls_on`;
             assert.deepEqual({ ...p }, {
                 auth_update_access: false, auth_insert_status: false, auth_insert_quota: false,
                 auth_insert_user: true, auth_insert_consent: true,
                 auth_insert_usage: false, auth_update_usage: false, auth_delete_usage: false, auth_truncate_usage: false,
                 anon_select_access: false, anon_select_usage: false,
                 auth_reserve: false, anon_reserve: false, auth_finalize: false,
-                anon_status: false, auth_status: true, service_reserve: true, rls_on: true,
+                anon_status: false, auth_status: true, service_reserve: true,
+                anon_select_consents: false, auth_update_consents: false, auth_truncate_consents: false,
+                auth_insert_given_at: false, auth_insert_version: true, auth_delete_consents: true,
+                reserve_versions: 1, rls_on: true,
             });
             const updatePolicies = await sql`select count(*)::int as n from pg_policies
-                where schemaname = 'public' and tablename in ('ai_access', 'ai_usage') and cmd in ('UPDATE', 'ALL')`;
+                where schemaname = 'public' and tablename in ('ai_access', 'ai_usage', 'ai_consents') and cmd in ('UPDATE', 'ALL')`;
             assert.equal(updatePolicies[0].n, 0);
         } finally {
             await sql.end();
         }
-        passed('has_table/column/function_privilege conformes, RLS active, aucune règle UPDATE');
+        passed('has_table/column/function_privilege conformes (dont ai_consents), une seule ai_reserve_call, RLS active, aucune règle UPDATE');
     } else {
         console.log('SKIP contrôles SQL des privilèges (POSTGRES_MODULE absent)');
     }
@@ -445,6 +545,66 @@ try {
         await startFunction({ AI_EFFORT: '' });
         assert.equal((await callFunction({ token: h.token, body: { image } })).json.error, 'misconfigured');
         passed('Fonction : modèle inconnu ou effort absent → 503 misconfigured');
+
+        // --- Fonction ai-text de bout en bout --------------------------------
+        const summaryBody = {
+            feature: 'summary',
+            payload: {
+                month: '2026-05', totals: { observations: 42, species: 17, activeDays: 9 },
+                groups: [{ group: 'Oiseaux', observations: 42, species: 17 }],
+                topSpecies: [{ name: 'Mésange charbonnière', count: 14 }],
+                newSpecies: ['Huppe fasciée'],
+                commune: 'Bordeaux', latitude: 44.8,
+            },
+        };
+        const textEnv = { AI_TEXT_MODEL: 'claude-haiku-5-5' };
+        await startFunction(textEnv, 'ai-text');
+        assert.equal((await callFunction({ body: summaryBody })).status, 401);
+        const textForeign = await callFunction({ token: h.token, body: summaryBody, origin: 'https://pirate.example' });
+        assert.equal(textForeign.status, 403);
+        assert.equal(textForeign.headers.get('access-control-allow-origin'), null);
+        const textPreflight = await callFunction({ method: 'OPTIONS', origin: ALLOWED_ORIGIN });
+        assert.equal(textPreflight.status, 204);
+        assert.equal(textPreflight.headers.get('access-control-allow-origin'), ALLOWED_ORIGIN);
+        assert.equal((await callFunction({ token: h.token, rawBody: JSON.stringify({ feature: 'summary', payload: { pad: 'x'.repeat(17_000) } }) })).status, 413);
+        assert.equal((await callFunction({ token: h.token, body: { feature: 'note', payload: {} } })).status, 400);
+        assert.equal((await callFunction({ token: h.token, body: { feature: 'summary', payload: { month: '2026-13' } } })).status, 400);
+        passed('ai-text : 401 sans jeton, CORS, 413 au-delà de 16 Ko, 400 pour une fonctionnalité non livrée ou une charge invalide');
+
+        const noConsent = await callFunction({ token: h.token, body: summaryBody });
+        assert.equal(noConsent.status, 403);
+        assert.equal(noConsent.json.error, 'consent_outdated');
+        assert.equal((await giveConsent(h, 'summary')).status, 201);
+
+        fakeRequests.length = 0;
+        fakeMode = 'summary';
+        const summaryOk = await callFunction({ token: h.token, origin: ALLOWED_ORIGIN, body: summaryBody });
+        assert.equal(summaryOk.status, 200, JSON.stringify(summaryOk.json));
+        assert.match(summaryOk.json.result.text, /42 observations/);
+        assert.equal(typeof summaryOk.json.remaining, 'number');
+        assert.equal(fakeRequests.length, 1);
+        const textSent = fakeRequests[0].body;
+        assert.equal(textSent.model, 'claude-haiku-5-5');
+        assert.equal(textSent.output_config.format.type, 'json_schema');
+        assert.doesNotMatch(JSON.stringify(textSent.messages), /Bordeaux|44\.8/);
+        const textRow = (await asService(`/rest/v1/ai_usage?user_id=eq.${h.id}&select=feature,status,cost_usd&order=created_at.desc&limit=1`)).json[0];
+        assert.deepEqual({ ...textRow, cost_usd: Number(textRow.cost_usd) }, { feature: 'summary', status: 'ok', cost_usd: 0.0009 });
+        passed('ai-text : consentement « summary » exigé ; bilan rédigé, ligne summary au coût réel (0,0009 $), ni commune ni GPS envoyés');
+
+        assert(!functionLogs.includes(h.id), "ai-text : aucun id d'utilisateur dans les journaux");
+        assert.doesNotMatch(functionLogs, /Mésange|Huppe|42 observations/, 'ai-text : ni chiffres ni texte dans les journaux');
+        passed('ai-text : journaux sans utilisateur, sans noms d’espèces ni texte produit');
+
+        await startFunction({ ...textEnv, AI_DISABLED_FEATURES: 'summary' }, 'ai-text');
+        const disabledCall = await callFunction({ token: h.token, body: summaryBody });
+        assert.equal(disabledCall.status, 503);
+        assert.equal(disabledCall.json.error, 'feature_disabled');
+        await startFunction({}, 'ai-text');
+        assert.equal((await callFunction({ token: h.token, body: summaryBody })).json.error, 'misconfigured');
+        await startFunction({ ...textEnv, AI_DISABLED_FEATURES: 'sumary' }, 'ai-text');
+        assert.equal((await callFunction({ token: h.token, body: summaryBody })).json.error, 'misconfigured');
+        fakeMode = 'ok';
+        passed('ai-text : fonctionnalité coupée → 503 feature_disabled ; modèle absent ou liste de coupure fautive → misconfigured');
     } else {
         console.log('SKIP tests de la fonction (DENO_BIN absent)');
     }

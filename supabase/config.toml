@@ -368,9 +368,12 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
-# Assistant d'identification par IA : jeton utilisateur obligatoire, écrit
-# explicitement (la fonction vérifie aussi l'utilisateur elle-même).
+# Assistant IA (photo et texte) : jeton utilisateur obligatoire, écrit
+# explicitement (chaque fonction vérifie aussi l'utilisateur elle-même).
 [functions.ai-identify]
+verify_jwt = true
+
+[functions.ai-text]
 verify_jwt = true
 
 [analytics]
