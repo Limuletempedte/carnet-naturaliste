@@ -805,7 +805,7 @@ const App: React.FC = () => {
                 </Suspense>
             )}
             {isDeleteAccountOpen && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[80] flex justify-center items-center p-4">
                     <div
                         ref={(node) => { deleteAccountDialogRef.current = node; deleteDialogGlassRef(node); }}
                         {...deleteAccountDialogProps}

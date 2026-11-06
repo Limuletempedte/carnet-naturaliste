@@ -29,7 +29,7 @@ const ExportScopeDialog: React.FC<ExportScopeDialogProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
+        <div className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm p-4 flex items-center justify-center">
             <div ref={dialogRef} {...dialogProps} className="w-full max-w-lg liquid-glass-opaque animate-scaleIn rounded-2xl p-6">
                 <h3 id="export-scope-dialog-title" className="text-2xl font-bold text-nature-dark dark:text-white mb-2">Choisir le périmètre d'export</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
