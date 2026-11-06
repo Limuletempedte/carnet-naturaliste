@@ -11,7 +11,7 @@ const FullScreenLoader: React.FC<FullScreenLoaderProps> = ({ label }) => (
         role="status"
         className="flex flex-col items-center justify-center h-screen gap-4 bg-gradient-to-br from-nature-beige to-white dark:from-nature-dark-bg dark:to-nature-dark-surface"
     >
-        <img src="/logo.svg" alt="" aria-hidden="true" className="w-20 h-20 rounded-3xl shadow-ios animate-logoBreath" />
+        <img src="/logo.svg" alt="" aria-hidden="true" className="w-20 h-20 rounded-[26%] shadow-ios animate-logoBreath" />
         <p className="text-gray-500 dark:text-gray-400">{label}</p>
     </div>
 );
