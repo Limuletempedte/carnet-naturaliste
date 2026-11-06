@@ -596,9 +596,6 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             <h1 className="text-[2.5rem] leading-tight font-medium tracking-tight text-nature-dark dark:text-white">
                                 Carnet <span className="text-transparent bg-clip-text bg-gradient-to-r from-nature-green to-emerald-600">Naturaliste</span>
                             </h1>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                                {allObservations.length} observation{allObservations.length > 1 ? 's' : ''} dans votre carnet
-                            </p>
                         </div>
                         <div className="flex items-center flex-wrap justify-center gap-3">
                             {selectedIds.size > 0 && (
