@@ -130,7 +130,7 @@ export const generateUUID = (): string => {
 - Ajoute `pwa-144x144.png` et `pwa-384x384.png` dans le tableau `icons` du manifest
 - Ajoute une entree `purpose: 'maskable'` pour le 512x512 (necessaire pour les launchers Android adaptifs)
 
-> **Note pour le prochain agent** : si tu as besoin de regenerer les icones (par exemple si le logo source change), lance `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-pwa-icons.ps1`.
+> **Note pour le prochain agent** : si tu as besoin de regenerer les icones (par exemple si le logo source change), lance `npm run icons` (voir `scripts/icons/README.md`). L'ancien script PowerShell `generate-pwa-icons.ps1` a été supprimé le 2026-11-06 par la PR #121.
 
 ### Batch 3 — Meta tags Apple + Manifest + Viewport (CO-02, CO-04, CO-05, CO-10, CO-21) [HAUTE + MOYENNE]
 
@@ -273,7 +273,7 @@ cryptoMutable.randomUUID = undefined;
 
 **Probleme** : Ni `sharp`, ni `jimp` ne sont installes. Pas d'`npm install` autorise sans validation utilisateur.
 
-**Fix** : PowerShell + System.Drawing.Common (disponible sur Windows par defaut). Le script `scripts/generate-pwa-icons.ps1` utilise `[System.Drawing.Image]::FromFile()` + `[System.Drawing.Bitmap]` avec `InterpolationMode::HighQualityBicubic`. Resultat de qualite acceptable pour des icones de 32 a 384px.
+**Fix** : PowerShell + System.Drawing.Common (disponible sur Windows par defaut). Le script `generate-pwa-icons.ps1` (alors dans `scripts/`, supprimé depuis par la PR #121) utilisait `[System.Drawing.Image]::FromFile()` + `[System.Drawing.Bitmap]` avec `InterpolationMode::HighQualityBicubic`. Resultat de qualite acceptable pour des icones de 32 a 384px.
 
 > **Note** : sur Mac/Linux, il faudrait utiliser `sips` (Mac) ou `convert` (ImageMagick). Le script PowerShell est Windows-only.
 
@@ -322,7 +322,7 @@ Plus propre que `@ts-expect-error` pour mocker des proprietes que TypeScript dec
 | Fichier | Role |
 |---------|------|
 | `tests/uuidUtils.test.ts` | 7 tests (happy path + fallback simule) |
-| `scripts/generate-pwa-icons.ps1` | Generation reproductible des icones PWA |
+| `generate-pwa-icons.ps1` (supprimé par la PR #121, remplacé par `scripts/generate-icons.py`) | Generation reproductible des icones PWA |
 | `public/favicon.ico` | Favicon 32x32 |
 | `public/apple-touch-icon.png` | Apple touch icon 180x180 |
 | `public/pwa-144x144.png` | Icone PWA Android intermediaire |
@@ -382,7 +382,7 @@ Le prochain agent (ou le user) peut tester cela manuellement si necessaire.
 
 5. **`prefers-reduced-transparency`** — si tu ajoutes de nouveaux glass effects, hardcoder une regle de fallback dans le bloc media query CSS.
 
-6. **Les icones PWA sont generees depuis `pwa-512x512.png`**. Si le logo source change, relancer `scripts/generate-pwa-icons.ps1` puis committer les fichiers regeneres. Sur Mac/Linux, adapter le script (utiliser `sips` ou ImageMagick).
+6. **Les icones PWA sont generees depuis `pwa-512x512.png`**. Si le logo source change, relancer `npm run icons` puis committer les fichiers regeneres *(mise à jour du 2026-11-06 : depuis la PR #121, les icônes sont générées sous Linux à partir des SVG de `scripts/icons/`)*.
 
 7. **Le fallback `Math.random()` dans `generateUUID()` n'est PAS cryptographiquement sur**. Il n'est utilise que dans le pire cas (pas de `crypto` du tout, ce qui n'arrive en pratique sur aucun navigateur deploye en 2026). Si jamais des UUID sont utilises pour du secret/securite (token, cle d'API), utiliser une autre methode — mais en l'etat tous les usages sont des identifiants metier, donc OK.
 
