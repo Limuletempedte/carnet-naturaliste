@@ -1,7 +1,9 @@
-// Assistant d'identification par IA (phase 1) — côté application.
+// Assistant IA — côté application : accès, consentements, aide photo
+// (`ai-identify`) et fonctionnalités texte (`ai-text`, bilan du mois).
 //
-// Contrat serveur : supabase/functions/ai-identify/logic.ts (codes d'erreur,
-// format de la requête et de la réponse). Exploitation : docs/ops/ASSISTANT-IA.md.
+// Contrats serveur : supabase/functions/ai-identify/logic.ts et
+// supabase/functions/ai-text/logic.ts (codes d'erreur, format de la requête et
+// de la réponse). Exploitation : docs/ops/ASSISTANT-IA.md.
 //
 // Principes :
 // - l'accès se demande (ligne `pending` dans `ai_access`) et se valide à la main ;
@@ -17,7 +19,15 @@ import { supabase } from '../supabaseClient';
 import { compressImage } from '../utils/imageUtils';
 import { logger } from '../utils/logger';
 import { downloadPrivateMedia } from './privateMediaService';
-import { assertSessionContext, captureSessionContext, inSession, StaleSessionError, type SessionContext } from './sessionScope';
+import {
+    assertSessionContext,
+    captureSessionContext,
+    inSession,
+    readAccountValue,
+    StaleSessionError,
+    writeAccountValue,
+    type SessionContext,
+} from './sessionScope';
 
 /**
  * Version du texte de consentement affiché dans `AiAccessDialog`.
@@ -25,6 +35,22 @@ import { assertSessionContext, captureSessionContext, inSession, StaleSessionErr
  * le texte impose de changer les deux, et chacun devra redonner son accord.
  */
 export const AI_CONSENT_VERSION = '2026-11-v1';
+
+/** Fonctionnalités texte connues de la base (`ai_consents.feature`). */
+export const AI_TEXT_FEATURES = ['summary', 'note', 'search'] as const;
+export type AiTextFeature = (typeof AI_TEXT_FEATURES)[number];
+/** Toutes les fonctionnalités comptées dans `ai_usage.feature`. */
+export type AiFeature = 'identify' | AiTextFeature;
+
+/**
+ * Version du texte de consentement de chaque fonctionnalité texte livrée
+ * (`SummaryConsentText` pour `summary`). Doit rester ÉGALE à `CONSENT_VERSIONS`
+ * de supabase/functions/ai-text/logic.ts (test dédié) : changer le texte
+ * impose de changer les deux, et chacun devra redonner son accord.
+ */
+export const AI_TEXT_CONSENT_VERSIONS: Readonly<Partial<Record<AiTextFeature, string>>> = {
+    summary: '2026-11-v1',
+};
 
 /** Côté maximal accepté par la fonction (`MAX_IMAGE_SIDE_PX`). */
 export const AI_IMAGE_MAX_SIDE = 1280;
@@ -57,6 +83,7 @@ export type AiAssistErrorCode =
     | 'invalid_request'
     | 'misconfigured'
     | 'origin_not_allowed'
+    | 'feature_disabled'
     | 'internal_error'
     | 'unknown';
 
@@ -81,34 +108,63 @@ const ERROR_MESSAGES: Record<AiAssistErrorCode, string> = {
     invalid_request: 'La demande d’analyse est invalide.',
     misconfigured: "L'assistant est momentanément indisponible.",
     origin_not_allowed: "L'assistant n'est pas disponible depuis cette adresse du site.",
+    feature_disabled: "Cette fonction de l'assistant n'est pas encore ouverte. Réessayez plus tard.",
     internal_error: "Une erreur est survenue pendant l'analyse. Réessayez plus tard.",
     unknown: "Une erreur est survenue avec l'assistant. Réessayez plus tard.",
+};
+
+/**
+ * Messages propres à une fonctionnalité texte : ceux par défaut parlent de
+ * photo (« Essayez avec une autre photo »). Les codes absents gardent le
+ * message commun.
+ */
+const FEATURE_ERROR_MESSAGES: Partial<Record<AiTextFeature, Partial<Record<AiAssistErrorCode, string>>>> = {
+    summary: {
+        offline: "Le bilan ne peut être rédigé qu'en ligne.",
+        cancelled: 'Rédaction annulée.',
+        timeout: 'La rédaction a pris trop de temps. Réessayez plus tard.',
+        stale_session: 'Rédaction annulée : le compte actif a changé.',
+        network: 'Connexion interrompue pendant la rédaction. Réessayez quand le réseau est stable.',
+        consent_outdated: "Le texte d'accord du bilan a changé : relisez-le et redonnez votre accord.",
+        busy: 'Un bilan est déjà en cours de rédaction. Patientez quelques instants.',
+        quota_exceeded: 'Vous avez utilisé toutes vos utilisations IA de ce mois. Le compteur repart le 1er du mois.',
+        upstream_unavailable: 'Le service de rédaction est momentanément indisponible. Réessayez plus tard.',
+        model_refused: "L'assistant n'a pas pu rédiger ce bilan. Réessayez plus tard.",
+        invalid_output: "Le texte proposé par l'assistant était inexploitable et n'a pas été gardé. Cette tentative compte dans votre quota.",
+        payload_too_large: 'Les chiffres de ce mois sont trop volumineux pour être envoyés.',
+        invalid_request: "Les chiffres de ce mois n'ont pas pu être envoyés.",
+        feature_disabled: "La rédaction du bilan n'est pas encore ouverte. Réessayez plus tard.",
+        internal_error: 'Une erreur est survenue pendant la rédaction. Réessayez plus tard.',
+    },
 };
 
 /** Cas prévus par le fonctionnement normal : journalisés en avertissement seulement. */
 const EXPECTED_CODES = new Set<AiAssistErrorCode>([
     'offline', 'cancelled', 'timeout', 'stale_session', 'network', 'unauthenticated',
     'not_approved', 'consent_outdated', 'busy', 'quota_exceeded', 'budget_exhausted',
-    'model_refused', 'upstream_unavailable',
+    'model_refused', 'upstream_unavailable', 'feature_disabled',
 ]);
 
 const SERVER_CODES = new Set<string>([
     'unauthenticated', 'not_approved', 'consent_outdated', 'busy', 'quota_exceeded',
     'budget_exhausted', 'upstream_unavailable', 'model_refused', 'invalid_output',
     'invalid_image', 'payload_too_large', 'invalid_request', 'misconfigured',
-    'origin_not_allowed', 'internal_error',
+    'origin_not_allowed', 'feature_disabled', 'internal_error',
 ]);
 
 export class AiAssistError extends Error {
     readonly code: AiAssistErrorCode;
     /** Analyses restantes, quand le serveur les renvoie avec l'erreur. */
     readonly remaining?: number;
+    /** Fonctionnalité texte concernée (message adapté), absente pour la photo. */
+    readonly feature?: AiTextFeature;
 
-    constructor(code: AiAssistErrorCode, options: { remaining?: number } = {}) {
-        super(ERROR_MESSAGES[code]);
+    constructor(code: AiAssistErrorCode, options: { remaining?: number; feature?: AiTextFeature } = {}) {
+        super(aiAssistErrorMessage(code, options.feature));
         this.name = 'AiAssistError';
         this.code = code;
         this.remaining = options.remaining;
+        this.feature = options.feature;
     }
 
     get expected(): boolean {
@@ -116,7 +172,9 @@ export class AiAssistError extends Error {
     }
 }
 
-export const aiAssistErrorMessage = (code: AiAssistErrorCode): string => ERROR_MESSAGES[code];
+export function aiAssistErrorMessage(code: AiAssistErrorCode, feature?: AiTextFeature): string {
+    return (feature ? FEATURE_ERROR_MESSAGES[feature]?.[code] : undefined) ?? ERROR_MESSAGES[code];
+}
 
 const logAiError = (operation: string, error: AiAssistError, cause?: unknown) => {
     if (error.expected) logger.warn(`[aiAssist] ${operation} : ${error.code}`);
@@ -166,15 +224,115 @@ const wrapAccessError = (operation: string, error: unknown): AiAssistError => {
     return wrapped;
 };
 
-export async function getAccessStatus(context: SessionContext = captureSessionContext()): Promise<AiAccessStatus> {
+/** Vue d'ensemble de l'assistant : accès, consentements texte, compteur. */
+export interface AiOverview {
+    access: AiAccessStatus;
+    /** Version acceptée pour chaque fonctionnalité texte (lignes `ai_consents`). */
+    consents: Partial<Record<AiTextFeature, string>>;
+    /** Utilisations du mois, par fonctionnalité (détail du compteur partagé). */
+    usedByFeature: Partial<Record<AiFeature, number>>;
+}
+
+const AI_FEATURE_NAMES: readonly string[] = ['identify', ...AI_TEXT_FEATURES];
+
+/** Traduit toute la réponse de `ai_my_status()` (migration 20261106220000). */
+export const mapAiOverview = (raw: unknown): AiOverview => {
+    const access = mapAccessStatus(raw);
+    const data = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const consents: Partial<Record<AiTextFeature, string>> = {};
+    if (typeof data.consents === 'object' && data.consents !== null) {
+        for (const [feature, version] of Object.entries(data.consents as Record<string, unknown>)) {
+            if ((AI_TEXT_FEATURES as readonly string[]).includes(feature) && typeof version === 'string') {
+                consents[feature as AiTextFeature] = version;
+            }
+        }
+    }
+    const usedByFeature: Partial<Record<AiFeature, number>> = {};
+    if (typeof data.used_by_feature === 'object' && data.used_by_feature !== null) {
+        for (const [feature, count] of Object.entries(data.used_by_feature as Record<string, unknown>)) {
+            if (AI_FEATURE_NAMES.includes(feature)) usedByFeature[feature as AiFeature] = asCount(count);
+        }
+    }
+    return { access, consents, usedByFeature };
+};
+
+/** Consentement en vigueur pour cette fonctionnalité (égalité stricte, comme le serveur). */
+export const hasCurrentConsent = (overview: AiOverview, feature: AiTextFeature): boolean => {
+    const expected = AI_TEXT_CONSENT_VERSIONS[feature];
+    return expected !== undefined && overview.consents[feature] === expected;
+};
+
+/**
+ * Consentement donné sous une AUTRE version que celle en vigueur : à redonner.
+ * (Une version inconnue ne peut que bloquer la personne elle-même.)
+ */
+export const hasOutdatedConsent = (overview: AiOverview, feature: AiTextFeature): boolean =>
+    overview.consents[feature] !== undefined && !hasCurrentConsent(overview, feature);
+
+// Dernier compteur connu, gardé dans le navigateur (par personne) pour
+// l'afficher hors ligne avec sa date (« au jj/mm »).
+export const AI_STATUS_CACHE_PREFIX = 'ai-status-v1';
+
+export interface CachedAiCounter {
+    remaining: number;
+    monthlyQuota: number;
+    /** Date ISO de la lecture. */
+    at: string;
+}
+
+const writeCachedCounter = (overview: AiOverview, context: SessionContext) => {
+    if (overview.access.kind !== 'approved') return;
+    const value: CachedAiCounter = {
+        remaining: overview.access.remaining,
+        monthlyQuota: overview.access.monthlyQuota,
+        at: new Date().toISOString(),
+    };
+    try { writeAccountValue(AI_STATUS_CACHE_PREFIX, JSON.stringify(value), context); } catch { /* stockage indisponible */ }
+};
+
+/** Met à jour le dernier compteur connu après un appel (le serveur renvoie `remaining`). */
+export const rememberRemaining = (remaining: number, context: SessionContext): void => {
+    const previous = readCachedAiCounter(context);
+    if (!previous) return;
+    try {
+        writeAccountValue(AI_STATUS_CACHE_PREFIX, JSON.stringify({ ...previous, remaining: asCount(remaining), at: new Date().toISOString() }), context);
+    } catch { /* stockage indisponible */ }
+};
+
+/**
+ * Dernier compteur connu de la personne connectée. Un compteur d'un mois
+ * précédent (UTC, comme le serveur) est ignoré : il a été remis à zéro.
+ */
+export const readCachedAiCounter = (context?: SessionContext, now: Date = new Date()): CachedAiCounter | null => {
+    const raw = readAccountValue(AI_STATUS_CACHE_PREFIX, context);
+    if (!raw) return null;
+    try {
+        const value = JSON.parse(raw) as Partial<CachedAiCounter>;
+        if (typeof value.remaining !== 'number' || typeof value.monthlyQuota !== 'number' || typeof value.at !== 'string') return null;
+        const at = new Date(value.at);
+        if (Number.isNaN(at.getTime())) return null;
+        if (at.getUTCFullYear() !== now.getUTCFullYear() || at.getUTCMonth() !== now.getUTCMonth()) return null;
+        return { remaining: asCount(value.remaining), monthlyQuota: asCount(value.monthlyQuota), at: value.at };
+    } catch {
+        return null;
+    }
+};
+
+export async function getAiOverview(context: SessionContext = captureSessionContext()): Promise<AiOverview> {
     try {
         if (!navigator.onLine) throw new AiAssistError('offline');
         const { data, error } = await inSession(context, () => supabase.rpc('ai_my_status'));
         if (error) throw error;
-        return mapAccessStatus(data);
+        const overview = mapAiOverview(data);
+        writeCachedCounter(overview, context);
+        return overview;
     } catch (error) {
         throw wrapAccessError('statut', error);
     }
+}
+
+export async function getAccessStatus(context: SessionContext = captureSessionContext()): Promise<AiAccessStatus> {
+    return (await getAiOverview(context)).access;
 }
 
 /**
@@ -200,14 +358,53 @@ export async function requestAccess(
     }
 }
 
-/** Retire l'accord : supprime la ligne d'accès. Le compteur du mois ne change pas. */
+/**
+ * Retire l'accord : supprime les consentements texte, puis la ligne d'accès.
+ * Le compteur du mois ne change pas.
+ */
 export async function withdrawAccess(context: SessionContext = captureSessionContext()): Promise<void> {
     try {
         if (!navigator.onLine) throw new AiAssistError('offline');
+        const consents = await inSession(context, () => supabase.from('ai_consents').delete().eq('user_id', context.userId));
+        if (consents.error) throw consents.error;
         const { error } = await inSession(context, () => supabase.from('ai_access').delete().eq('user_id', context.userId));
         if (error) throw error;
     } catch (error) {
         throw wrapAccessError('retrait', error);
+    }
+}
+
+/**
+ * Donne (ou renouvelle) l'accord pour une fonctionnalité texte, sous la
+ * version en vigueur. Toujours suppression puis insertion, jamais de mise à
+ * jour : la table n'en autorise pas, et `given_at` (posé par le serveur) date
+ * ainsi le texte réellement accepté. L'approbation `ai_access` n'est pas touchée.
+ */
+export async function giveConsent(feature: AiTextFeature, context: SessionContext = captureSessionContext()): Promise<void> {
+    try {
+        const version = AI_TEXT_CONSENT_VERSIONS[feature];
+        if (!version) throw new AiAssistError('invalid_request', { feature });
+        if (!navigator.onLine) throw new AiAssistError('offline', { feature });
+        const removed = await inSession(context, () =>
+            supabase.from('ai_consents').delete().eq('user_id', context.userId).eq('feature', feature));
+        if (removed.error) throw removed.error;
+        const { error } = await inSession(context, () =>
+            supabase.from('ai_consents').insert({ user_id: context.userId, feature, version }));
+        if (error) throw error;
+    } catch (error) {
+        throw wrapAccessError('accord', error);
+    }
+}
+
+/** Retire l'accord d'une fonctionnalité texte : supprime sa ligne. */
+export async function withdrawConsent(feature: AiTextFeature, context: SessionContext = captureSessionContext()): Promise<void> {
+    try {
+        if (!navigator.onLine) throw new AiAssistError('offline', { feature });
+        const { error } = await inSession(context, () =>
+            supabase.from('ai_consents').delete().eq('user_id', context.userId).eq('feature', feature));
+        if (error) throw error;
+    } catch (error) {
+        throw wrapAccessError('retrait accord', error);
     }
 }
 
@@ -342,6 +539,64 @@ const reasonToCode = (reason: 'timeout' | 'session' | 'caller' | null): AiAssist
 };
 
 /**
+ * Appelle une fonction IA avec le jeton de la session et lit sa réponse.
+ * Commun à la photo et au texte : contrôle de session, en-tête Bearer,
+ * annulations combinées, traduction des codes d'erreur du serveur.
+ */
+async function postToAiFunction(
+    functionName: 'ai-identify' | 'ai-text',
+    body: unknown,
+    signals: ReturnType<typeof combineSignals>,
+    checkAborted: () => void,
+    context: SessionContext,
+    feature?: AiTextFeature,
+): Promise<unknown> {
+    const { data: { session } } = await inSession(context, () => supabase.auth.getSession());
+    if (!session) throw new AiAssistError('unauthenticated', { feature });
+    if (session.user.id !== context.userId) throw new StaleSessionError();
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    let response: Response;
+    try {
+        response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+            method: 'POST',
+            signal: signals.signal,
+            headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+    } catch (error) {
+        checkAborted();
+        if (isAbortError(error)) throw new AiAssistError('cancelled', { feature });
+        throw new AiAssistError(navigator.onLine ? 'network' : 'offline', { feature });
+    }
+    checkAborted();
+
+    let payload: unknown = null;
+    try {
+        payload = await response.json();
+    } catch {
+        checkAborted();
+        payload = null;
+    }
+    checkAborted();
+
+    if (!response.ok) {
+        const record = (typeof payload === 'object' && payload !== null ? payload : {}) as { error?: unknown; remaining?: unknown };
+        const code = typeof record.error === 'string' && SERVER_CODES.has(record.error)
+            ? record.error as AiAssistErrorCode
+            : 'unknown';
+        throw new AiAssistError(code, {
+            feature,
+            ...(typeof record.remaining === 'number' ? { remaining: asCount(record.remaining) } : {}),
+        });
+    }
+    return payload;
+}
+
+/**
  * Demande des hypothèses pour la photo de l'observation.
  * `photoReference` : `formData.photo` (nouvelle photo ou photo déjà enregistrée).
  * Ne remplit jamais rien : c'est l'utilisateur qui choisit.
@@ -381,45 +636,7 @@ export async function identifySpecies(
             throw new AiAssistError('photo_unavailable');
         }
 
-        const { data: { session } } = await inSession(context, () => supabase.auth.getSession());
-        if (!session) throw new AiAssistError('unauthenticated');
-        if (session.user.id !== context.userId) throw new StaleSessionError();
-
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-        let response: Response;
-        try {
-            response = await fetch(`${supabaseUrl}/functions/v1/ai-identify`, {
-                method: 'POST',
-                signal: signals.signal,
-                headers: {
-                    Authorization: `Bearer ${session.access_token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(buildIdentifyBody(imageBase64, identifyContext)),
-            });
-        } catch (error) {
-            checkAborted();
-            if (isAbortError(error)) throw new AiAssistError('cancelled');
-            throw new AiAssistError(navigator.onLine ? 'network' : 'offline');
-        }
-        checkAborted();
-
-        let body: unknown = null;
-        try {
-            body = await response.json();
-        } catch {
-            checkAborted();
-            body = null;
-        }
-        checkAborted();
-
-        if (!response.ok) {
-            const record = (typeof body === 'object' && body !== null ? body : {}) as { error?: unknown; remaining?: unknown };
-            const code = typeof record.error === 'string' && SERVER_CODES.has(record.error)
-                ? record.error as AiAssistErrorCode
-                : 'unknown';
-            throw new AiAssistError(code, typeof record.remaining === 'number' ? { remaining: asCount(record.remaining) } : {});
-        }
+        const body = await postToAiFunction('ai-identify', buildIdentifyBody(imageBase64, identifyContext), signals, checkAborted, context);
         const result = parseIdentifyResponse(body);
         if (!result) throw new AiAssistError('invalid_output');
         return result;
@@ -434,3 +651,70 @@ export async function identifySpecies(
         signals.dispose();
     }
 }
+
+// ---------------------------------------------------------------------------
+// Fonctionnalités texte (`ai-text`)
+// ---------------------------------------------------------------------------
+
+export interface AiTextResponse {
+    /** Résultat propre à la fonctionnalité, à relire par son analyseur. */
+    result: unknown;
+    remaining: number;
+}
+
+/**
+ * Appelle `ai-text` avec le corps `{ feature, payload }` attendu par
+ * `readEnvelope` (supabase/functions/ai-text/logic.ts). Aucun appel réseau
+ * hors ligne, aucune mise en file d'attente. Les erreurs portent un message
+ * propre à la fonctionnalité. Le journal ne contient que le code d'erreur,
+ * jamais la charge utile ni la réponse.
+ */
+export async function callAiText(
+    feature: AiTextFeature,
+    payload: unknown,
+    options: { signal?: AbortSignal; timeoutMs?: number } = {},
+    context: SessionContext = captureSessionContext(),
+): Promise<AiTextResponse> {
+    const operation = `texte ${feature}`;
+    if (!navigator.onLine) {
+        const error = new AiAssistError('offline', { feature });
+        logAiError(operation, error);
+        throw error;
+    }
+    const signals = combineSignals(context.signal, options.signal, options.timeoutMs ?? AI_REQUEST_TIMEOUT_MS);
+    const checkAborted = () => {
+        const code = reasonToCode(signals.reason());
+        if (code) throw new AiAssistError(code, { feature });
+        assertSessionContext(context);
+    };
+    try {
+        checkAborted();
+        const body = await postToAiFunction('ai-text', { feature, payload }, signals, checkAborted, context, feature);
+        const record = (typeof body === 'object' && body !== null ? body : {}) as { result?: unknown; remaining?: unknown };
+        if (record.result === undefined) throw new AiAssistError('invalid_output', { feature });
+        return { result: record.result, remaining: asCount(record.remaining) };
+    } catch (error) {
+        let wrapped: AiAssistError;
+        if (error instanceof AiAssistError) wrapped = error;
+        else if (error instanceof StaleSessionError) wrapped = new AiAssistError('stale_session', { feature });
+        else wrapped = new AiAssistError('unknown', { feature });
+        // Pas de `cause` : l'objet d'origine pourrait citer la charge utile.
+        logAiError(operation, wrapped);
+        throw wrapped;
+    } finally {
+        signals.dispose();
+    }
+}
+
+/** Plafond du texte accepté par la fonction (`SUMMARY_LIMITS.maxOutputChars`). */
+export const AI_SUMMARY_MAX_CHARS = 1200;
+
+/** Relit le résultat d'un bilan : un texte non vide et borné, sinon null. */
+export const parseSummaryResult = (result: unknown): { text: string } | null => {
+    if (typeof result !== 'object' || result === null) return null;
+    const text = (result as { text?: unknown }).text;
+    if (typeof text !== 'string') return null;
+    const trimmed = text.trim();
+    if (trimmed.length === 0 || trimmed.length > AI_SUMMARY_MAX_CHARS) return null;
+    return { text: trimmed };
+};

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureSessionContext, setSessionIdentity } from '../services/sessionScope';
 import { CONSENT_VERSION, ERROR_HTTP_STATUS } from '../supabase/functions/ai-identify/logic';
+import { CONSENT_VERSIONS as TEXT_CONSENT_VERSIONS, ERROR_HTTP_STATUS as TEXT_ERROR_HTTP_STATUS } from '../supabase/functions/ai-text/logic';
 
 const mocks = vi.hoisted(() => ({
     getSession: vi.fn(),
@@ -27,7 +28,18 @@ vi.mock('../utils/logger', () => ({ logger: { warn: mocks.warn, error: mocks.err
 
 import {
     AI_CONSENT_VERSION,
+    AI_TEXT_CONSENT_VERSIONS,
     AiAssistError,
+    callAiText,
+    getAiOverview,
+    giveConsent,
+    hasCurrentConsent,
+    hasOutdatedConsent,
+    mapAiOverview,
+    parseSummaryResult,
+    readCachedAiCounter,
+    rememberRemaining,
+    withdrawConsent,
     aiAssistErrorMessage,
     buildIdentifyBody,
     getAccessStatus,
@@ -306,5 +318,200 @@ describe('accès', () => {
         setOnline(false);
         await expect(getAccessStatus()).rejects.toMatchObject({ code: 'offline' });
         expect(mocks.rpc).not.toHaveBeenCalled();
+    });
+});
+
+describe('fonctionnalités texte : versions de consentement', () => {
+    it('sont identiques côté application et côté fonction ai-text', () => {
+        expect(AI_TEXT_CONSENT_VERSIONS).toEqual(TEXT_CONSENT_VERSIONS);
+    });
+});
+
+/** Constructeur de requête chaînable : `.delete().eq().eq()` puis `await`. */
+const chainable = (calls: unknown[][], result: { error: unknown } = { error: null }) => {
+    const builder = {
+        eq: (...args: unknown[]) => { calls.push(['eq', ...args]); return builder; },
+        then: (resolve: (value: { error: unknown }) => unknown) => Promise.resolve(result).then(resolve),
+    };
+    return builder;
+};
+
+describe('consentements par fonctionnalité', () => {
+    let calls: unknown[][];
+    beforeEach(() => {
+        calls = [];
+        mocks.from.mockImplementation((table: string) => ({
+            delete: () => { calls.push(['delete', table]); return chainable(calls); },
+            insert: (row: unknown) => { calls.push(['insert', table, row]); return Promise.resolve({ error: null }); },
+        }));
+    });
+
+    it('donne l’accord par suppression puis insertion, jamais par mise à jour', async () => {
+        await giveConsent('summary');
+        expect(calls).toEqual([
+            ['delete', 'ai_consents'],
+            ['eq', 'user_id', 'user-1'],
+            ['eq', 'feature', 'summary'],
+            ['insert', 'ai_consents', { user_id: 'user-1', feature: 'summary', version: AI_TEXT_CONSENT_VERSIONS.summary }],
+        ]);
+    });
+
+    it('refuse une fonctionnalité sans texte de consentement livré', async () => {
+        await expect(giveConsent('note')).rejects.toMatchObject({ code: 'invalid_request' });
+        expect(calls).toEqual([]);
+    });
+
+    it('retire l’accord d’une seule fonctionnalité', async () => {
+        await withdrawConsent('summary');
+        expect(calls).toEqual([['delete', 'ai_consents'], ['eq', 'user_id', 'user-1'], ['eq', 'feature', 'summary']]);
+    });
+
+    it('retirer l’accès supprime aussi les consentements texte', async () => {
+        await withdrawAccess(captureSessionContext());
+        expect(calls).toEqual([
+            ['delete', 'ai_consents'], ['eq', 'user_id', 'user-1'],
+            ['delete', 'ai_access'], ['eq', 'user_id', 'user-1'],
+        ]);
+    });
+
+    it('ne contacte pas la base hors ligne', async () => {
+        setOnline(false);
+        await expect(giveConsent('summary')).rejects.toMatchObject({ code: 'offline' });
+        await expect(withdrawConsent('summary')).rejects.toMatchObject({ code: 'offline' });
+        expect(calls).toEqual([]);
+    });
+});
+
+describe('vue d’ensemble (ai_my_status)', () => {
+    const raw = {
+        status: 'approved', consent_version: AI_CONSENT_VERSION, monthly_quota: 20, remaining: 14,
+        used_by_feature: { identify: 4, summary: 2, inconnue: 9 },
+        consents: { summary: '2026-11-v1', autre: 'x' },
+    };
+
+    it('lit le détail du compteur et les consentements, en ignorant l’inconnu', () => {
+        const overview = mapAiOverview(raw);
+        expect(overview.access).toEqual({ kind: 'approved', remaining: 14, monthlyQuota: 20 });
+        expect(overview.usedByFeature).toEqual({ identify: 4, summary: 2 });
+        expect(overview.consents).toEqual({ summary: '2026-11-v1' });
+        expect(hasCurrentConsent(overview, 'summary')).toBe(true);
+    });
+
+    it('compare la version en égalité stricte', () => {
+        const outdated = mapAiOverview({ ...raw, consents: { summary: '2026-12-v9' } });
+        expect(hasCurrentConsent(outdated, 'summary')).toBe(false);
+        expect(hasOutdatedConsent(outdated, 'summary')).toBe(true);
+        const none = mapAiOverview({ ...raw, consents: {} });
+        expect(hasOutdatedConsent(none, 'summary')).toBe(false);
+    });
+
+    it('garde le dernier compteur connu pour l’affichage hors ligne', async () => {
+        mocks.rpc.mockResolvedValue({ data: raw, error: null });
+        await getAiOverview();
+        expect(readCachedAiCounter()).toMatchObject({ remaining: 14, monthlyQuota: 20 });
+        rememberRemaining(13, captureSessionContext());
+        expect(readCachedAiCounter()?.remaining).toBe(13);
+    });
+
+    it('ignore un compteur d’un mois précédent', () => {
+        localStorage.setItem('ai-status-v1:user-1', JSON.stringify({ remaining: 3, monthlyQuota: 20, at: '2026-10-31T23:00:00Z' }));
+        expect(readCachedAiCounter(undefined, new Date('2026-11-02T10:00:00Z'))).toBeNull();
+        expect(readCachedAiCounter(undefined, new Date('2026-10-31T23:30:00Z'))).not.toBeNull();
+    });
+
+    it('le compteur est propre à chaque personne', async () => {
+        mocks.rpc.mockResolvedValue({ data: raw, error: null });
+        await getAiOverview();
+        setSessionIdentity('user-2');
+        expect(readCachedAiCounter()).toBeNull();
+    });
+});
+
+describe('callAiText', () => {
+    const payload = { month: '2026-10', totals: { observations: 1, species: 1, activeDays: 1 } };
+
+    it('envoie { feature, payload } à ai-text avec l’en-tête Bearer', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { result: { text: 'Bilan.' }, remaining: 12 }));
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+        const response = await callAiText('summary', payload);
+        const [url, options] = fetchMock.mock.calls[0];
+        expect(url).toContain('/functions/v1/ai-text');
+        expect(options.method).toBe('POST');
+        expect(options.headers.Authorization).toBe('Bearer jeton-test');
+        expect(JSON.parse(options.body)).toEqual({ feature: 'summary', payload });
+        expect(response).toEqual({ result: { text: 'Bilan.' }, remaining: 12 });
+    });
+
+    it('ne fait aucun appel réseau hors ligne', async () => {
+        setOnline(false);
+        const fetchMock = vi.fn();
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+        const error = await callAiText('summary', payload).catch(e => e);
+        expect(error).toMatchObject({ code: 'offline', feature: 'summary' });
+        expect(error.message).toBe("Le bilan ne peut être rédigé qu'en ligne.");
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('traduit chaque code du serveur ai-text, sans jamais parler de photo pour le bilan', async () => {
+        const codes = (Object.keys(TEXT_ERROR_HTTP_STATUS) as AiAssistErrorCode[])
+            .filter(code => code !== 'method_not_allowed' as AiAssistErrorCode);
+        for (const code of codes) {
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(TEXT_ERROR_HTTP_STATUS[code as keyof typeof TEXT_ERROR_HTTP_STATUS], { error: code })) as unknown as typeof fetch;
+            const error = await callAiText('summary', payload).catch(e => e);
+            expect(error).toBeInstanceOf(AiAssistError);
+            expect(error.code).toBe(code);
+            expect(error.message).toBe(aiAssistErrorMessage(code, 'summary'));
+            expect(error.message).not.toMatch(/photo|analyse/i);
+        }
+    });
+
+    it('feature_disabled annonce une fonction pas encore ouverte', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, { error: 'feature_disabled' })) as unknown as typeof fetch;
+        const error = await callAiText('summary', payload).catch(e => e);
+        expect(error.message).toMatch(/pas encore ouverte/);
+        expect(mocks.warn).toHaveBeenCalled();
+        expect(mocks.error).not.toHaveBeenCalled();
+    });
+
+    it('garde les utilisations restantes renvoyées avec une erreur', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(502, { error: 'invalid_output', remaining: 8 })) as unknown as typeof fetch;
+        await expect(callAiText('summary', payload)).rejects.toMatchObject({ code: 'invalid_output', remaining: 8 });
+    });
+
+    it('une réponse sans résultat est inexploitable', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { remaining: 3 })) as unknown as typeof fetch;
+        await expect(callAiText('summary', payload)).rejects.toMatchObject({ code: 'invalid_output' });
+    });
+
+    it('annule la requête si la session change', async () => {
+        let capturedSignal: AbortSignal | undefined;
+        globalThis.fetch = vi.fn((_url: string, options: RequestInit) => {
+            capturedSignal = options.signal ?? undefined;
+            return new Promise((_resolve, reject) => {
+                options.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+            });
+        }) as unknown as typeof fetch;
+        const promise = callAiText('summary', payload);
+        await vi.waitFor(() => expect(capturedSignal).toBeDefined());
+        setSessionIdentity('user-2');
+        await expect(promise).rejects.toMatchObject({ code: 'stale_session' });
+        expect(capturedSignal?.aborted).toBe(true);
+    });
+
+    it('ne journalise ni la charge utile ni la réponse', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(500, { error: 'internal_error', detail: 'Mésange secrète' })) as unknown as typeof fetch;
+        await callAiText('summary', { month: '2026-10', topSpecies: [{ name: 'Mésange secrète', count: 1 }] }).catch(() => undefined);
+        const logged = JSON.stringify([...mocks.warn.mock.calls, ...mocks.error.mock.calls]);
+        expect(logged).not.toMatch(/Mésange/);
+    });
+});
+
+describe('parseSummaryResult', () => {
+    it('garde un texte non vide et borné, tel quel', () => {
+        expect(parseSummaryResult({ text: '  <b>Bilan</b>  ' })).toEqual({ text: '<b>Bilan</b>' });
+        expect(parseSummaryResult({ text: '' })).toBeNull();
+        expect(parseSummaryResult({ text: 'x'.repeat(1201) })).toBeNull();
+        expect(parseSummaryResult({ text: 42 })).toBeNull();
+        expect(parseSummaryResult(null)).toBeNull();
     });
 });

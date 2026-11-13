@@ -10,6 +10,7 @@ import { buildStatsReportData } from '../utils/statsReportData';
 import { computeCurrentStreak, computeLongestStreak } from '../utils/observationStatsUtils';
 import { SpinnerIcon, ArchiveBoxIcon, FlameIcon, MedalIcon } from './icons';
 import EmptyState from './EmptyState';
+import MonthlySummaryCard from './MonthlySummaryCard';
 
 const useCountUp = (target: number, duration = 800): number => {
     const [value, setValue] = useState(0);
@@ -45,6 +46,9 @@ interface ObservationStatsProps {
     onExportStats?: () => void | Promise<void>;
     isExportingStats?: boolean;
     statsRootRef?: React.RefObject<HTMLDivElement | null>;
+    isOffline?: boolean;
+    /** Ouvre « Assistant IA » depuis la carte du bilan du mois. */
+    onOpenAiAssistant?: () => void;
 }
 
 const STATUS_MEDAL_COLORS = ['bg-nature-green', 'bg-slate-500', 'bg-slate-400'];
@@ -99,7 +103,9 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
     isMobileView = false,
     onExportStats,
     isExportingStats = false,
-    statsRootRef
+    statsRootRef,
+    isOffline = false,
+    onOpenAiAssistant,
 }) => {
     const internalRef = useRef<HTMLDivElement>(null);
     const [groupTooltip, setGroupTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -183,6 +189,13 @@ const ObservationStats: React.FC<ObservationStatsProps> = ({
                     </div>
                 </div>
             </div>
+
+            <MonthlySummaryCard
+                observations={observations}
+                isOffline={isOffline}
+                isMobileView={isMobileView}
+                onOpenAiAssistant={onOpenAiAssistant}
+            />
 
             {stats.taxonSpeciesCards.length > 0 && (
                 <section className={`${cardShellClass} ${isMobileView ? 'p-4' : 'p-8'} space-y-6`}>

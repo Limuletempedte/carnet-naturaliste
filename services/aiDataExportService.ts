@@ -1,7 +1,8 @@
 // Données de l'assistant IA incluses dans « Exporter mes données » (art. 15 et
 // 20 RGPD). Lecture avec le client de l'utilisateur : la RLS
 // (`ai_access_select_own`, `ai_usage_select_own`, migration
-// 20261105161500_ai_identification.sql) ne renvoie que SES lignes.
+// 20261105161500_ai_identification.sql ; `ai_consents_select_own`, migration
+// 20261106220000_ai_text_features.sql) ne renvoie que SES lignes.
 //
 // Point d'extension : pour une nouvelle table IA (ex. `ai_consents`), ajouter
 // une entrée à `AI_EXPORT_SOURCES`. Le reste (lecture, section du fichier,
@@ -37,6 +38,13 @@ export const AI_EXPORT_SOURCES: readonly AiExportSource[] = [
         columns: ['created_at', 'feature', 'model', 'input_tokens', 'output_tokens', 'cost_usd', 'status'],
         orderBy: 'created_at',
         description: "Journal de vos appels à l'assistant (conservé 3 mois) : date, fonctionnalité, modèle, nombre de tokens, coût en dollars US, résultat. Ni photo ni réponse de l'assistant n'y sont conservées.",
+    },
+    {
+        key: 'consentements',
+        table: 'ai_consents',
+        columns: ['feature', 'version', 'given_at'],
+        orderBy: 'given_at',
+        description: "Vos accords aux fonctions texte de l'assistant (par exemple « summary » : bilan du mois) : fonction, version du texte accepté, date de l'accord. Les bilans rédigés ne sont pas sur le serveur : ils restent dans votre navigateur.",
     },
 ];
 
@@ -91,7 +99,7 @@ export async function fetchAiDataForExport(
 
 /** Contenu du fichier `assistant_ia.json` placé dans l'archive d'export. */
 export const buildAiExportFile = (data: AiDataExport, generatedAt: string) => ({
-    titre: "Données de l'assistant IA (aide à l'identification)",
+    titre: "Données de l'assistant IA",
     genereLe: generatedAt,
     complet: data.complete,
     ...(data.unavailable.length > 0

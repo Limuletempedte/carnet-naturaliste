@@ -23,6 +23,21 @@ export default {
                 'nature-dark-surface': '#1C1C1E',
                 'nature-dark-text': '#F2F2F7',
                 'nature-green-text': '#1B8A2F',
+                // Lavande réservée à l'assistant IA (boutons, cartes, compteur).
+                // Contrastes vérifiés par tests/aiColorContrast.test.ts :
+                // 700 sur blanc et sur 50, 200 sur fond sombre, blanc sur 600.
+                ai: {
+                    50: '#F5F3FF',
+                    100: '#EDE9FE',
+                    200: '#DDD6FE',
+                    300: '#C4B5FD',
+                    400: '#A78BFA',
+                    500: '#8B5CF6',
+                    600: '#7C3AED',
+                    700: '#6D28D9',
+                    800: '#5B21B6',
+                    900: '#4C1D95',
+                },
             },
             fontFamily: {
                 sans: ['Inter', 'sans-serif'],

@@ -21,7 +21,8 @@ import FieldTooltip from './FieldTooltip';
 import FormSection from './FormSection';
 import AiIdentificationPanel from './AiIdentificationPanel';
 import ConfirmationDialog from './ConfirmationDialog';
-import { AiAssistError, identifySpecies, type AiCandidate, type AiIdentifyResult } from '../services/aiAssistService';
+import { AiAssistError, identifySpecies, readCachedAiCounter, rememberRemaining, type AiCandidate, type AiIdentifyResult } from '../services/aiAssistService';
+import AiButton from './AiButton';
 import { suggestSpeciesAutocomplete, type SpeciesSuggestion } from '../services/speciesService';
 import { MapPinIcon, XMarkIcon } from './icons';
 
@@ -370,6 +371,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     // l'observation n'attend jamais l'analyse.
     const [aiState, setAiState] = useState<AiPanelState>({ phase: 'idle' });
     const [aiChoosingName, setAiChoosingName] = useState<string | null>(null);
+    // Dernier compteur connu (mois en cours), mis à jour après chaque analyse.
+    const [aiRemaining, setAiRemaining] = useState<number | null>(() => {
+        if (!formSession) return null;
+        return readCachedAiCounter(formSession)?.remaining ?? null;
+    });
     const [pendingLatinReplacement, setPendingLatinReplacement] = useState<AiCandidate | null>(null);
     const aiAbortRef = useRef<AbortController | null>(null);
     const aiChooseAbortRef = useRef<AbortController | null>(null);
@@ -402,9 +408,15 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 habitat: formData.habitat,
             }, { signal: controller.signal }, formSession);
             if (controller.signal.aborted || !isSessionCurrent(formSession)) return;
+            setAiRemaining(result.remaining);
+            rememberRemaining(result.remaining, formSession);
             setAiState({ phase: 'result', result });
         } catch (error) {
             if (controller.signal.aborted || !isSessionCurrent(formSession)) return;
+            if (error instanceof AiAssistError && typeof error.remaining === 'number') {
+                setAiRemaining(error.remaining);
+                rememberRemaining(error.remaining, formSession);
+            }
             setAiState({ phase: 'error', error: error instanceof AiAssistError ? error : new AiAssistError('unknown') });
         } finally {
             if (aiAbortRef.current === controller) aiAbortRef.current = null;
@@ -938,23 +950,15 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                             </div>
                             {formData.photo && (
                                 <div className="md:col-span-3" data-testid="ai-identification">
-                                    <button
-                                        type="button"
+                                    <AiButton
+                                        label="Aide à l'identification"
+                                        loadingLabel="Analyse en cours…"
                                         onClick={() => void handleAiIdentify()}
-                                        disabled={isOffline || aiState.phase === 'loading'}
-                                        aria-describedby="ai-identification-help"
-                                        className="min-h-[44px] inline-flex items-center gap-2 rounded-full border-2 border-nature-green px-4 py-2 text-sm font-semibold text-nature-green-text transition-all hover:bg-nature-green/10 disabled:cursor-not-allowed disabled:opacity-50 dark:border-green-500 dark:text-green-400"
-                                    >
-                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-5 h-5 ${aiState.phase === 'loading' ? 'animate-pulse' : ''}`}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
-                                        </svg>
-                                        {aiState.phase === 'loading' ? 'Analyse en cours…' : "Aide à l'identification"}
-                                    </button>
-                                    <p id="ai-identification-help" className="mt-1 ml-1 text-xs text-gray-500 dark:text-gray-400">
-                                        {isOffline
-                                            ? 'Disponible en ligne uniquement.'
-                                            : "Envoie cette photo à l'assistant (IA) pour obtenir des hypothèses à vérifier. Une analyse lancée compte dans votre quota, même si la connexion est coupée pendant l'attente."}
-                                    </p>
+                                        isLoading={aiState.phase === 'loading'}
+                                        isOffline={isOffline}
+                                        remaining={aiRemaining}
+                                        hint="Envoie cette photo à l'assistant (IA) pour obtenir des hypothèses à vérifier. Une analyse lancée compte dans votre quota, même si la connexion est coupée pendant l'attente."
+                                    />
                                     {aiState.phase === 'error' && (
                                         <div role="alert" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-900/20 dark:text-amber-100">
                                             <p>{aiState.error.message}</p>

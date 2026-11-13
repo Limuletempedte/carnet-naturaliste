@@ -1,6 +1,17 @@
 import { captureSessionContext, assertSessionContext, inSession, StaleSessionError, type SessionContext } from './sessionScope';
 import { clearScopedOfflineData } from './storageService';
 import { supabase } from '../supabaseClient';
+import { AI_STATUS_CACHE_PREFIX } from './aiAssistService';
+import { MONTHLY_SUMMARY_CACHE_PREFIX } from './monthlySummaryCache';
+
+/** Données par personne gardées dans le navigateur, effacées avec le compte. */
+export const ACCOUNT_SCOPED_STORAGE_PREFIXES = [
+    'event-log-v2',
+    'map-search-history-v2',
+    'observation-filter-presets-v2',
+    MONTHLY_SUMMARY_CACHE_PREFIX,
+    AI_STATUS_CACHE_PREFIX,
+] as const;
 
 /**
  * Calls the delete-account Edge Function, clears local data, and signs out.
@@ -30,6 +41,6 @@ export async function deleteAccount(context: SessionContext = captureSessionCont
     // Le résultat tardif de A ne doit jamais effacer les données de B.
     assertSessionContext(context);
     clearScopedOfflineData(context.userId);
-    for (const prefix of ['event-log-v2', 'map-search-history-v2', 'observation-filter-presets-v2']) localStorage.removeItem(`${prefix}:${context.userId}`);
+    for (const prefix of ACCOUNT_SCOPED_STORAGE_PREFIXES) localStorage.removeItem(`${prefix}:${context.userId}`);
     await supabase.auth.signOut();
 }

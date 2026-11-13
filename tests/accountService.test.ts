@@ -58,6 +58,9 @@ describe('deleteAccount', () => {
         expect(options.headers.Authorization).toBe('Bearer test-jwt-token');
         expect(localStorage.clear).not.toHaveBeenCalled();
         expect(localStorage.removeItem).toHaveBeenCalledWith('local_observations_cache:user-1');
+        // Bilans du mois et dernier compteur de l'assistant, gardés dans le navigateur.
+        expect(localStorage.removeItem).toHaveBeenCalledWith('ai-monthly-summaries-v1:user-1');
+        expect(localStorage.removeItem).toHaveBeenCalledWith('ai-status-v1:user-1');
         expect(signOutMock).toHaveBeenCalled();
     });
 
