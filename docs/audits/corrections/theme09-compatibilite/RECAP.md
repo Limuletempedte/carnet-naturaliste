@@ -118,7 +118,7 @@ export const generateUUID = (): string => {
 
 **Comme `sharp` et `jimp` ne sont pas installes**, j'ai utilise PowerShell + System.Drawing :
 
-- `scripts/generate-pwa-icons.ps1` — **NOUVEAU** — script reproductible *(supprimé le 2026-11-06 par la PR #121 : les icônes sont désormais générées sous Linux par `scripts/generate-icons.py`, voir `scripts/icons/README.md`)*
+- `generate-pwa-icons.ps1` (dans `scripts/`) — **NOUVEAU** — script reproductible *(supprimé le 2026-11-06 par la PR #121 : les icônes sont désormais générées sous Linux par `scripts/generate-icons.py`, voir `scripts/icons/README.md`)*
 - `public/favicon.ico` — **NOUVEAU** — 32x32 PNG renomme en `.ico` (accepte par tous les navigateurs modernes)
 - `public/apple-touch-icon.png` — **NOUVEAU** — 180x180
 - `public/pwa-144x144.png` — **NOUVEAU** — taille intermediaire Android
