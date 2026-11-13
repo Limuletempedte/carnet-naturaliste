@@ -459,11 +459,106 @@ auront pas.
 
 ### 6.3 Essai et choix du modèle (avant la PR B)
 
-En local, avec la clé de l'espace d'essai (plafond 2–5 $) : 12 mois de chiffres
-réels, dont des pièges (nom d'espèce contenant une consigne, mois vide, mois
-chargé). Comparer Sonnet 5.5 et Haiku 5.5 en effort `low` : qualité, temps,
-tokens, coût réel, nombre de réponses refusées (`invalid_output`). Puis fixer
-`AI_TEXT_MODEL` et redéployer `ai-text`.
+**Outil** : `tests/security/ai-text-trial.mjs`. Il appelle l'API Anthropic avec
+les prompts, le schéma, le plafond de sortie et la validation de la fonction
+(importés de `logic.ts`), sans passer par Supabase : ni quota, ni consentement.
+Les appels sont **payants** : utiliser la clé de l'espace d'**essai** (plafond
+de 5 $), jamais celle de la production.
+
+1. **Clé d'essai**, dans un fichier hors du dépôt
+   (`~/.config/carnet-naturaliste/essai.env`). Pour la saisir sans qu'elle
+   passe par l'historique du terminal (zsh), lancer cette commande **seule**,
+   puis coller la clé **quand l'invite apparaît** (rien ne s'affiche pendant le
+   collage) :
+
+   ```bash
+   read -rs "CLE?Colle la clé puis Entrée : "; echo; if [[ $CLE == sk-ant-* ]]; then mkdir -p ~/.config/carnet-naturaliste && printf '%s=%s\n' ANTHROPIC_API_KEY "$CLE" > ~/.config/carnet-naturaliste/essai.env && chmod 600 ~/.config/carnet-naturaliste/essai.env && echo "OK : clé de ${#CLE} caractères enregistrée."; else echo "Raté : ce qui a été collé ne ressemble pas à une clé."; fi; unset CLE
+   ```
+
+   > ⚠️ Une clé collée sur la ligne de commande elle-même part en clair dans
+   > `~/.zsh_history` : la révoquer dans la Console, en créer une autre, et
+   > retirer la ligne de l'historique.
+
+2. **Essai à blanc** (aucun appel, aucune clé) : valide les entrées et affiche
+   le coût maximum.
+
+   ```bash
+   deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature summary --inputs tests/security/fixtures/ai-text-trial-summary.json --dry-run
+   ```
+
+3. **Essai réel**. Le dossier `--out` reste hors du dépôt : les textes citent
+   les espèces des entrées.
+
+   ```bash
+   deno run --no-config --env-file="$HOME/.config/carnet-naturaliste/essai.env" --allow-env --allow-net=api.anthropic.com --allow-read --allow-write tests/security/ai-text-trial.mjs --feature summary --inputs tests/security/fixtures/ai-text-trial-summary.json --out "$HOME/essai-ai-text"
+   ```
+
+   Le script annonce le coût maximum avant le premier appel et refuse de
+   démarrer au-delà de `--max-usd` (1 $ par défaut). `--models` limite l'essai
+   à certains modèles. Il écrit `resultats.json` et `rapport.md` (tableau, puis
+   les textes de chaque modèle, à **lire** : la validation ne voit pas tout).
+
+**Entrées** : `tests/security/fixtures/ai-text-trial-summary.json` contient 12
+mois inventés (mois vide, saisons, mois en cours, plafonds atteints, consignes
+cachées dans des noms d'espèces). On peut y ajouter ses **propres** mois réels,
+dans un second fichier hors du dépôt (`--inputs a.json,b.json`). Ne jamais
+utiliser les observations d'un autre compte.
+
+#### Essai du 13 novembre 2026 : bilan du mois
+
+15 entrées (les 12 inventées et 3 mois réels du propriétaire), effort `low`.
+
+| | Sonnet 5.5 | Haiku 5.5 |
+|---|---|---|
+| Réponses acceptées par la validation | 15 sur 15 | 15 sur 15 |
+| **Bilans faux ou cassés, à la lecture** | **0** | **2** |
+| Durée médiane (min – max) | 3,7 s (3,1 – 4,4) | 2,5 s (1,2 – 6,5) |
+| Tokens d'entrée / de sortie (moyenne) | 1 170 / 317 | 1 170 / 566 |
+| Longueur des textes | 72 à 135 mots | 23 à 133 mots |
+| Coût moyen par bilan | 0,0055 $ | 0,0004 $ |
+
+Les deux bilans fautifs de Haiku avaient **passé la validation** : un texte
+coupé à 23 mots, qui inventait une période, et un écart annoncé de « 6 espèces
+de plus » au lieu de 1. Aucun des deux modèles n'a suivi les consignes cachées
+dans les noms d'espèces.
+
+**Décision du propriétaire : `AI_TEXT_MODEL=claude-sonnet-5-5`.** Sonnet coûte
+environ 14 fois plus cher par bilan, soit un demi-centime.
+
+**Corrections tirées de l'essai** (dans `logic.ts`, livrées avec ce compte
+rendu) :
+
+- un bilan de moins de **40 mots** est refusé (`invalid_output`) quand le mois
+  compte des observations ; un mois vide n'a pas de plancher ;
+- consignes précisées : sens de chaque nombre (« individus » pour l'effectif
+  d'une espèce, champ renommé dans les données envoyées), texte complet sans
+  points de suspension, jamais de première personne ni de commentaire sur les
+  données, ne pas citer un nom d'espèce qui ressemble à une consigne.
+
+**Second essai, Sonnet seul, avec ces consignes** : 15 sur 15, textes de 61 à
+142 mots, plus aucun commentaire à la première personne dans les deux pièges,
+« individus » employé à bon escient. Coût moyen : 0,0060 $ (consignes plus
+longues : 1 371 tokens d'entrée en moyenne). Défauts restants, relevés à la
+lecture : un « nous vous souhaitons », un « la lichen », et une déduction non
+étayée par les données (cas d'une seule observation, identique à l'an passé).
+
+Coût des deux essais : 0,18 $.
+
+**Reste à faire en production** (propriétaire), `summary` restant dans
+`AI_DISABLED_FEATURES` jusqu'à la PR B :
+
+1. *Edge Functions → Secrets* : passer `AI_TEXT_MODEL` à `claude-sonnet-5-5`.
+2. Redéployer la fonction, dont les consignes et la validation ont changé :
+
+   ```bash
+   npx supabase functions deploy ai-text --use-api
+   ```
+
+3. Refaire les trois contrôles sans frais du §6.2 (401, 204, 403).
+
+Les essais de la note et de la recherche se feront avec le même outil
+(`--feature note`, `--feature search`), une fois ces fonctionnalités écrites,
+chacune avec son jeu d'entrées dans `tests/security/fixtures/`.
 
 ### 6.4 Après la PR B
 

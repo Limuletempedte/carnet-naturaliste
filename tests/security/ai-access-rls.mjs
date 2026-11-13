@@ -120,7 +120,8 @@ const fakeAnthropic = http.createServer((req, res) => {
             return;
         }
         const output = fakeMode === 'refusal' ? '' : fakeMode === 'summary' ? JSON.stringify({
-            text: 'En mai 2026, vous avez noté 42 observations de 17 espèces.',
+            // Au moins 40 mots : plancher d'un bilan quand le mois compte des observations.
+            text: 'En mai 2026, vous avez noté 42 observations de 17 espèces. Vos sorties ont été régulières et variées, et votre carnet garde la trace de chacune de ces rencontres, au fil des chemins, des haies et des mares que vous avez pris le temps de parcourir tout au long de ce mois.',
         }) : JSON.stringify({
             candidates: [{
                 scientificName: 'Erithacus rubecula', commonName: 'Rougegorge familier', confidence: 'elevee',

@@ -20,6 +20,7 @@ import {
     cleanParagraphText,
     computeCostUsd,
     corsDecision,
+    countWords,
     extractNumbers,
     httpStatusFor,
     maxCostUsd,
@@ -62,6 +63,10 @@ function validSummary(overrides: Record<string, unknown> = {}): SummaryInput {
 }
 
 const modelOutput = (text: string) => JSON.stringify({ text });
+
+// Complément sans chiffre (41 mots) : fait passer un texte de test au-dessus du
+// plancher `minOutputWords`, sans toucher à ce que le test vérifie.
+const FILLER = ' Vos sorties ont été régulières et variées, et votre carnet garde la trace de chacune de ces rencontres, au fil des chemins, des haies et des mares que vous avez pris le temps de parcourir tout au long de ce mois.';
 
 describe('ai-text — constantes communes avec ai-identify', () => {
     it('reprend exactement les prix et les efforts', () => {
@@ -251,21 +256,21 @@ describe('ai-text — bilan : lecture de la réponse', () => {
     const input = validSummary();
 
     it('accepte un texte qui ne cite que des nombres fournis', () => {
-        const text = 'En mai 2026, vous avez noté 42 observations de 17 espèces sur 9 jours, soit 7 de plus qu’en 2025.\n\nLa Mésange charbonnière domine avec 14 mentions ; 2 espèces nouvelles, dont la Huppe fasciée.';
+        const text = 'En mai 2026, vous avez noté 42 observations de 17 espèces sur 9 jours, soit 7 de plus qu’en 2025.\n\nLa Mésange charbonnière domine avec 14 mentions ; 2 espèces nouvelles, dont la Huppe fasciée.' + FILLER;
         expect(parseSummaryOutput(modelOutput(text), input)).toEqual({ text });
     });
 
     it('refuse un nombre absent des chiffres fournis (pourcentage, total inventé, décimal)', () => {
         for (const text of ['Vous avez noté 43 observations.', 'Une hausse de 20 %.', 'En moyenne 4,7 observations par jour.', 'Le 3 mai fut faste.',
             'Soit 2.9 espèces par jour.', 'Vous avez noté \uff14\uff12 observations.', 'Vous avez noté 4\u00b2 observations.', 'Total : \u0664\u0662.']) {
-            expect(parseSummaryOutput(modelOutput(text), input), text).toBeNull();
+            expect(parseSummaryOutput(modelOutput(text + FILLER), input), text).toBeNull();
         }
     });
 
     it('accepte les nombres écrits avec séparateur de milliers', () => {
         const big = validSummary({ totals: { observations: 1234, species: 17, activeDays: 9 } });
-        expect(parseSummaryOutput(modelOutput('Pas moins de 1 234 observations.'), big)).not.toBeNull();
-        expect(parseSummaryOutput(modelOutput('Pas moins de 1\u202f234 observations.'), big)).not.toBeNull();
+        expect(parseSummaryOutput(modelOutput('Pas moins de 1 234 observations.' + FILLER), big)).not.toBeNull();
+        expect(parseSummaryOutput(modelOutput('Pas moins de 1\u202f234 observations.' + FILLER), big)).not.toBeNull();
         expect(extractNumbers('mai 2026 120 fois, 1 234 et 12 345 678')).toEqual(['2026', '120', '1234', '12345678']);
         expect(extractNumbers('007 et 2,5 et 2.9')).toEqual(['7', '2,5', '2.9']);
     });
@@ -282,9 +287,34 @@ describe('ai-text — bilan : lecture de la réponse', () => {
     it('borne la longueur et retire contrôles et bidi', () => {
         expect(parseSummaryOutput(modelOutput('x'.repeat(SUMMARY_LIMITS.maxOutputChars + 1)), input)).toBeNull();
         expect(parseSummaryOutput(modelOutput('   \n  '), input)).toBeNull();
-        expect(parseSummaryOutput(modelOutput('Bonne\u202e récolte\u0007 !\r\n\r\n\r\n\r\nSuite.'), input))
-            .toEqual({ text: 'Bonne récolte !\n\nSuite.' });
+        expect(parseSummaryOutput(modelOutput('Bonne\u202e récolte\u0007 !\r\n\r\n\r\n\r\nSuite.' + FILLER), input))
+            .toEqual({ text: 'Bonne récolte !\n\nSuite.' + FILLER });
         expect(cleanParagraphText('a\u2028b')).toBe('a b');
+    });
+
+    it('refuse un texte trop court quand le mois compte des observations (texte coupé)', () => {
+        // Texte réellement produit pendant l'essai du 13 novembre 2026 (23 mots) :
+        // tous ses nombres sont fournis, seul le plancher l'arrête.
+        const truncated = 'Voici le bilan provisoire de mai 2026 : le mois n’est pas encore terminé, mais il compte déjà 42 observations d’août à novembre...';
+        expect(countWords(truncated)).toBe(23);
+        expect(parseSummaryOutput(modelOutput(truncated), input)).toBeNull();
+        const words = (n: number) => Array.from({ length: n }, () => 'mot').join(' ');
+        expect(parseSummaryOutput(modelOutput(words(SUMMARY_LIMITS.minOutputWords - 1)), input)).toBeNull();
+        expect(parseSummaryOutput(modelOutput(words(SUMMARY_LIMITS.minOutputWords)), input)).not.toBeNull();
+        expect(countWords('  deux\n\nmots  ')).toBe(2);
+    });
+
+    it('n’impose aucun plancher à un mois sans observation', () => {
+        const empty = validSummary({ totals: { observations: 0, species: 0, activeDays: 0 }, groups: [], topSpecies: [], newSpecies: [] });
+        expect(parseSummaryOutput(modelOutput('Aucune observation ce mois-ci : votre carnet vous attend.'), empty))
+            .toEqual({ text: 'Aucune observation ce mois-ci : votre carnet vous attend.' });
+    });
+
+    it('donne des consignes sur le sens des nombres, le texte complet et l’absence de commentaire', () => {
+        expect(SUMMARY_FEATURE.systemPrompt).toMatch(/« individus » est le nombre d'individus comptés/);
+        expect(SUMMARY_FEATURE.systemPrompt).toMatch(/aucune phrase inachevée, pas de points de suspension/);
+        expect(SUMMARY_FEATURE.systemPrompt).toMatch(/jamais à la première personne/);
+        expect(buildSummaryUserPrompt(input)).toContain('"individus":14');
     });
 
     it('refuse une réponse qui n’est pas l’objet attendu', () => {
@@ -294,10 +324,10 @@ describe('ai-text — bilan : lecture de la réponse', () => {
     });
 
     it('n’affiche jamais de HTML interprété : le texte reste une chaîne brute', () => {
-        const result = parseSummaryOutput(modelOutput('<img src=x onerror=alert(1)> bravo'), input);
+        const result = parseSummaryOutput(modelOutput('<img src=x onerror=alert(1)> bravo' + FILLER), input);
         // « 1 » n'est pas un chiffre fourni : refusé avant même l'affichage.
         expect(result).toBeNull();
-        expect(parseSummaryOutput(modelOutput('<b>bravo</b>'), input)).toEqual({ text: '<b>bravo</b>' });
+        expect(parseSummaryOutput(modelOutput('<b>bravo</b>' + FILLER), input)).toEqual({ text: '<b>bravo</b>' + FILLER });
     });
 
     it('le schéma n’admet qu’un champ texte', () => {
