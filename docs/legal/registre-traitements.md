@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-11-06
+**Date de mise a jour** : 2026-11-13
 
 ---
 
@@ -68,8 +68,8 @@
 |---|---|
 | Finalite | Fonctionnement hors-ligne, cache, preferences |
 | Base legale | Consentement (bandeau de consentement au stockage) |
-| Donnees collectees | Observations en cache, session, preferences UI (theme sombre, filtres) |
-| Duree de conservation | Cache : 90 jours (TTL). Preferences : duree du navigateur. |
+| Donnees collectees | Observations en cache, session, preferences UI (theme sombre, filtres) ; bilans du mois rediges par l'assistant IA et dernier compteur d'utilisations connu (Traitement 9), par personne |
+| Duree de conservation | Cache : 90 jours (TTL). Preferences : duree du navigateur. Bilans du mois : 24 mois au plus, effaces avec le compte. |
 | Destinataires | Aucun — donnees locales uniquement |
 | Transfert hors UE | Non |
 
@@ -103,25 +103,53 @@
 
 Sources : [politique Turnstile](https://www.cloudflare.com/turnstile-privacy-policy/), [validation serveur](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
 
-## Traitement 9 : Aide à l'identification par IA (Anthropic)
+## Traitement 9 : Assistant IA (Anthropic)
+
+Un traitement, une sous-section par fonctionnalité. Le socle est commun :
+demande d'accès validée à la main (`ai_access`), quota de **20 utilisations
+par mois, toutes fonctionnalités confondues**, budget global plafonné, journal
+d'usage (`ai_usage`). Chaque fonctionnalité a **son propre consentement**
+(finalités distinctes) : photo dans `ai_access.consent_version`, fonctionnalités
+texte dans `ai_consents`.
+
+### Socle commun
+
+| Champ | Valeur |
+|---|---|
+| Base légale | **Consentement** (art. 6.1.a), par fonctionnalité : case obligatoire, texte versionné, retrait à tout moment dans la fenêtre « Assistant IA ». **Intérêt légitime** (art. 6.1.f) pour le journal d'usage : contrôle des coûts et des abus. |
+| Données conservées par le Carnet | `ai_access` (statut de la demande, quota, version du consentement photo, dates, note) ; `ai_consents` (une ligne par fonctionnalité texte : fonctionnalité, version du texte accepté, `given_at` posé par le serveur comme preuve, art. 7.1) ; `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut). Ni photo, ni chiffres, ni hypothèses, ni texte produit. |
+| Données conservées dans le navigateur | Bilans du mois rédigés (texte, date, empreinte des chiffres), par personne, **24 mois au plus** ; dernier compteur d'utilisations connu (pour l'affichage hors ligne). Jamais envoyés au serveur ; effacés avec le compte. |
+| Destinataires | Anthropic (modèle Claude), via **Anthropic Ireland Ltd** pour l'EEE, sous-traitant ; DPA intégré aux Commercial Terms, droit irlandais. Supabase (fonctions `ai-identify` et `ai-text`, tables, UE). |
+| Transfert hors UE | **Oui** — données stockées aux États-Unis, pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`). Transfert encadré par les clauses contractuelles types de l'UE (modules 2 et 3) du DPA. |
+| Conservation | Chez Anthropic : entrées et sorties effacées sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement sur les données de l'API par défaut. Dans le Carnet : `ai_access` et `ai_consents` jusqu'au retrait de l'accord (retirer l'accès supprime aussi les lignes `ai_consents`) ou à la suppression du compte ; `ai_usage` 3 mois (purge à chaque nouvelle réservation). |
+| Mesures | Accès sur demande validée à la main ; quota et budget plafonnés ; clé API uniquement côté serveur ; droits et RLS empêchant de s'approuver soi-même, de modifier un consentement (suppression puis insertion seulement) ou d'en créer un pour autrui ; journaux sans utilisateur, photo, prompt, chiffres, hypothèses ni texte produit ; une donnée envoyée ne peut pas être rappelée (dit dans chaque consentement). |
+| AIPD | Non nécessaire : petite échelle, pas de données sensibles recherchées, l'utilisateur décide de chaque envoi et de ce qu'il garde. |
+
+### 9.1 Aide à l'identification (photo, `ai-identify`)
 
 | Champ | Valeur |
 |---|---|
 | Finalité | Proposer, à la demande de l'utilisateur, jusqu'à 3 hypothèses d'espèce à partir de la photo d'une observation. L'utilisateur choisit lui-même ; rien n'est rempli automatiquement, aucune décision automatisée. |
-| Base légale | **Consentement** (art. 6.1.a) pour l'envoi des photos : case obligatoire, texte versionné (`CONSENT_VERSION`), retrait à tout moment (« Retirer mon accord »). **Intérêt légitime** (art. 6.1.f) pour le journal d'usage : contrôle des coûts et des abus. |
-| Données | Envoyées à Anthropic : photo réencodée en JPEG (1 280 px au plus, sans EXIF ni GPS), mois, pays, département, groupe taxonomique s'il a été choisi, habitat s'il est renseigné. **Jamais** : GPS, commune, lieu-dit, altitude, date exacte, commentaire, email, identifiant. Conservées par le Carnet : `ai_access` (statut de la demande, quota, version du consentement, dates, note) et `ai_usage` (date, modèle, tokens, coût, statut), sans photo ni hypothèses. |
-| Destinataires | Anthropic (modèle Claude), via **Anthropic Ireland Ltd** pour l'EEE, sous-traitant ; DPA intégré aux Commercial Terms, droit irlandais. Supabase (fonction `ai-identify` et tables, UE). |
-| Transfert hors UE | **Oui** — données stockées aux États-Unis, pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`). Transfert encadré par les clauses contractuelles types de l'UE (modules 2 et 3) du DPA. |
-| Conservation | Chez Anthropic : entrées et sorties effacées sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement sur les données de l'API par défaut. Dans le Carnet : `ai_access` jusqu'au retrait de l'accord ou à la suppression du compte ; `ai_usage` 3 mois (purge à chaque nouvelle réservation). |
-| Mesures | Accès sur demande validée à la main ; quota mensuel (20 par défaut) et budget global plafonné ; clé API uniquement côté serveur ; droits et RLS empêchant de s'approuver soi-même ; journaux sans utilisateur, photo, prompt ni hypothèses ; avertissement d'éviter les photos où des personnes sont reconnaissables ; une photo envoyée ne peut pas être rappelée (dit dans le consentement). |
-| AIPD | Non nécessaire : petite échelle, pas de données sensibles recherchées, l'utilisateur décide de chaque envoi et du choix final. |
+| Consentement | Donné avec la demande d'accès (`ai_access.consent_version`, `CONSENT_VERSION` d'`ai-identify`). |
+| Données envoyées à Anthropic | Photo réencodée en JPEG (1 280 px au plus, sans EXIF ni GPS), mois, pays, département, groupe taxonomique s'il a été choisi, habitat s'il est renseigné. **Jamais** : GPS, commune, lieu-dit, altitude, date exacte, commentaire, email, identifiant. |
+| Mesures propres | Avertissement d'éviter les photos où des personnes sont reconnaissables. |
+
+### 9.2 Bilan du mois (texte, `ai-text`, fonctionnalité `summary`)
+
+| Champ | Valeur |
+|---|---|
+| Finalité | Rédiger, à la demande de l'utilisateur, un court texte à partir des chiffres d'un mois calculés par l'application (onglet Stats). Les chiffres font foi ; l'utilisateur décide de rédiger, de régénérer et de garder le texte. |
+| Consentement | Ligne `ai_consents` (`feature = 'summary'`, version `CONSENT_VERSIONS.summary` d'`ai-text`), donnée par une carte affichée au premier usage ou dans « Assistant IA » ; retrait par « Retirer mon accord au bilan ». |
+| Données envoyées à Anthropic | Mois (`AAAA-MM`), totaux (observations, espèces, jours d'activité), répartition par groupe, noms des 15 espèces les plus observées avec leur effectif, jusqu'à 30 espèces nouvelles (« + N autres »), mêmes totaux pour le même mois de l'année précédente. Les noms d'espèces liés à un compte restent des données personnelles. **Jamais** : lieu, commune, GPS, commentaire, observateur, date précise, photo, email. |
+| Données conservées | Le texte rédigé reste **dans le navigateur** (24 mois au plus, voir socle), jamais sur le serveur. |
+| Mesures propres | Le serveur ne transmet que les champs validés (les autres sont ignorés) ; texte refusé s'il cite un nombre absent des chiffres fournis ; affichage en texte brut (ni HTML, ni markdown, ni lien). |
 
 > Exploitation : [`docs/ops/ASSISTANT-IA.md`](../ops/ASSISTANT-IA.md). Plan : [`docs/plans/assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md) (sources des faits vérifiés le 2026-11-05).
 
 ## Droits des personnes concernees
 
 Les utilisateurs peuvent exercer leurs droits (acces, rectification, effacement, portabilite, opposition) :
-- **Export** : bouton "Exporter mes donnees" dans le menu profil. L'archive ZIP contient les observations (`data.json`, `data.csv`), leurs medias et, pour l'assistant IA (Traitement 9), le fichier `assistant_ia.json` : ligne `ai_access` (statut, version du consentement, dates, note, quota) et lignes `ai_usage` (date, fonctionnalite, modele, tokens, cout, statut) de l'utilisateur, lues avec ses propres droits (RLS). Section presente meme vide ; le journal ne couvre que les 3 derniers mois (duree de conservation). Toute nouvelle table IA liee a l'utilisateur doit y etre ajoutee (`AI_EXPORT_SOURCES` dans `services/aiDataExportService.ts`).
+- **Export** : bouton "Exporter mes donnees" dans le menu profil. L'archive ZIP contient les observations (`data.json`, `data.csv`), leurs medias et, pour l'assistant IA (Traitement 9), le fichier `assistant_ia.json` : ligne `ai_access` (statut, version du consentement, dates, note, quota), lignes `ai_usage` (date, fonctionnalite, modele, tokens, cout, statut) et lignes `ai_consents` (fonctionnalite, version, date de l'accord) de l'utilisateur, lues avec ses propres droits (RLS). Section presente meme vide ; le journal ne couvre que les 3 derniers mois (duree de conservation). Toute nouvelle table IA liee a l'utilisateur doit y etre ajoutee (`AI_EXPORT_SOURCES` dans `services/aiDataExportService.ts`).
 - **Suppression** : bouton "Supprimer mon compte" (suppression cascade de toutes les donnees)
 - **Contact DPO** : carnetnaturaliste.app@gmail.com
 
@@ -134,9 +162,10 @@ plus**. Ces sauvegardes sont chiffrees et servent exclusivement a une
 restauration apres sinistre : elles ne sont jamais utilisees pour recreer un
 compte supprime.
 
-Assistant IA (Traitement 9) : à la suppression du compte, la ligne `ai_access`
-est supprimée et les lignes `ai_usage` sont **rendues anonymes** (l'identifiant
+Assistant IA (Traitement 9) : à la suppression du compte, les lignes `ai_access`
+et `ai_consents` sont supprimées, et les lignes `ai_usage` sont **rendues anonymes** (l'identifiant
 est effacé, la dépense du mois reste comptée). Les sauvegardes techniques
-conservent les deux tables **35 jours au plus**. Les photos déjà envoyées à
-Anthropic suivent sa propre durée (30 jours, jusqu'à 2 ans en cas de contrôle
+conservent ces tables **35 jours au plus**. Les bilans gardés dans le
+navigateur sont effacés de l'appareil où le compte est supprimé. Les données
+déjà envoyées à Anthropic suivent sa propre durée (30 jours, jusqu'à 2 ans en cas de contrôle
 de sécurité) et ne peuvent pas être rappelées par le Carnet.

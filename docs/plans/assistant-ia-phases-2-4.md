@@ -6,7 +6,8 @@
   - une analyse photo réelle après la migration : ligne `identify`, statut `ok`, 0,011 $ (`ai-identify` inchangée fonctionne) ;
   - secrets `AI_TEXT_MODEL=claude-haiku-5-5` (provisoire) et `AI_DISABLED_FEATURES=summary` ; `ai-text` déployée avec `--use-api`, **fermée** ; contrôles sans frais : 401 renvoyé par la passerelle (`verify_jwt` actif), 204, 403.
   - **Essai du 2026-11-13** (§6.3 du guide) : Sonnet 5.5 contre Haiku 5.5 sur 15 entrées. Haiku a produit 2 bilans fautifs que la validation n'a pas vus (texte coupé à 23 mots, écart faux), Sonnet aucun. **Modèle retenu par le propriétaire : `claude-sonnet-5-5`** (0,0055 $ par bilan en moyenne). Corrections tirées de l'essai : plancher de 40 mots pour un mois qui compte des observations, consignes précisées, champ `individus`.
-  - **Reste** : en production, passer `AI_TEXT_MODEL` à `claude-sonnet-5-5` et redéployer `ai-text` (§6.3 du guide) ; puis la PR B du bilan.
+  - **Fait le 2026-11-13** : en production, `AI_TEXT_MODEL` vaut `claude-sonnet-5-5` et `ai-text` est redéployée (version 3, contrôles 401, 204 et 403 corrects) ; `summary` reste dans `AI_DISABLED_FEATURES`.
+  - **PR B du bilan** (application et textes légaux) : ouverte le 2026-11-13, voir « Écarts de mise en œuvre (PR B du bilan) » ci-dessous. Reste après sa fusion : §6.4 du guide.
 - **Écarts de mise en œuvre (PR A du bilan)** :
   - la migration finit par `notify pgrst, 'reload schema'`, et `ai_my_status` est remplacée par `create or replace` (droits conservés) ;
   - la migration de secours (`docs/ops/retour-arriere-ai-text-features.sql`) **garde** la contrainte élargie et la table `ai_consents` : remettre l'ancienne contrainte échouerait dès qu'une ligne `summary` existe ;
@@ -17,7 +18,16 @@
   - suite à la relecture sécurité : tous les caractères invisibles de format (classe Unicode Cf) sont retirés, `<` est échappé dans les données envoyées, et la migration pose `lock_timeout = 5s` ;
   - conseil pour la mise en production : `AI_DISABLED_FEATURES=summary` jusqu'à la PR B ;
   - `tests/security/ai-access-rls.mjs` est étendu mais **pas encore lancé** (Docker indisponible sur le portable) ; un banc sans Supabase, `tests/security/ai-text-bench.mjs`, a été lancé avec succès.
-- **Pour la PR B du bilan** (relevé pendant la PR A) :
+- **Écarts de mise en œuvre (PR B du bilan)** :
+  - un mois sans observation n'a pas de bouton « Rédiger le bilan » (rien à résumer : pas d'utilisation gâchée) ;
+  - à l'ouverture, le sélecteur prend le dernier mois complet **s'il compte des observations**, sinon le mois le plus récent qui en compte (un petit carnet n'ouvre pas sur un mois vide) ; chaque mois affiche son nombre d'observations ;
+  - un bilan rédigé pendant le mois puis relu une fois le mois terminé affiche « rédigé avant la fin du mois » ;
+  - la comparaison avec l'an passé n'est envoyée que si le carnet remonte jusqu'à ce mois-là (sinon `null`, pas des zéros trompeurs) ;
+  - les noms d'espèces sont bornés à 120 unités UTF-16 côté application, comme la fonction les compte ; si des noms très longs dépassaient 15 Ko, des espèces nouvelles passent dans « + N autres » ;
+  - le dernier compteur connu est gardé dans le navigateur (`ai-status-v1`), pour l'affichage hors ligne « au jj/mm » et la mention du bouton photo ; il est effacé avec le compte, comme les bilans (`ai-monthly-summaries-v1`) ;
+  - les deux clés sont purgées à la suppression du compte (`services/accountService.ts`), pas à la déconnexion : un bilan déjà payé n'est pas perdu en se reconnectant ;
+  - la table `ai_consents` est ajoutée à l'export RGPD (`assistant_ia.json`, section `consentements`).
+- **Pour la PR B du bilan** (relevé pendant la PR A, traité) :
   - retirer l'accès photo (« Retirer mon accord ») devrait aussi supprimer les lignes `ai_consents` ;
   - un renouvellement de consentement texte se fait toujours par suppression puis insertion, jamais par upsert ;
   - le texte du bilan peut contenir du HTML ou du markdown bruts : l'afficher en texte React, et l'échapper (`escHtml`) s'il entre un jour dans l'export PDF des statistiques (`services/statsExportService.ts`, qui passe par `innerHTML`).

@@ -1,6 +1,6 @@
 # Documentation des regions d'hebergement de l'infrastructure
 
-**Date de mise a jour** : 2026-11-05
+**Date de mise a jour** : 2026-11-13
 
 ---
 
@@ -12,8 +12,8 @@ d'hebergement et les implications RGPD.
 
 **Synthese : les donnees personnelles (compte, observations, photos, sons) sont hebergees
 dans l'Union europeenne (Supabase, region `eu-central-1` / Francfort). Cela ne couvre pas les traitements tiers : Turnstile traite des signaux techniques
-sur une infrastructure mondiale ; l'assistant d'identification (Anthropic, facultatif, sur consentement) envoie la photo
-aux États-Unis ; les sauvegardes techniques sont décrites dans le registre.**
+sur une infrastructure mondiale ; l'assistant IA (Anthropic, facultatif, sur consentement par fonctionnalité) envoie la photo
+(aide à l'identification) ou les chiffres du mois (bilan) aux États-Unis ; les sauvegardes techniques sont décrites dans le registre.**
 
 ---
 
@@ -44,27 +44,27 @@ aux États-Unis ; les sauvegardes techniques sont décrites dans le registre.**
 > L'application est une SPA statique : tout le traitement des donnees personnelles est
 > assure par Supabase (UE). Aucune fonction serveur Vercel ne traite de donnees personnelles.
 
-## 3. Supabase Edge Functions (delete-account, ai-identify)
+## 3. Supabase Edge Functions (delete-account, ai-identify, ai-text)
 
 | Composant | Detail |
 |---|---|
 | Service | Supabase Edge Functions |
 | Region | Meme region que le projet Supabase (`eu-central-1`, UE) |
-| Donnees traitees | `delete-account` : JWT token (verification), user ID (suppression). `ai-identify` : JWT token, photo réencodée et contexte (mois, pays, département, groupe, habitat), transmis à Anthropic. |
-| Donnees persistees | `delete-account` : aucune. `ai-identify` : ni photo ni hypothèses ; seulement une ligne de journal dans `ai_usage` (date, modèle, tokens, coût, statut), conservée 3 mois. |
+| Donnees traitees | `delete-account` : JWT token (verification), user ID (suppression). `ai-identify` : JWT token, photo réencodée et contexte (mois, pays, département, groupe, habitat), transmis à Anthropic. `ai-text` (bilan du mois) : JWT token, chiffres agrégés du mois et noms d'espèces (ni lieu, ni GPS, ni commentaire, ni date précise), transmis à Anthropic. |
+| Donnees persistees | `delete-account` : aucune. `ai-identify` et `ai-text` : ni photo, ni chiffres, ni hypothèses, ni texte produit ; seulement une ligne de journal dans `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut), conservée 3 mois. Le texte du bilan est gardé dans le navigateur de l'utilisateur, pas sur le serveur. |
 
-### 3 bis. Anthropic (assistant d'identification par IA)
+### 3 bis. Anthropic (assistant IA)
 
 | Composant | Detail |
 |---|---|
-| Service | API Claude (Anthropic), appelée uniquement par la fonction `ai-identify` |
+| Service | API Claude (Anthropic), appelée uniquement par les fonctions `ai-identify` (photo) et `ai-text` (bilan du mois) |
 | Sous-traitant | Anthropic, via Anthropic Ireland Ltd pour l'EEE (DPA intégré aux Commercial Terms) |
 | Region | Pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`) ; données stockées aux **États-Unis** |
-| Donnees recues | Photo réencodée (1 280 px max, sans EXIF ni GPS), mois, pays, département, groupe s'il a été choisi, habitat s'il est renseigné. Aucun identifiant ni email. |
+| Donnees recues | Photo : photo réencodée (1 280 px max, sans EXIF ni GPS), mois, pays, département, groupe s'il a été choisi, habitat s'il est renseigné. Bilan : mois, totaux, répartition par groupe, noms des espèces les plus observées et des espèces nouvelles, totaux de l'année précédente. Aucun identifiant ni email. |
 | Transfert hors UE | **Oui** — clauses contractuelles types de l'UE (modules 2 et 3) |
 | Conservation | Effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement par défaut. |
 
-Facultatif, sur consentement : voir le traitement 9 du [registre](registre-traitements.md).
+Facultatif, sur consentement donné pour chaque fonctionnalité : voir le traitement 9 du [registre](registre-traitements.md).
 
 ---
 
@@ -84,8 +84,8 @@ le traitement 8 du [registre](registre-traitements.md). La durée de validité d
 |---|---|---|---|
 | Cloudflare Turnstile | Mondial | IP et signaux techniques anti-robots | Possible |
 | Supabase (BDD + Storage) | eu-central-1 (UE) | Observations, auth, photos, sons | Non |
-| Supabase Edge Fn | eu-central-1 (UE) | JWT (ephemere), photo transmise à Anthropic | Non (la fonction elle-même) |
-| Anthropic (assistant IA) | US (stockage) | Photo réencodée + contexte, sur consentement | **Oui** (clauses contractuelles types) |
+| Supabase Edge Fn | eu-central-1 (UE) | JWT (ephemere), photo ou chiffres du mois transmis à Anthropic | Non (la fonction elle-même) |
+| Anthropic (assistant IA) | US (stockage) | Photo réencodée + contexte, ou chiffres du mois et noms d'espèces, sur consentement | **Oui** (clauses contractuelles types) |
 | Vercel (CDN) | Global | Frontend public (aucune donnee perso) | Sans objet |
 | iNaturalist | US | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |
 | GBIF | UE/Global | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |

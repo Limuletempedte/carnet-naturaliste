@@ -2,11 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getOfflineQueueSnapshot } from '../../services/storageService';
 import { useLiquidGlassRefraction } from '../LiquidGlass';
+import { SparklesIcon } from '../icons';
 
 interface UserProfileProps {
     onExportData?: () => void;
     onDeleteAccount?: () => void;
-    /** Ouvre la fenêtre de l'assistant d'identification (accès, consentement). */
+    /** Ouvre « Assistant IA » : accès, compteur, consentements par fonction. */
     onOpenAiAssistant?: () => void;
     /** Affiche l'item « Installer l'application » (mobile : prompt natif ou consigne iOS). */
     canInstallApp?: boolean;
@@ -121,10 +122,8 @@ const UserProfile: React.FC<UserProfileProps> = ({ onExportData, onDeleteAccount
                                 onClick={() => { setIsOpen(false); onOpenAiAssistant(); }}
                                 className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-nature-dark dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-xl transition-colors"
                             >
-                                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
-                                </svg>
-                                Aide à l'identification (IA)
+                                <SparklesIcon className="w-5 h-5 text-ai-600 dark:text-ai-300" />
+                                Assistant IA
                             </button>
                         )}
 

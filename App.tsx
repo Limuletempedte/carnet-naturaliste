@@ -988,6 +988,8 @@ const App: React.FC = () => {
                             onExportStats={handleExportStats}
                             isExportingStats={isExportingStats}
                             statsRootRef={statsRootRef}
+                            isOffline={isOffline}
+                            onOpenAiAssistant={() => setIsAiAccessOpen(true)}
                         />
                     ) : view === View.CALENDAR ? (
                         <ObservationCalendar

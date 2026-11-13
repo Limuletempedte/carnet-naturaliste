@@ -544,17 +544,11 @@ lecture : un « nous vous souhaitons », un « la lichen », et une déduction n
 
 Coût des deux essais : 0,18 $.
 
-**Reste à faire en production** (propriétaire), `summary` restant dans
-`AI_DISABLED_FEATURES` jusqu'à la PR B :
-
-1. *Edge Functions → Secrets* : passer `AI_TEXT_MODEL` à `claude-sonnet-5-5`.
-2. Redéployer la fonction, dont les consignes et la validation ont changé :
-
-   ```bash
-   npx supabase functions deploy ai-text --use-api
-   ```
-
-3. Refaire les trois contrôles sans frais du §6.2 (401, 204, 403).
+**Mise en production du modèle : faite le 13 novembre 2026** (propriétaire).
+`AI_TEXT_MODEL` vaut `claude-sonnet-5-5` et `ai-text` est redéployée (version
+3, consignes et validation à jour) ; les trois contrôles sans frais du §6.2
+sont corrects (401, 204, 403). `summary` reste dans `AI_DISABLED_FEATURES`
+jusqu'à la fusion de la PR B (§6.4).
 
 Les essais de la note et de la recherche se feront avec le même outil
 (`--feature note`, `--feature search`), une fois ces fonctionnalités écrites,

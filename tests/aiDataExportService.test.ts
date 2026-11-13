@@ -47,10 +47,11 @@ describe('aiDataExportService', () => {
         mocks.warn.mockReset();
     });
 
-    it("lit ai_access et ai_usage de l'utilisateur, colonnes explicites, ordre chronologique", async () => {
+    it("lit ai_access, ai_usage et ai_consents de l'utilisateur, colonnes explicites, ordre chronologique", async () => {
         const access = { status: 'approved', consent_version: '2026-11-v1', requested_at: '2026-11-05T10:00:00Z', decided_at: '2026-11-05T11:00:00Z', note: null, monthly_quota: 20 };
         const usage = { created_at: '2026-11-05T12:00:00Z', feature: 'identify', model: 'claude-x', input_tokens: 1200, output_tokens: 300, cost_usd: 0.0123, status: 'ok' };
-        const calls = mockTables({ ai_access: { data: [access] }, ai_usage: { data: [usage] } });
+        const consent = { feature: 'summary', version: '2026-11-v1', given_at: '2026-11-14T08:00:00Z' };
+        const calls = mockTables({ ai_access: { data: [access] }, ai_usage: { data: [usage] }, ai_consents: { data: [consent] } });
 
         const result = await fetchAiDataForExport(captureSessionContext());
 
@@ -58,7 +59,8 @@ describe('aiDataExportService', () => {
         expect(result.unavailable).toEqual([]);
         expect(result.sections.acces.rows).toEqual([access]);
         expect(result.sections.utilisations.rows).toEqual([usage]);
-        expect(calls.map(c => c.table)).toEqual(['ai_access', 'ai_usage']);
+        expect(result.sections.consentements.rows).toEqual([consent]);
+        expect(calls.map(c => c.table)).toEqual(['ai_access', 'ai_usage', 'ai_consents']);
         for (const call of calls) {
             expect(call.eq).toEqual(['user_id', 'user-1']);
             expect(call.columns).not.toContain('*');
@@ -68,19 +70,21 @@ describe('aiDataExportService', () => {
         expect(calls[0].columns).toBe('status,consent_version,requested_at,decided_at,note,monthly_quota');
         expect(calls[1].columns).toBe('created_at,feature,model,input_tokens,output_tokens,cost_usd,status');
         expect(calls[1].order).toBe('created_at');
+        expect(calls[2].columns).toBe('feature,version,given_at');
+        expect(calls[2].order).toBe('given_at');
     });
 
     it("renvoie des sections vides pour qui n'a jamais utilisé l'assistant", async () => {
-        mockTables({ ai_access: { data: [] }, ai_usage: { data: [] } });
+        mockTables({ ai_access: { data: [] }, ai_usage: { data: [] }, ai_consents: { data: [] } });
         const result = await fetchAiDataForExport(captureSessionContext());
         expect(result.complete).toBe(true);
-        expect(Object.keys(result.sections)).toEqual(['acces', 'utilisations']);
+        expect(Object.keys(result.sections)).toEqual(['acces', 'utilisations', 'consentements']);
         expect(result.sections.acces.rows).toEqual([]);
         expect(result.sections.utilisations.rows).toEqual([]);
     });
 
     it("signale une table illisible sans faire échouer l'export", async () => {
-        mockTables({ ai_access: { data: [] }, ai_usage: { error: { message: 'Failed to fetch' } } });
+        mockTables({ ai_access: { data: [] }, ai_usage: { error: { message: 'Failed to fetch' } }, ai_consents: { data: [] } });
         const result = await fetchAiDataForExport(captureSessionContext());
         expect(result.complete).toBe(false);
         expect(result.unavailable).toEqual(['ai_usage']);
@@ -98,14 +102,13 @@ describe('aiDataExportService', () => {
     });
 
     it("point d'extension : une source ajoutée apparaît dans l'export", async () => {
-        const consents: AiExportSource = {
-            key: 'consentements', table: 'ai_consents', columns: ['feature', 'consent_version', 'given_at'],
-            orderBy: 'given_at', description: 'Consentements par fonctionnalité.',
+        const extra: AiExportSource = {
+            key: 'essai', table: 'ai_essai', columns: ['a'], orderBy: 'a', description: 'Source de test.',
         };
-        const calls = mockTables({ ai_consents: { data: [{ feature: 'summary', consent_version: 'v1', given_at: '2026-12-01' }] } });
-        const result = await fetchAiDataForExport(captureSessionContext(), [...AI_EXPORT_SOURCES, consents]);
-        expect(calls.map(c => c.table)).toContain('ai_consents');
-        expect(result.sections.consentements.rows).toHaveLength(1);
+        const calls = mockTables({ ai_access: { data: [] }, ai_usage: { data: [] }, ai_consents: { data: [] }, ai_essai: { data: [{ a: 1 }] } });
+        const result = await fetchAiDataForExport(captureSessionContext(), [...AI_EXPORT_SOURCES, extra]);
+        expect(calls.map(c => c.table)).toContain('ai_essai');
+        expect(result.sections.essai.rows).toHaveLength(1);
     });
 
     it('le fichier exporté porte un titre, une date et une section par source', () => {
