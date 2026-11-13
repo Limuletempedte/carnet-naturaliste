@@ -14,8 +14,8 @@ texte `ai-text`.
 | Retour arrière SQL du lot texte | `docs/ops/retour-arriere-ai-text-features.sql` (hors `migrations/`, voir §6.6) |
 | Fonctions Edge | `supabase/functions/ai-identify/` (photo) et `supabase/functions/ai-text/` (texte) : `index.ts` (appel) et `logic.ts` (règles) |
 | Réglage `verify_jwt` | `supabase/config.toml`, sections `[functions.ai-identify]` et `[functions.ai-text]` |
-| Application | `services/aiAssistService.ts`, `components/AiAccessDialog.tsx` (accès, consentement), `components/AiIdentificationPanel.tsx`, bouton dans `components/ObservationForm.tsx`, entrée du menu du compte |
-| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiTextLogic.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx` (lancés par `npm run check`) |
+| Application | `services/aiAssistService.ts`, `components/AiAccessDialog.tsx` (point central « Assistant IA » : accès, compteur, consentements), `components/AiButton.tsx` (bouton IA commun), `components/AiConsentCard.tsx` (accord au premier usage), `components/AiIdentificationPanel.tsx`, bouton dans `components/ObservationForm.tsx`, entrée du menu du compte ; bilan du mois : `utils/monthlySummaryStats.ts` (chiffres), `components/MonthlySummaryCard.tsx` (onglet Stats), `services/monthlySummaryCache.ts` (bilans gardés dans le navigateur, purge des expirés) |
+| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiTextLogic.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx`, `tests/AiButton.test.tsx`, `tests/AiConsentCard.test.tsx`, `tests/MonthlySummaryCard.test.tsx`, `tests/monthlySummaryStats.test.ts`, `tests/monthlySummaryCache.test.ts`, `tests/aiColorContrast.test.ts` (lancés par `npm run check`) |
 | Tests de sécurité locaux | `tests/security/ai-access-rls.mjs` (Supabase local) et `tests/security/ai-text-bench.mjs` (`ai-text` seule, sans Supabase) |
 
 En bref : une personne **demande** l'accès (ligne `pending` dans `ai_access`),

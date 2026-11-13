@@ -28,6 +28,14 @@
   - le dernier compteur connu est gardé dans le navigateur (`ai-status-v1`), pour l'affichage hors ligne « au jj/mm » et la mention du bouton photo ; il est effacé avec le compte, comme les bilans (`ai-monthly-summaries-v1`) ;
   - les deux clés sont purgées à la suppression du compte (`services/accountService.ts`), pas à la déconnexion : un bilan déjà payé n'est pas perdu en se reconnectant ;
   - la table `ai_consents` est ajoutée à l'export RGPD (`assistant_ia.json`, section `consentements`).
+- **Corrections après la relecture croisée de la PR B** (PR suivante, sans changer le texte du consentement `2026-11-v1`) :
+  - « 24 mois au plus » devient une vraie durée : un bilan expire 24 mois après sa rédaction, n'est plus relu, et une purge au démarrage retire les expirés de **tous** les comptes du navigateur ; textes légaux précisés (effacés de l'appareil où le compte est supprimé, ailleurs à expiration) ;
+  - un seul envoi à la fois (verrou dès le clic), sélecteur figé pendant la vérification, l'accord et la rédaction, « Annuler » arrête la suite ;
+  - noms d'espèces calculés sur le seul mois résumé et choisis sans dépendre de l'ordre (plus de faux « Chiffres modifiés ») ; homonymes distingués par le nom latin ;
+  - pas de comparaison avec l'an passé pour le mois en cours, ni si le carnet a commencé après le 1er de ce mois-là ;
+  - la carte affiche tout ce qui est envoyé : répartition par groupe, jusqu'à 15 espèces et 30 nouvelles (repliables) ;
+  - accessibilité : résultat annoncé (`role="status"`), focus gardé sur le bouton pendant l'attente, rendu au bouton après l'accord, rendu au déclencheur à la fermeture d'« Assistant IA » ;
+  - compteur oublié quand l'accès n'est plus approuvé ; message hors ligne neutre.
 - **Pour la PR B du bilan** (relevé pendant la PR A, traité) :
   - retirer l'accès photo (« Retirer mon accord ») devrait aussi supprimer les lignes `ai_consents` ;
   - un renouvellement de consentement texte se fait toujours par suppression puis insertion, jamais par upsert ;

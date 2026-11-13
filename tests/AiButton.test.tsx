@@ -22,10 +22,19 @@ describe('AiButton', () => {
         expect(onClick).not.toHaveBeenCalled();
     });
 
-    it('affiche le libellé d’attente et bloque un second clic', () => {
-        render(<AiButton label="Rédiger le bilan" loadingLabel="Rédaction en cours…" onClick={vi.fn()} isLoading />);
-        const button = screen.getByRole('button', { name: 'Rédaction en cours…' }) as HTMLButtonElement;
-        expect(button.disabled).toBe(true);
+    it('affiche le libellé d’attente et bloque un second clic, sans perdre le focus', () => {
+        const onClick = vi.fn();
+        const { rerender } = render(<AiButton label="Rédiger le bilan" loadingLabel="Rédaction en cours…" onClick={onClick} />);
+        const button = screen.getByRole('button', { name: 'Rédiger le bilan' }) as HTMLButtonElement;
+        button.focus();
+        rerender(<AiButton label="Rédiger le bilan" loadingLabel="Rédaction en cours…" onClick={onClick} isLoading />);
+        expect(screen.getByRole('button', { name: 'Rédaction en cours…' })).toBe(button);
+        // aria-disabled plutôt que disabled : le focus clavier reste sur le bouton.
+        expect(button.disabled).toBe(false);
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(document.activeElement).toBe(button);
+        fireEvent.click(button);
+        expect(onClick).not.toHaveBeenCalled();
         expect(button.getAttribute('aria-busy')).toBe('true');
         // L'icône ne s'anime que si l'appareil accepte les animations.
         expect(button.querySelector('svg')?.getAttribute('class')).toContain('motion-safe:animate-pulse');

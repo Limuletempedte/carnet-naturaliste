@@ -91,12 +91,44 @@ describe('computeMonthlySummaryStats', () => {
         expect(stats.newSpecies).toEqual([]);
     });
 
-    it('ne compare à l’an passé que si le carnet remonte jusque-là', () => {
+    it('ne compare à l’an passé que si le carnet couvre ce mois en entier', () => {
         expect(computeMonthlySummaryStats(data, '2026-10', NOW).previousYear).toBeNull();
         const older = [...data, obs('Pinson des arbres', 'Fringilla coelebs', '2025-09-01')];
         expect(computeMonthlySummaryStats(older, '2026-10', NOW).previousYear).toEqual({ observations: 0, species: 0, activeDays: 0 });
-        const sameMonth = [...data, obs('Pinson des arbres', 'Fringilla coelebs', '2025-10-05', { count: 4 })];
-        expect(computeMonthlySummaryStats(sameMonth, '2026-10', NOW).previousYear).toEqual({ observations: 1, species: 1, activeDays: 1 });
+        const fromFirstDay = [...data, obs('Pinson des arbres', 'Fringilla coelebs', '2025-10-01', { count: 4 })];
+        expect(computeMonthlySummaryStats(fromFirstDay, '2026-10', NOW).previousYear).toEqual({ observations: 1, species: 1, activeDays: 1 });
+    });
+
+    it('ne compare pas un carnet commencé en cours de mois l’an passé', () => {
+        // Première observation le 30 octobre 2025 : octobre 2025 est incomplet.
+        const lateStart = [...data, obs('Pinson des arbres', 'Fringilla coelebs', '2025-10-30')];
+        expect(computeMonthlySummaryStats(lateStart, '2026-10', NOW).previousYear).toBeNull();
+    });
+
+    it('ne compare pas le mois en cours à un mois entier de l’an passé', () => {
+        const withLastYear = [...data, obs('Pinson des arbres', 'Fringilla coelebs', '2025-09-01'), obs('Pinson des arbres', 'Fringilla coelebs', '2025-11-20')];
+        const current = computeMonthlySummaryStats(withLastYear, '2026-11', NOW);
+        expect(current.provisional).toBe(true);
+        expect(current.previousYear).toBeNull();
+    });
+
+    it('distingue par le nom latin deux espèces qui partagent un nom courant', () => {
+        const pouillots = [
+            obs('Pouillot', 'Phylloscopus collybita', '2026-10-02', { count: 3 }),
+            obs('Pouillot', 'Phylloscopus trochilus', '2026-10-05'),
+        ];
+        const stats = computeMonthlySummaryStats(pouillots, '2026-10', NOW);
+        expect(stats.species.map(item => item.name)).toEqual(['Pouillot (Phylloscopus collybita)', 'Pouillot (Phylloscopus trochilus)']);
+        expect(new Set(stats.newSpecies).size).toBe(2);
+        expect(validateSummaryInput(buildMonthlySummaryPayload(stats)).ok).toBe(true);
+    });
+
+    it('choisit le nom affiché sans dépendre de l’ordre des observations', () => {
+        const a = obs('Rouge-gorge familier', 'Erithacus rubecula', '2026-10-03');
+        const b = obs('Rougegorge familier', 'Erithacus rubecula', '2026-10-12');
+        const first = computeMonthlySummaryStats([a, b], '2026-10', NOW).species[0].name;
+        const second = computeMonthlySummaryStats([b, a], '2026-10', NOW).species[0].name;
+        expect(first).toBe(second);
     });
 
     it('range un groupe inconnu dans « Autre » et compte 1 un effectif invalide', () => {
@@ -134,11 +166,18 @@ describe('buildMonthlySummaryPayload', () => {
     });
 
     it('reste sous la taille du corps même avec des noms très longs', () => {
-        const long = (i: number) => `${'𝔄é'.repeat(55)}${String(i).padStart(3, '0')}`;
+        // Numéro en tête (il survit à la coupe à 120) et caractères de 3 octets :
+        // sans réduction, le corps dépasserait 15 Ko.
+        const long = (i: number) => `${String(i).padStart(3, '0')}${'鳥'.repeat(130)}`;
         const data = Array.from({ length: 45 }, (_, i) => obs(long(i), `Genus species${i}`, '2026-10-05'));
-        const payload = buildMonthlySummaryPayload(computeMonthlySummaryStats(data, '2026-10', NOW));
+        const stats = computeMonthlySummaryStats(data, '2026-10', NOW);
+        expect(new Set(stats.newSpecies).size).toBe(45);
+        const payload = buildMonthlySummaryPayload(stats);
         const bytes = new TextEncoder().encode(JSON.stringify({ feature: 'summary', payload })).length;
+        expect(bytes).toBeLessThanOrEqual(MONTHLY_SUMMARY_LIMITS.maxPayloadBytes);
         expect(bytes).toBeLessThanOrEqual(MAX_BODY_BYTES);
+        expect(payload.newSpecies.length).toBeLessThan(SUMMARY_LIMITS.maxNewSpecies);
+        expect(payload.newSpeciesMore).toBeGreaterThan(15);
         expect(payload.newSpecies.length + payload.newSpeciesMore).toBe(45);
         expect(validateSummaryInput(payload).ok).toBe(true);
     });
@@ -179,6 +218,20 @@ describe('mois', () => {
 });
 
 describe('summaryFingerprint', () => {
+    it('ne change pas quand on saisit une observation un autre mois', () => {
+        const october = [
+            obs('Rouge-gorge familier', 'Erithacus rubecula', '2026-09-12'),
+            obs('Rougegorge familier', 'Erithacus rubecula', '2026-10-03'),
+        ];
+        const before = summaryFingerprint(buildMonthlySummaryPayload(computeMonthlySummaryStats(october, '2026-10', NOW)));
+        const withNovember = [obs('Rouge-gorge familier', 'Erithacus rubecula', '2026-11-13'), ...october];
+        const after = summaryFingerprint(buildMonthlySummaryPayload(computeMonthlySummaryStats(withNovember, '2026-10', NOW)));
+        expect(after).toBe(before);
+        // L'ordre du tableau ne compte pas non plus.
+        const reversed = summaryFingerprint(buildMonthlySummaryPayload(computeMonthlySummaryStats([...withNovember].reverse(), '2026-10', NOW)));
+        expect(reversed).toBe(before);
+    });
+
     it('change quand les chiffres changent, pas avec la seule mention provisoire', () => {
         const data = [obs('Rougegorge familier', 'Erithacus rubecula', '2026-10-03')];
         const a = buildMonthlySummaryPayload(computeMonthlySummaryStats(data, '2026-10', NOW));

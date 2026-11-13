@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { SparklesIcon } from './icons';
 import type { AiTextFeature } from '../services/aiAssistService';
 
@@ -87,6 +87,8 @@ interface AiConsentCardProps {
     error?: string | null;
     /** Libellé du bouton d'acceptation (« Accepter et rédiger »). */
     acceptLabel?: string;
+    /** Prend le focus à l'apparition (la carte remplace le bouton cliqué). */
+    autoFocus?: boolean;
 }
 
 /**
@@ -104,14 +106,21 @@ const AiConsentCard: React.FC<AiConsentCardProps> = ({
     outdated = false,
     error = null,
     acceptLabel = 'Accepter',
+    autoFocus = false,
 }) => {
     const [checked, setChecked] = useState(false);
     const titleId = useId();
+    const sectionRef = useRef<HTMLElement | null>(null);
+    useEffect(() => {
+        if (autoFocus) sectionRef.current?.focus();
+    }, [autoFocus]);
     return (
         <section
+            ref={sectionRef}
+            tabIndex={-1}
             aria-labelledby={titleId}
             data-testid={`ai-consent-card-${feature}`}
-            className="rounded-2xl border border-ai-200 bg-ai-50/80 p-4 sm:p-5 space-y-4 dark:border-ai-400/30 dark:bg-ai-500/10"
+            className="rounded-2xl border border-ai-200 bg-ai-50/80 p-4 sm:p-5 space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ai-500 dark:border-ai-400/30 dark:bg-ai-500/10"
         >
             <div className="flex items-start gap-3">
                 <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ai-100 text-ai-700 dark:bg-ai-500/20 dark:text-ai-200">

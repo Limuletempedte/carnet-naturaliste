@@ -133,9 +133,17 @@ describe('AiAccessDialog', () => {
     });
 
     it('affiche un message clair si le statut est illisible', async () => {
+        mocks.getAiOverview.mockRejectedValue(new AiAssistError('unknown'));
+        renderDialog();
+        expect((await screen.findByRole('alert')).textContent).toContain('Réessayez');
+    });
+
+    it('hors ligne, n’affiche pas d’erreur rouge mais la mention « en ligne uniquement »', async () => {
         mocks.getAiOverview.mockRejectedValue(new AiAssistError('offline'));
         renderDialog();
-        expect((await screen.findByRole('alert')).textContent).toContain("n'est disponible qu'en ligne");
+        expect(await screen.findByText('Disponible en ligne uniquement.')).toBeTruthy();
+        expect(screen.queryByRole('alert')).toBeNull();
+        expect(screen.queryByText(/aide à l'identification n'est disponible/)).toBeNull();
     });
 
     it('désactive les actions hors ligne', async () => {
@@ -212,5 +220,18 @@ describe('AiAccessDialog', () => {
         const line = await screen.findByTestId('ai-cached-counter');
         expect(line.textContent).toContain('7 utilisations restantes sur 20');
         expect(line.textContent).toContain(`au ${now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}`);
+    });
+
+    it('rend le focus au bouton déclencheur à la fermeture (fenêtre gardée montée)', async () => {
+        mocks.getAiOverview.mockResolvedValue(ov({ kind: 'none' }));
+        const trigger = document.createElement('button');
+        document.body.appendChild(trigger);
+        trigger.focus();
+        const { rerender } = render(<AiAccessDialog isOpen onClose={vi.fn()} />);
+        await screen.findByRole('button', { name: "Demander l'accès" });
+        expect(document.activeElement).not.toBe(trigger);
+        rerender(<AiAccessDialog isOpen={false} onClose={vi.fn()} />);
+        expect(document.activeElement).toBe(trigger);
+        trigger.remove();
     });
 });

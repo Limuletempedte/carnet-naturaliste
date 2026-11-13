@@ -22,6 +22,8 @@ interface AiButtonProps {
     /** Explication ajoutée sous la mention du quota (en ligne seulement). */
     hint?: React.ReactNode;
     className?: string;
+    /** Accès au bouton (pour lui rendre le focus). */
+    buttonRef?: React.Ref<HTMLButtonElement>;
 }
 
 /**
@@ -39,19 +41,24 @@ const AiButton: React.FC<AiButtonProps> = ({
     remaining,
     hint,
     className = '',
+    buttonRef,
 }) => {
     const helpId = useId();
     const text = isLoading && loadingLabel ? loadingLabel : label;
     return (
         <div className={className}>
+            {/* Pendant l'attente : `aria-disabled` plutôt que `disabled`, pour que
+                le focus clavier reste sur le bouton ; le clic est ignoré. */}
             <button
+                ref={buttonRef}
                 type="button"
-                onClick={onClick}
-                disabled={disabled || isOffline || isLoading}
+                onClick={isLoading ? undefined : onClick}
+                disabled={disabled || isOffline}
+                aria-disabled={isLoading || undefined}
                 aria-label={text}
                 aria-describedby={helpId}
                 aria-busy={isLoading || undefined}
-                className="min-h-[44px] inline-flex items-center gap-2 rounded-full border border-ai-300 bg-ai-50 px-4 py-2 text-sm font-semibold text-ai-700 shadow-sm transition-all hover:bg-ai-100 hover:border-ai-400 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ai-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 dark:border-ai-400/40 dark:bg-ai-500/15 dark:text-ai-200 dark:hover:bg-ai-500/25 dark:focus-visible:ring-offset-nature-dark-surface"
+                className="min-h-[44px] inline-flex items-center gap-2 rounded-full border border-ai-300 bg-ai-50 px-4 py-2 text-sm font-semibold text-ai-700 shadow-sm transition-all hover:bg-ai-100 hover:border-ai-400 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ai-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 aria-disabled:cursor-wait aria-disabled:opacity-60 dark:border-ai-400/40 dark:bg-ai-500/15 dark:text-ai-200 dark:hover:bg-ai-500/25 dark:focus-visible:ring-offset-nature-dark-surface"
             >
                 <SparklesIcon className={`w-5 h-5 ${isLoading ? 'motion-safe:animate-pulse' : ''}`} />
                 {text}

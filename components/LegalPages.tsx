@@ -70,7 +70,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
                 <li><strong>Compte et observations</strong> : conserves tant que le compte est actif. Supprimes immediatement a la demande de suppression du compte ; les sauvegardes techniques deja constituees expirent au plus tard sous 35 jours.</li>
                 <li><strong>Cache local (navigateur)</strong> : 90 jours maximum, renouvele a chaque synchronisation.</li>
                 <li><strong>Photos et sons</strong> : conserves tant que l'observation associee existe.</li>
-                <li><strong>Assistant IA</strong> : la demande d'accès et les accords par fonction sont conservés jusqu'au retrait de votre accord ou à la suppression du compte ; le journal d'usage est conservé 3 mois, puis effacé (il est rendu anonyme si le compte est supprimé). Les bilans du mois rédigés restent dans votre navigateur (24 mois au plus, effacés avec le compte). Chez Anthropic, les données envoyées et les réponses sont effacées sous 30 jours, ou jusqu'à 2 ans si un contrôle de sécurité signale la demande.</li>
+                <li><strong>Assistant IA</strong> : la demande d'accès et les accords par fonction sont conservés jusqu'au retrait de votre accord ou à la suppression du compte ; le journal d'usage est conservé 3 mois, puis effacé (il est rendu anonyme si le compte est supprimé). Les bilans du mois rédigés restent dans le navigateur où ils ont été rédigés, 24 mois au plus après leur rédaction (un bilan plus ancien est effacé à la prochaine ouverture de l'application dans ce navigateur). Ils sont aussi effacés de l'appareil depuis lequel vous supprimez votre compte ; sur vos autres appareils, ils restent jusqu'à leur expiration ou jusqu'à ce que vous effaciez les données du site. Chez Anthropic, les données envoyées et les réponses sont effacées sous 30 jours, ou jusqu'à 2 ans si un contrôle de sécurité signale la demande.</li>
             </ul>
         </Section>
 
@@ -109,7 +109,7 @@ export const PrivacyPolicy: React.FC<LegalPageProps> = ({ onBack }) => (
                 <li>Fonctionner hors-ligne (cache des observations)</li>
                 <li>Maintenir la session d'authentification</li>
                 <li>Sauvegarder les preferences (mode sombre, filtres)</li>
-                <li>Garder les bilans du mois rédigés par l'assistant IA (24 mois au plus) et le dernier compteur d'utilisations connu, pour les relire hors ligne</li>
+                <li>Garder les bilans du mois rédigés par l'assistant IA (24 mois au plus après leur rédaction) et le dernier compteur d'utilisations connu (jusqu'à la fin du mois), pour les relire hors ligne</li>
             </ul>
             <p><strong>Aucun cookie traceur ou analytique n'est utilise.</strong></p>
         </Section>

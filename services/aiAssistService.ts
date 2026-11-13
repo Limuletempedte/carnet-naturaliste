@@ -88,7 +88,7 @@ export type AiAssistErrorCode =
     | 'unknown';
 
 const ERROR_MESSAGES: Record<AiAssistErrorCode, string> = {
-    offline: "L'aide à l'identification n'est disponible qu'en ligne.",
+    offline: "L'assistant n'est disponible qu'en ligne.",
     cancelled: 'Analyse annulée.',
     timeout: "L'analyse a pris trop de temps. Réessayez plus tard.",
     stale_session: 'Analyse annulée : le compte actif a changé.',
@@ -280,8 +280,19 @@ export interface CachedAiCounter {
     at: string;
 }
 
+/** Oublie le dernier compteur connu (accès retiré, refusé ou en attente). */
+export const forgetCachedAiCounter = (context: SessionContext): void => {
+    try {
+        assertSessionContext(context);
+        localStorage.removeItem(`${AI_STATUS_CACHE_PREFIX}:${context.userId}`);
+    } catch { /* stockage indisponible ou compte changé */ }
+};
+
 const writeCachedCounter = (overview: AiOverview, context: SessionContext) => {
-    if (overview.access.kind !== 'approved') return;
+    if (overview.access.kind !== 'approved') {
+        forgetCachedAiCounter(context);
+        return;
+    }
     const value: CachedAiCounter = {
         remaining: overview.access.remaining,
         monthlyQuota: overview.access.monthlyQuota,
@@ -369,6 +380,7 @@ export async function withdrawAccess(context: SessionContext = captureSessionCon
         if (consents.error) throw consents.error;
         const { error } = await inSession(context, () => supabase.from('ai_access').delete().eq('user_id', context.userId));
         if (error) throw error;
+        forgetCachedAiCounter(context);
     } catch (error) {
         throw wrapAccessError('retrait', error);
     }

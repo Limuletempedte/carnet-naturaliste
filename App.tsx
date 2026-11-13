@@ -93,6 +93,11 @@ const App: React.FC = () => {
     const [connectionStatus, setConnectionStatus] = useState<AppConnectionStatus>(isOffline ? 'offline' : 'online');
     const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
     const [isAiAccessOpen, setIsAiAccessOpen] = useState(false);
+    // Une fois ouverte, la fenêtre reste montée (elle ne rend rien fermée) :
+    // useAccessibleDialog voit ainsi la fermeture et rend le focus au bouton
+    // qui l'a ouverte (menu du compte, carte du bilan, formulaire).
+    const [isAiAccessMounted, setIsAiAccessMounted] = useState(false);
+    const openAiAccessDialog = useCallback(() => { setIsAiAccessMounted(true); setIsAiAccessOpen(true); }, []);
     const closeAiAccessDialog = useCallback(() => setIsAiAccessOpen(false), []);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -114,6 +119,15 @@ const App: React.FC = () => {
     useEffect(() => {
         try { safeSet('darkMode', String(isDarkMode)); } catch { /* non-critical */ }
     }, [isDarkMode]);
+
+    // Assistant IA : retire au démarrage les bilans expirés (24 mois après leur
+    // rédaction) et les compteurs d'un mois passé, pour tous les comptes de ce
+    // navigateur — y compris un compte supprimé depuis un autre appareil.
+    useEffect(() => {
+        void import('./services/monthlySummaryCache')
+            .then(module => module.purgeExpiredAiBrowserData())
+            .catch(() => { /* non critique : réessayé au prochain démarrage */ });
+    }, []);
 
     const removeToast = useCallback((id: string) => {
         setToasts(prev => prev.filter(t => t.id !== id));
@@ -697,7 +711,7 @@ const App: React.FC = () => {
             {/* Mobile Layout: Glass Header */}
             {isMobileView ? (
                 <header ref={headerGlassRef} className="fixed top-0 left-0 right-0 z-50 px-4 py-2 liquid-glass liquid-glass-sheen border-x-0 border-t-0 flex items-center justify-between transition-all duration-300">
-                    <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onOpenAiAssistant={() => setIsAiAccessOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
+                    <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onOpenAiAssistant={openAiAccessDialog} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     <div className="flex items-center gap-1.5">
                         {/* Server Status Mobile — pastille + libellé accessible (UIA-05) */}
                         <span role="status" className="flex items-center" title={statusTitle}>
@@ -745,7 +759,7 @@ const App: React.FC = () => {
                 /* Desktop Layout: Floating Buttons */
                 <>
                     <div className="fixed top-6 left-6 z-50">
-                        <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onOpenAiAssistant={() => setIsAiAccessOpen(true)} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
+                        <UserProfile onExportData={handleExportUserData} onDeleteAccount={() => setIsDeleteAccountOpen(true)} onOpenAiAssistant={openAiAccessDialog} canInstallApp={showInstallOption} onInstall={() => void handleInstallClick()} />
                     </div>
 
                     <div className="fixed top-6 right-6 z-50 flex items-center gap-3">
@@ -802,7 +816,7 @@ const App: React.FC = () => {
                     message={confirmation.message}
                 />
             )}
-            {isAiAccessOpen && (
+            {(isAiAccessOpen || isAiAccessMounted) && (
                 <Suspense fallback={null}>
                     <AiAccessDialog isOpen={isAiAccessOpen} onClose={closeAiAccessDialog} isOffline={isOffline} />
                 </Suspense>
@@ -989,7 +1003,7 @@ const App: React.FC = () => {
                             isExportingStats={isExportingStats}
                             statsRootRef={statsRootRef}
                             isOffline={isOffline}
-                            onOpenAiAssistant={() => setIsAiAccessOpen(true)}
+                            onOpenAiAssistant={openAiAccessDialog}
                         />
                     ) : view === View.CALENDAR ? (
                         <ObservationCalendar
@@ -1065,7 +1079,7 @@ const App: React.FC = () => {
                             initialPosition={pendingPosition}
                             onToast={pushToast}
                             isOffline={isOffline}
-                            onOpenAiAccess={() => setIsAiAccessOpen(true)}
+                            onOpenAiAccess={openAiAccessDialog}
                         />
                     )}
                 </Suspense>

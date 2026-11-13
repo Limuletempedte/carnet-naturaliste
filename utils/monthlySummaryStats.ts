@@ -88,23 +88,51 @@ const observationMonth = (observation: Observation): string | null => DATE_RE.ex
 export interface SpeciesKeyResolver {
     /** Clé de l'espèce, ou null si l'observation n'a aucun nom. */
     keyOf(observation: Observation): string | null;
-    /** Nom affiché pour une clé : le nom courant le plus fréquent, sinon le nom latin. */
+    /** Nom affiché pour une clé, d'après tout le carnet (le bilan utilise `speciesNamesFor`). */
     nameOf(key: string): string;
+    /** Nom latin lisible d'une clé, d'après tout le carnet ('' si inconnu). */
+    latinOf(key: string): string;
 }
+
+/** Soin apporté à une graphie : majuscule et accents comptent. */
+const spellingCare = (name: string): number =>
+    (/\p{Lu}/u.test(name) ? 1 : 0) + (/[\u0300-\u036f]/.test(name.normalize('NFD')) ? 1 : 0);
+
+/**
+ * Choisit une graphie parmi des comptes, SANS dépendre de l'ordre des
+ * observations : la plus fréquente, puis la plus soignée (majuscule,
+ * accents), puis l'ordre alphabétique.
+ */
+const pickName = (counts: Map<string, number> | undefined): string => {
+    if (!counts || counts.size === 0) return '';
+    return [...counts.entries()].sort((a, b) =>
+        b[1] - a[1]
+        || spellingCare(b[0]) - spellingCare(a[0])
+        || a[0].localeCompare(b[0], 'fr'))[0][0];
+};
+
+const addCount = (map: Map<string, Map<string, number>>, key: string, name: string) => {
+    if (!name) return;
+    const counts = map.get(key) ?? new Map<string, number>();
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    map.set(key, counts);
+};
 
 /**
  * Une seule clé par espèce : le nom latin normalisé ; à défaut, le nom latin
- * trouvé ailleurs dans le carnet pour le même nom courant ; à défaut, le nom
- * courant normalisé. Ainsi « Mésange charbonnière » saisie une fois sans nom
- * latin n'est pas comptée comme une seconde espèce.
+ * trouvé ailleurs dans le carnet pour le même nom courant (le plus fréquent) ;
+ * à défaut, le nom courant normalisé. Ainsi « Mésange charbonnière » saisie
+ * une fois sans nom latin n'est pas comptée comme une seconde espèce.
  */
 export const buildSpeciesKeyResolver = (observations: readonly Observation[]): SpeciesKeyResolver => {
-    const latinByCommon = new Map<string, string>();
+    const latinsByCommon = new Map<string, Map<string, number>>();
     for (const observation of observations) {
         const common = normalizeSearchText(observation.speciesName ?? '');
         const latin = normalizeSearchText(observation.latinName ?? '');
-        if (common && latin && !latinByCommon.has(common)) latinByCommon.set(common, latin);
+        if (common && latin) addCount(latinsByCommon, common, latin);
     }
+    const latinByCommon = new Map<string, string>();
+    for (const [common, counts] of latinsByCommon) latinByCommon.set(common, pickName(counts));
 
     const keyOf = (observation: Observation): string | null => {
         const latin = normalizeSearchText(observation.latinName ?? '');
@@ -115,32 +143,58 @@ export const buildSpeciesKeyResolver = (observations: readonly Observation[]): S
         return mapped ? `l:${mapped}` : `c:${common}`;
     };
 
-    // Noms affichés : comptage des noms courants par clé.
     const commonNames = new Map<string, Map<string, number>>();
-    const latinNames = new Map<string, string>();
+    const latinNames = new Map<string, Map<string, number>>();
     for (const observation of observations) {
         const key = keyOf(observation);
         if (!key) continue;
-        const common = cleanSpeciesName(observation.speciesName);
-        if (common) {
-            const counts = commonNames.get(key) ?? new Map<string, number>();
-            counts.set(common, (counts.get(common) ?? 0) + 1);
-            commonNames.set(key, counts);
-        }
-        const latin = cleanSpeciesName(observation.latinName);
-        if (latin && !latinNames.has(key)) latinNames.set(key, latin);
+        addCount(commonNames, key, cleanSpeciesName(observation.speciesName));
+        addCount(latinNames, key, cleanSpeciesName(observation.latinName));
     }
 
-    const nameOf = (key: string): string => {
-        const counts = commonNames.get(key);
-        if (counts && counts.size > 0) {
-            // Tri stable : à égalité, le nom saisi en premier dans le carnet.
-            return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-        }
-        return latinNames.get(key) ?? '';
-    };
+    const latinOf = (key: string): string => pickName(latinNames.get(key));
+    const nameOf = (key: string): string => pickName(commonNames.get(key)) || latinOf(key);
 
-    return { keyOf, nameOf };
+    return { keyOf, nameOf, latinOf };
+};
+
+/**
+ * Noms affichés et envoyés pour les espèces d'UN mois, calculés sur les
+ * seules observations de ce mois : une saisie faite un autre mois ne change
+ * jamais les noms (donc l'empreinte) d'un mois terminé. Deux espèces
+ * différentes qui partagent un nom courant sont distinguées par leur nom
+ * latin : « Pouillot (Phylloscopus collybita) ».
+ */
+export const speciesNamesFor = (monthObservations: readonly Observation[], resolver: SpeciesKeyResolver): Map<string, string> => {
+    const commonNames = new Map<string, Map<string, number>>();
+    const latinNames = new Map<string, Map<string, number>>();
+    for (const observation of monthObservations) {
+        const key = resolver.keyOf(observation);
+        if (!key) continue;
+        addCount(commonNames, key, cleanSpeciesName(observation.speciesName));
+        addCount(latinNames, key, cleanSpeciesName(observation.latinName));
+    }
+    const keys = new Set([...commonNames.keys(), ...latinNames.keys()]);
+    const names = new Map<string, string>();
+    for (const key of keys) {
+        const latin = pickName(latinNames.get(key)) || resolver.latinOf(key);
+        names.set(key, pickName(commonNames.get(key)) || latin);
+    }
+    // Homonymes : même nom affiché pour plusieurs clés.
+    const byName = new Map<string, string[]>();
+    for (const [key, name] of names) {
+        const normalized = normalizeSearchText(name);
+        byName.set(normalized, [...(byName.get(normalized) ?? []), key]);
+    }
+    for (const sharedKeys of byName.values()) {
+        if (sharedKeys.length < 2) continue;
+        for (const key of sharedKeys) {
+            const latin = pickName(latinNames.get(key)) || resolver.latinOf(key);
+            const name = names.get(key) ?? '';
+            if (latin && normalizeSearchText(latin) !== normalizeSearchText(name)) names.set(key, cleanSpeciesName(`${name} (${latin})`));
+        }
+    }
+    return names;
 };
 
 /** Mois (`YYYY-MM`) de la première observation de chaque espèce. */
@@ -202,7 +256,7 @@ export interface MonthlySummaryStats {
     species: { name: string; count: number }[];
     /** Toutes les espèces vues pour la première fois ce mois-ci (ordre alphabétique). */
     newSpecies: string[];
-    /** Même mois de l'année précédente ; null si le carnet ne remonte pas jusque-là. */
+    /** Même mois de l'année précédente ; null pour le mois en cours ou si le carnet ne couvre pas ce mois en entier. */
     previousYear: MonthlyTotals | null;
 }
 
@@ -251,30 +305,36 @@ export const computeMonthlySummaryStats = (
         .map(([group, entry]) => ({ group, observations: clampCount(entry.observations), species: clampCount(entry.species.size) }))
         .sort((a, b) => b.observations - a.observations || b.species - a.species || a.group.localeCompare(b.group, 'fr'));
 
+    const names = speciesNamesFor(inMonth, resolver);
     const species = [...speciesCounts.entries()]
-        .map(([key, count]) => ({ name: resolver.nameOf(key), count }))
+        .map(([key, count]) => ({ name: names.get(key) ?? '', count }))
         .filter(item => item.name.length > 0)
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'fr'));
 
     const firstSeen = firstSeenMonths(observations, resolver);
     const newSpecies = [...speciesCounts.keys()]
         .filter(key => firstSeen.get(key) === month)
-        .map(key => resolver.nameOf(key))
+        .map(key => names.get(key) ?? '')
         .filter(name => name.length > 0)
         .sort((a, b) => a.localeCompare(b, 'fr'));
 
+    // Comparaison avec l'an passé seulement entre deux mois COMPLETS : pas
+    // pour le mois en cours (il serait comparé à un mois entier), et pas si
+    // le carnet a commencé après le 1er de ce mois-là (mois incomplet).
+    const provisional = month === monthKey(now);
     const previousMonth = shiftMonth(month, -12);
-    const carnetReachesPreviousYear = observations.some(observation => {
-        const m = observationMonth(observation);
-        return m !== null && m <= previousMonth;
-    });
-    const previousYear = carnetReachesPreviousYear
+    const firstDate = observations.reduce<string | null>((earliest, observation) => {
+        const date = DATE_RE.test(observation.date ?? '') ? observation.date.slice(0, 10) : null;
+        return date && (!earliest || date < earliest) ? date : earliest;
+    }, null);
+    const comparable = !provisional && firstDate !== null && firstDate <= `${previousMonth}-01`;
+    const previousYear = comparable
         ? totalsFor(observations.filter(observation => observationMonth(observation) === previousMonth), resolver)
         : null;
 
     return {
         month,
-        provisional: month === monthKey(now),
+        provisional,
         totals: totalsFor(inMonth, resolver),
         groups,
         species,
