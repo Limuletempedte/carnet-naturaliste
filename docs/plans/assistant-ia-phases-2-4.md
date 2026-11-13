@@ -6,8 +6,9 @@
   - une analyse photo réelle après la migration : ligne `identify`, statut `ok`, 0,011 $ (`ai-identify` inchangée fonctionne) ;
   - secrets `AI_TEXT_MODEL=claude-haiku-5-5` (provisoire) et `AI_DISABLED_FEATURES=summary` ; `ai-text` déployée avec `--use-api`, **fermée** ; contrôles sans frais : 401 renvoyé par la passerelle (`verify_jwt` actif), 204, 403.
   - **Essai du 2026-11-13** (§6.3 du guide) : Sonnet 5.5 contre Haiku 5.5 sur 15 entrées. Haiku a produit 2 bilans fautifs que la validation n'a pas vus (texte coupé à 23 mots, écart faux), Sonnet aucun. **Modèle retenu par le propriétaire : `claude-sonnet-5-5`** (0,0055 $ par bilan en moyenne). Corrections tirées de l'essai : plancher de 40 mots pour un mois qui compte des observations, consignes précisées, champ `individus`.
-  - **Fait le 2026-11-13** : en production, `AI_TEXT_MODEL` vaut `claude-sonnet-5-5` et `ai-text` est redéployée (version 3, contrôles 401, 204 et 403 corrects) ; `summary` reste dans `AI_DISABLED_FEATURES`.
-  - **PR B du bilan** (application et textes légaux) : ouverte le 2026-11-13, voir « Écarts de mise en œuvre (PR B du bilan) » ci-dessous. Reste après sa fusion : §6.4 du guide.
+  - **Fait le 2026-11-13** : en production, `AI_TEXT_MODEL` vaut `claude-sonnet-5-5` et `ai-text` est redéployée (version 3, contrôles 401, 204 et 403 corrects).
+  - **PR B du bilan** (application et textes légaux) : fusionnée le 2026-11-13 (#127), voir « Écarts de mise en œuvre (PR B du bilan) » ci-dessous.
+  - **Bilan ouvert en production le 2026-11-13** (§6.4 du guide) : `AI_DISABLED_FEATURES` supprimé, `ai-text` redéployée (version 5, contrôles 401, 204 et 403 corrects), premier bilan réel `ok` à 0,0060 $. **Premier lot (bilan du mois) terminé** ; suite : note → fiche (phase 2).
 - **Écarts de mise en œuvre (PR A du bilan)** :
   - la migration finit par `notify pgrst, 'reload schema'`, et `ai_my_status` est remplacée par `create or replace` (droits conservés) ;
   - la migration de secours (`docs/ops/retour-arriere-ai-text-features.sql`) **garde** la contrainte élargie et la table `ai_consents` : remettre l'ancienne contrainte échouerait dès qu'une ligne `summary` existe ;
