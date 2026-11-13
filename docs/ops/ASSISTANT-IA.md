@@ -547,8 +547,8 @@ Coût des deux essais : 0,18 $.
 **Mise en production du modèle : faite le 13 novembre 2026** (propriétaire).
 `AI_TEXT_MODEL` vaut `claude-sonnet-5-5` et `ai-text` est redéployée (version
 3, consignes et validation à jour) ; les trois contrôles sans frais du §6.2
-sont corrects (401, 204, 403). `summary` reste dans `AI_DISABLED_FEATURES`
-jusqu'à la fusion de la PR B (§6.4).
+sont corrects (401, 204, 403). `summary` est resté dans `AI_DISABLED_FEATURES`
+jusqu'à la fusion de la PR B, puis a été ouvert le même jour (§6.4).
 
 Les essais de la note et de la recherche se feront avec le même outil
 (`--feature note`, `--feature search`), une fois ces fonctionnalités écrites,
@@ -560,6 +560,23 @@ Retirer `summary` de `AI_DISABLED_FEATURES`, redéployer `ai-text`, rédiger un
 bilan depuis le site en ligne (les aperçus Vercel ne peuvent pas appeler les
 fonctions), puis contrôler la ligne `ai_usage` (`feature = 'summary'`) et la
 dépense dans la Console.
+
+**Fait le 13 novembre 2026**, après la fusion de la PR B (#127) :
+
+- `AI_DISABLED_FEATURES` supprimé (`supabase secrets unset`, aucune valeur
+  secrète en jeu) : plus aucune fonctionnalité coupée ;
+- `ai-text` redéployée avec `--use-api` depuis `main` (version 5,
+  « Verify JWT » actif) ; contrôles sans frais : **401**, **204**, **403** ;
+- premier bilan réel rédigé depuis le site par le propriétaire : accord
+  `summary` enregistré (`2026-11-v1`), ligne `ai_usage` `feature = 'summary'`,
+  statut `ok`, `claude-sonnet-5-5`, 1 316 tokens d'entrée et 332 de sortie,
+  **0,0060 $** (conforme à l'essai du §6.3).
+
+Pour refermer le bilan sans rien défaire (puis redéployer, §6.6) :
+
+```bash
+npx supabase secrets set AI_DISABLED_FEATURES=summary --project-ref xowiezzqehadcfnbkijo
+```
 
 ### 6.5 Comment `ai-text` décide
 
