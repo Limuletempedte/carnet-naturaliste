@@ -5,7 +5,8 @@
   - migration `20261106220000_ai_text_features.sql` appliquée par `db push` (un seul fichier au `--dry-run`) ; droits, version unique d'`ai_reserve_call`, RLS et contrainte vérifiés ; aucune nouvelle alerte de sécurité ;
   - une analyse photo réelle après la migration : ligne `identify`, statut `ok`, 0,011 $ (`ai-identify` inchangée fonctionne) ;
   - secrets `AI_TEXT_MODEL=claude-haiku-5-5` (provisoire) et `AI_DISABLED_FEATURES=summary` ; `ai-text` déployée avec `--use-api`, **fermée** ; contrôles sans frais : 401 renvoyé par la passerelle (`verify_jwt` actif), 204, 403.
-  - **Reste** : l'essai Sonnet contre Haiku (§6.3 du guide), le choix d'`AI_TEXT_MODEL`, puis la PR B du bilan.
+  - **Essai du 2026-11-13** (§6.3 du guide) : Sonnet 5.5 contre Haiku 5.5 sur 15 entrées. Haiku a produit 2 bilans fautifs que la validation n'a pas vus (texte coupé à 23 mots, écart faux), Sonnet aucun. **Modèle retenu par le propriétaire : `claude-sonnet-5-5`** (0,0055 $ par bilan en moyenne). Corrections tirées de l'essai : plancher de 40 mots pour un mois qui compte des observations, consignes précisées, champ `individus`.
+  - **Reste** : en production, passer `AI_TEXT_MODEL` à `claude-sonnet-5-5` et redéployer `ai-text` (§6.3 du guide) ; puis la PR B du bilan.
 - **Écarts de mise en œuvre (PR A du bilan)** :
   - la migration finit par `notify pgrst, 'reload schema'`, et `ai_my_status` est remplacée par `create or replace` (droits conservés) ;
   - la migration de secours (`docs/ops/retour-arriere-ai-text-features.sql`) **garde** la contrainte élargie et la table `ai_consents` : remettre l'ancienne contrainte échouerait dès qu'une ligne `summary` existe ;

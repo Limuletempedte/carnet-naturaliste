@@ -41,6 +41,11 @@ const supa = http.createServer((req, res) => {
     });
 });
 
+// Un bilan fait au moins 40 mots quand le mois compte des observations
+// (SUMMARY_LIMITS.minOutputWords) : complément sans chiffre.
+const FILLER = ' Vos sorties ont été régulières et variées, et votre carnet garde la trace de chacune de ces rencontres, au fil des chemins, des haies et des mares que vous avez pris le temps de parcourir tout au long de ce mois.';
+const GOOD_TEXT = `En mai 2026, vous avez noté 42 observations de 17 espèces, dont la Huppe fasciée.${FILLER}`;
+
 let anthMode = 'ok';
 const anthReqs = [];
 const anth = http.createServer((req, res) => {
@@ -50,7 +55,7 @@ const anth = http.createServer((req, res) => {
             res.writeHead(529, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } })); return;
         }
-        const text = anthMode === 'bad_number' ? 'Vous avez noté 43 observations.' : 'En mai 2026, vous avez noté 42 observations de 17 espèces, dont la Huppe fasciée.';
+        const text = anthMode === 'bad_number' ? `Vous avez noté 43 observations.${FILLER}` : GOOD_TEXT;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             id: 'msg_1', type: 'message', role: 'assistant', model: body.model,
@@ -121,7 +126,7 @@ try {
 
     const r = await call({ body, origin: 'https://carnet-naturaliste.vercel.app' });
     assert.equal(r.status, 200, JSON.stringify(r.json));
-    assert.deepEqual(r.json, { result: { text: 'En mai 2026, vous avez noté 42 observations de 17 espèces, dont la Huppe fasciée.' }, remaining: 5 });
+    assert.deepEqual(r.json, { result: { text: GOOD_TEXT }, remaining: 5 });
     const reserve = rpcCalls.find(c => c.name === 'ai_reserve_call');
     assert.deepEqual(reserve.body, { p_user: USER_ID, p_consent_version: '2026-11-v1', p_model: 'claude-sonnet-5-5', p_budget_usd: 18, p_max_cost_usd: 0.032, p_feature: 'summary' });
     assert.equal(reserve.auth, 'Bearer service');
