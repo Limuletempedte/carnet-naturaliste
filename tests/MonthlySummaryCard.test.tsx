@@ -122,11 +122,91 @@ describe('MonthlySummaryCard', () => {
         expect(mocks.getAiOverview).not.toHaveBeenCalled();
     });
 
-    it('signale des chiffres modifiés pour un mois terminé et propose de régénérer', () => {
+    it('signale des chiffres modifiés pour un mois terminé, puis régénère et remplace le bilan', async () => {
         saveMonthlySummary('2026-10', { text: 'Ancien bilan.', generatedAt: '2026-11-01T08:00:00Z', fingerprint: 'autre-empreinte', provisional: false }, captureSessionContext());
+        mocks.callAiText.mockResolvedValue({ result: { text: 'Nouveau bilan.' }, remaining: 11 });
         renderCard();
         expect(screen.getByTestId('monthly-summary-changed').textContent).toContain('Chiffres modifiés');
-        expect(screen.getByRole('button', { name: 'Régénérer le bilan' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Régénérer le bilan' }));
+        expect(await screen.findByText('Nouveau bilan.')).toBeTruthy();
+        expect(screen.queryByText('Ancien bilan.')).toBeNull();
+        expect(screen.queryByTestId('monthly-summary-changed')).toBeNull();
+        expect(JSON.parse(localStorage.getItem('ai-monthly-summaries-v1:user-1') ?? '{}').entries['2026-10'].text).toBe('Nouveau bilan.');
+    });
+
+    it('signale un bilan rédigé avant la fin du mois', () => {
+        const payload = buildMonthlySummaryPayload(computeMonthlySummaryStats(DATA, '2026-10', NOW));
+        saveMonthlySummary('2026-10', { text: 'Octobre en cours.', generatedAt: '2026-10-20T08:00:00Z', fingerprint: summaryFingerprint(payload), provisional: true }, captureSessionContext(), NOW);
+        renderCard();
+        expect(screen.getByTestId('monthly-summary-before-end').textContent).toContain('avant la fin du mois');
+        expect(screen.queryByTestId('monthly-summary-changed')).toBeNull();
+    });
+
+    it('un double clic ne lance qu’une seule rédaction', async () => {
+        let release: (value: unknown) => void = () => undefined;
+        mocks.callAiText.mockReturnValue(new Promise(resolve => { release = resolve; }));
+        renderCard();
+        const button = writeButton();
+        fireEvent.click(button);
+        fireEvent.click(button);
+        fireEvent.click(button);
+        // Pendant la vérification de l'accès, le mois ne peut plus changer.
+        expect((screen.getByLabelText('Mois') as HTMLSelectElement).disabled).toBe(true);
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        fireEvent.click(button);
+        release({ result: { text: 'Un seul bilan.' }, remaining: 11 });
+        expect(await screen.findByText('Un seul bilan.')).toBeTruthy();
+        expect(mocks.callAiText).toHaveBeenCalledTimes(1);
+    });
+
+    it('« Annuler » pendant l’envoi de l’accord n’entraîne aucune rédaction', async () => {
+        mocks.getAiOverview.mockResolvedValue(approved({}));
+        let release: () => void = () => undefined;
+        mocks.giveConsent.mockReturnValue(new Promise<void>(resolve => { release = resolve; }));
+        renderCard();
+        fireEvent.click(writeButton());
+        await screen.findByTestId('ai-consent-card-summary');
+        fireEvent.click(screen.getByRole('checkbox'));
+        fireEvent.click(screen.getByRole('button', { name: 'Accepter et rédiger' }));
+        expect((screen.getByLabelText('Mois') as HTMLSelectElement).disabled).toBe(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+        release();
+        await waitFor(() => expect(mocks.giveConsent).toHaveBeenCalled());
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('ai-consent-card-summary')).toBeNull();
+        // Le focus revient sur le bouton IA.
+        await waitFor(() => expect(document.activeElement).toBe(writeButton()));
+    });
+
+    it('annonce le résultat aux lecteurs d’écran', async () => {
+        mocks.callAiText.mockResolvedValue({ result: { text: 'Un bel octobre.' }, remaining: 11 });
+        renderCard();
+        fireEvent.click(writeButton());
+        await screen.findByText('Un bel octobre.');
+        expect(screen.getByRole('status').textContent).toBe("Bilan d'octobre 2026 rédigé.");
+    });
+
+    it('affiche tous les chiffres envoyés : groupes et jusqu’à 15 espèces', () => {
+        const many = Array.from({ length: 12 }, (_, i) => obs(`Espèce ${String(i).padStart(2, '0')}`, `Genus sp${i}`, '2026-10-04', 12 - i));
+        const mushroom = { ...obs('Amanite tue-mouches', 'Amanita muscaria', '2026-10-18'), taxonomicGroup: TaxonomicGroup.MUSHROOM } as Observation;
+        renderCard({ observations: [...many, mushroom] });
+        const groups = screen.getByTestId('monthly-summary-groups').textContent ?? '';
+        expect(groups).toContain('Oiseaux');
+        expect(groups).toContain('12 obs. · 12 esp.');
+        expect(groups).toContain('Champignons');
+        const species = screen.getByTestId('monthly-summary-species');
+        expect(species.querySelectorAll('li')).toHaveLength(5);
+        fireEvent.click(screen.getByRole('button', { name: 'Voir les 13 espèces' }));
+        expect(species.querySelectorAll('li')).toHaveLength(13);
+    });
+
+    it('n’affiche pas de compteur sans accès approuvé', async () => {
+        localStorage.setItem('ai-status-v1:user-1', JSON.stringify({ remaining: 12, monthlyQuota: 20, at: new Date().toISOString() }));
+        mocks.getAiOverview.mockResolvedValue({ access: { kind: 'revoked', note: null }, consents: {}, usedByFeature: {} });
+        renderCard();
+        await waitFor(() => expect(mocks.getAiOverview).toHaveBeenCalled());
+        await waitFor(() => expect(screen.queryByText(/restantes/)).toBeNull());
     });
 
     it('ne signale pas de chiffres modifiés pour le mois provisoire', () => {

@@ -29,6 +29,8 @@ interface AiAccessDialogProps {
 
 type ViewState =
     | { phase: 'loading' }
+    /** Hors ligne : état normal, pas une erreur (mention ambre et dernier compteur connu). */
+    | { phase: 'offline' }
     | { phase: 'error'; message: string }
     | { phase: 'ready'; overview: AiOverview };
 
@@ -150,6 +152,10 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
             if (isSessionCurrent(context)) setView({ phase: 'ready', overview });
         } catch (error) {
             if (!isSessionCurrent(context)) return;
+            if (error instanceof AiAssistError && error.code === 'offline') {
+                setView({ phase: 'offline' });
+                return;
+            }
             const message = error instanceof AiAssistError ? error.message : 'Impossible de lire l’état de votre accès.';
             setView({ phase: 'error', message });
         }
@@ -414,7 +420,8 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
         }
     };
 
-    const cachedCounter = isOffline ? readCachedAiCounter() : null;
+    const showOffline = isOffline || view.phase === 'offline';
+    const cachedCounter = showOffline ? readCachedAiCounter() : null;
 
     return (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[80] flex justify-center items-center p-4">
@@ -433,7 +440,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
                     Des aides facultatives, fournies par Claude (Anthropic). Rien n'est envoyé sans votre action, et c'est toujours vous qui décidez.
                 </p>
                 <div className="mt-4 space-y-4">
-                    {isOffline && (
+                    {showOffline && (
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Disponible en ligne uniquement.</p>
                             {cachedCounter && (

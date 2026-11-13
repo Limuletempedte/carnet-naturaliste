@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureSessionContext, setSessionIdentity } from '../services/sessionScope';
 import { CONSENT_VERSION, ERROR_HTTP_STATUS } from '../supabase/functions/ai-identify/logic';
-import { CONSENT_VERSIONS as TEXT_CONSENT_VERSIONS, ERROR_HTTP_STATUS as TEXT_ERROR_HTTP_STATUS } from '../supabase/functions/ai-text/logic';
+import { CONSENT_VERSIONS as TEXT_CONSENT_VERSIONS, ERROR_HTTP_STATUS as TEXT_ERROR_HTTP_STATUS, SUMMARY_LIMITS } from '../supabase/functions/ai-text/logic';
 
 const mocks = vi.hoisted(() => ({
     getSession: vi.fn(),
@@ -28,6 +28,7 @@ vi.mock('../utils/logger', () => ({ logger: { warn: mocks.warn, error: mocks.err
 
 import {
     AI_CONSENT_VERSION,
+    AI_SUMMARY_MAX_CHARS,
     AI_TEXT_CONSENT_VERSIONS,
     AiAssistError,
     callAiText,
@@ -321,9 +322,19 @@ describe('accès', () => {
     });
 });
 
-describe('fonctionnalités texte : versions de consentement', () => {
-    it('sont identiques côté application et côté fonction ai-text', () => {
+describe('fonctionnalités texte : constantes recopiées de la fonction ai-text', () => {
+    it('versions de consentement identiques', () => {
         expect(AI_TEXT_CONSENT_VERSIONS).toEqual(TEXT_CONSENT_VERSIONS);
+    });
+
+    it('plafond du texte du bilan identique', () => {
+        expect(AI_SUMMARY_MAX_CHARS).toBe(SUMMARY_LIMITS.maxOutputChars);
+    });
+});
+
+describe('message hors ligne commun', () => {
+    it('parle de l’assistant, pas de la seule aide à l’identification', () => {
+        expect(aiAssistErrorMessage('offline')).toBe("L'assistant n'est disponible qu'en ligne.");
     });
 });
 
@@ -366,8 +377,10 @@ describe('consentements par fonctionnalité', () => {
         expect(calls).toEqual([['delete', 'ai_consents'], ['eq', 'user_id', 'user-1'], ['eq', 'feature', 'summary']]);
     });
 
-    it('retirer l’accès supprime aussi les consentements texte', async () => {
+    it('retirer l’accès supprime aussi les consentements texte et le dernier compteur', async () => {
+        localStorage.setItem('ai-status-v1:user-1', JSON.stringify({ remaining: 12, monthlyQuota: 20, at: new Date().toISOString() }));
         await withdrawAccess(captureSessionContext());
+        expect(localStorage.getItem('ai-status-v1:user-1')).toBeNull();
         expect(calls).toEqual([
             ['delete', 'ai_consents'], ['eq', 'user_id', 'user-1'],
             ['delete', 'ai_access'], ['eq', 'user_id', 'user-1'],
@@ -417,6 +430,16 @@ describe('vue d’ensemble (ai_my_status)', () => {
         localStorage.setItem('ai-status-v1:user-1', JSON.stringify({ remaining: 3, monthlyQuota: 20, at: '2026-10-31T23:00:00Z' }));
         expect(readCachedAiCounter(undefined, new Date('2026-11-02T10:00:00Z'))).toBeNull();
         expect(readCachedAiCounter(undefined, new Date('2026-10-31T23:30:00Z'))).not.toBeNull();
+    });
+
+    it('oublie le dernier compteur quand l’accès n’est plus approuvé', async () => {
+        mocks.rpc.mockResolvedValue({ data: raw, error: null });
+        await getAiOverview();
+        expect(readCachedAiCounter()).not.toBeNull();
+        mocks.rpc.mockResolvedValue({ data: { status: 'revoked', note: null }, error: null });
+        await getAiOverview();
+        expect(readCachedAiCounter()).toBeNull();
+        expect(localStorage.getItem('ai-status-v1:user-1')).toBeNull();
     });
 
     it('le compteur est propre à chaque personne', async () => {

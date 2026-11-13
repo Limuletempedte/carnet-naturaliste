@@ -69,7 +69,7 @@
 | Finalite | Fonctionnement hors-ligne, cache, preferences |
 | Base legale | Consentement (bandeau de consentement au stockage) |
 | Donnees collectees | Observations en cache, session, preferences UI (theme sombre, filtres) ; bilans du mois rediges par l'assistant IA et dernier compteur d'utilisations connu (Traitement 9), par personne |
-| Duree de conservation | Cache : 90 jours (TTL). Preferences : duree du navigateur. Bilans du mois : 24 mois au plus, effaces avec le compte. |
+| Duree de conservation | Cache : 90 jours (TTL). Preferences : duree du navigateur. Bilans du mois : 24 mois au plus apres leur redaction (purge a l'ouverture de l'application, pour tous les comptes du navigateur) ; effaces aussi de l'appareil ou le compte est supprime. |
 | Destinataires | Aucun — donnees locales uniquement |
 | Transfert hors UE | Non |
 
@@ -118,7 +118,7 @@ texte dans `ai_consents`.
 |---|---|
 | Base légale | **Consentement** (art. 6.1.a), par fonctionnalité : case obligatoire, texte versionné, retrait à tout moment dans la fenêtre « Assistant IA ». **Intérêt légitime** (art. 6.1.f) pour le journal d'usage : contrôle des coûts et des abus. |
 | Données conservées par le Carnet | `ai_access` (statut de la demande, quota, version du consentement photo, dates, note) ; `ai_consents` (une ligne par fonctionnalité texte : fonctionnalité, version du texte accepté, `given_at` posé par le serveur comme preuve, art. 7.1) ; `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut). Ni photo, ni chiffres, ni hypothèses, ni texte produit. |
-| Données conservées dans le navigateur | Bilans du mois rédigés (texte, date, empreinte des chiffres), par personne, **24 mois au plus** ; dernier compteur d'utilisations connu (pour l'affichage hors ligne). Jamais envoyés au serveur ; effacés avec le compte. |
+| Données conservées dans le navigateur | Bilans du mois rédigés (texte, date, empreinte des chiffres), par personne, **24 mois au plus après leur rédaction** : un bilan expiré n'est jamais relu, et il est retiré à chaque ouverture de l'application pour **tous** les comptes du navigateur (y compris un compte supprimé depuis un autre appareil) ; 24 mois différents au plus. Dernier compteur d'utilisations connu (affichage hors ligne), retiré dès que l'accès n'est plus approuvé et à l'ouverture suivant la fin du mois. Jamais envoyés au serveur. Effacés de l'appareil où le compte est supprimé ; sur les autres appareils, à leur expiration ou quand la personne efface les données du site. |
 | Destinataires | Anthropic (modèle Claude), via **Anthropic Ireland Ltd** pour l'EEE, sous-traitant ; DPA intégré aux Commercial Terms, droit irlandais. Supabase (fonctions `ai-identify` et `ai-text`, tables, UE). |
 | Transfert hors UE | **Oui** — données stockées aux États-Unis, pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`). Transfert encadré par les clauses contractuelles types de l'UE (modules 2 et 3) du DPA. |
 | Conservation | Chez Anthropic : entrées et sorties effacées sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement sur les données de l'API par défaut. Dans le Carnet : `ai_access` et `ai_consents` jusqu'au retrait de l'accord (retirer l'accès supprime aussi les lignes `ai_consents`) ou à la suppression du compte ; `ai_usage` 3 mois (purge à chaque nouvelle réservation). |
@@ -141,7 +141,7 @@ texte dans `ai_consents`.
 | Finalité | Rédiger, à la demande de l'utilisateur, un court texte à partir des chiffres d'un mois calculés par l'application (onglet Stats). Les chiffres font foi ; l'utilisateur décide de rédiger, de régénérer et de garder le texte. |
 | Consentement | Ligne `ai_consents` (`feature = 'summary'`, version `CONSENT_VERSIONS.summary` d'`ai-text`), donnée par une carte affichée au premier usage ou dans « Assistant IA » ; retrait par « Retirer mon accord au bilan ». |
 | Données envoyées à Anthropic | Mois (`AAAA-MM`), totaux (observations, espèces, jours d'activité), répartition par groupe, noms des 15 espèces les plus observées avec leur effectif, jusqu'à 30 espèces nouvelles (« + N autres »), mêmes totaux pour le même mois de l'année précédente. Les noms d'espèces liés à un compte restent des données personnelles. **Jamais** : lieu, commune, GPS, commentaire, observateur, date précise, photo, email. |
-| Données conservées | Le texte rédigé reste **dans le navigateur** (24 mois au plus, voir socle), jamais sur le serveur. |
+| Données conservées | Le texte rédigé reste **dans le navigateur** (24 mois au plus après sa rédaction, voir socle), jamais sur le serveur. |
 | Mesures propres | Le serveur ne transmet que les champs validés (les autres sont ignorés) ; texte refusé s'il cite un nombre absent des chiffres fournis ; affichage en texte brut (ni HTML, ni markdown, ni lien). |
 
 > Exploitation : [`docs/ops/ASSISTANT-IA.md`](../ops/ASSISTANT-IA.md). Plan : [`docs/plans/assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md) (sources des faits vérifiés le 2026-11-05).
