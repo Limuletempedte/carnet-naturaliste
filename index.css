@@ -478,6 +478,48 @@ body {
     white-space: normal;
 }
 
+/* Accessibilite — lien d'evitement « Aller au contenu principal » (index.html).
+   Cache hors ecran, il apparait en haut a gauche des qu'il recoit le focus
+   clavier (premiere touche Tab). Tout passe par le CSS : la CSP de production
+   bloque les gestionnaires onfocus/onblur ecrits dans le HTML. */
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+
+.skip-link:focus {
+    position: fixed;
+    left: 1rem;
+    top: 1rem;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    z-index: 9999;
+    padding: 0.5rem 1rem;
+    background: #FFFFFF;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    color: #1C1C1E;
+    font-weight: 600;
+}
+
+.dark .skip-link:focus {
+    background: #1C1C1E;
+    color: #F2F2F7;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Cible du lien d'evitement : <main tabIndex={-1}> recoit le focus pour que la
+   touche Tab suivante parte du contenu. Ce conteneur n'est pas un controle,
+   le contour vert du focus n'y apporterait rien. */
+#main-content:focus {
+    outline: none;
+}
+
 /* Accessibilite — reduction de mouvement */
 @media (prefers-reduced-motion: reduce) {
 
