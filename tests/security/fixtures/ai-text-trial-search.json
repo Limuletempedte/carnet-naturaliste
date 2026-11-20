@@ -68,7 +68,7 @@
     "expected": {}
   },
   {
-    "label": "10 nom d'espèce précis, pas une catégorie",
+    "label": "10 nom d'espèce précis, pas une catégorie (citée par la consigne)",
     "payload": { "text": "hérons cendrés vus en 2025" },
     "expected": {
       "years": [2025],
@@ -171,7 +171,7 @@
     }
   },
   {
-    "label": "22 aujourd'hui, nom d'espèce et balise",
+    "label": "22 aujourd'hui, nom d'espèce et balise (citée par la consigne)",
     "payload": { "text": "martin-pêcheur aujourd'hui <img src=x onerror=alert(1)>" },
     "expected": {
       "period": { "kind": "last_n_days", "days": 1 },
@@ -196,7 +196,7 @@
     }
   },
   {
-    "label": "25 espèce précise d'une catégorie, commune fictive",
+    "label": "25 espèce précise d'une catégorie, commune fictive (citée par la consigne)",
     "payload": { "text": "grèbes huppés à Castelbrume l'an dernier" },
     "expected": {
       "period": { "kind": "last_year" },
@@ -228,5 +228,165 @@
       "text": "couleuvre à collier"
     },
     "forbidden": ["constructor", "alert"]
+  },
+  {
+    "label": "29 espèce d'une catégorie : canard colvert (citée par la consigne)",
+    "payload": { "text": "canards colverts cette année" },
+    "expected": {
+      "period": { "kind": "this_year" },
+      "text": "canard colvert"
+    }
+  },
+  {
+    "label": "30 espèce d'une catégorie : pic épeiche, habitat (citée par la consigne)",
+    "payload": { "text": "pics épeiches en forêt" },
+    "expected": {
+      "habitats": ["Forêt de feuillus", "Forêt de conifères", "Forêt mixte"],
+      "text": "pic épeiche"
+    }
+  },
+  {
+    "label": "31 espèce d'une catégorie : goéland leucophée",
+    "payload": { "text": "goélands leucophées en 2024" },
+    "expected": {
+      "years": [2024],
+      "text": "goéland leucophée"
+    }
+  },
+  {
+    "label": "32 espèce d'une catégorie : bruant jaune",
+    "payload": { "text": "bruant jaune l'an dernier" },
+    "expected": {
+      "period": { "kind": "last_year" },
+      "text": "bruant jaune"
+    }
+  },
+  {
+    "label": "33 espèce d'une catégorie : pouillot véloce",
+    "payload": { "text": "pouillots véloces ce mois-ci" },
+    "expected": {
+      "period": { "kind": "this_month" },
+      "text": "pouillot véloce"
+    }
+  },
+  {
+    "label": "34 espèce d'une catégorie : triton palmé",
+    "payload": { "text": "tritons palmés au printemps" },
+    "expected": {
+      "period": { "kind": "season", "season": "spring", "yearScope": "all" },
+      "text": "triton palmé"
+    }
+  },
+  {
+    "label": "35 espèce d'une catégorie : hirondelle rustique",
+    "payload": { "text": "hirondelles rustiques en avril" },
+    "expected": {
+      "period": { "kind": "month", "month": 4, "yearScope": "all" },
+      "text": "hirondelle rustique"
+    }
+  },
+  {
+    "label": "36 l'ensemble lui-même : bruants",
+    "payload": { "text": "les bruants l'an dernier" },
+    "expected": {
+      "period": { "kind": "last_year" },
+      "categories": ["bruants"]
+    }
+  },
+  {
+    "label": "37 deux ensembles : grèbes et canards",
+    "payload": { "text": "des grèbes et des canards en hiver" },
+    "expected": {
+      "period": { "kind": "season", "season": "winter", "yearScope": "all" },
+      "categories": ["grebes", "canards"]
+    }
+  },
+  {
+    "label": "38 espèce d'une catégorie : lézard des murailles (citée par la consigne)",
+    "payload": { "text": "lézards des murailles près de chez moi" },
+    "expected": {
+      "near": { "kind": "current_position" },
+      "text": "lézard des murailles"
+    }
+  },
+  {
+    "label": "39 inédite : mouette rieuse",
+    "payload": { "text": "mouettes rieuses en hiver" },
+    "expected": {
+      "period": { "kind": "season", "season": "winter", "yearScope": "all" },
+      "text": "mouette rieuse"
+    }
+  },
+  {
+    "label": "40 inédite : sterne pierregarin",
+    "payload": { "text": "sternes pierregarins cet été" },
+    "expected": {
+      "period": { "kind": "season", "season": "summer", "yearScope": "this_year" },
+      "text": "sterne pierregarin"
+    }
+  },
+  {
+    "label": "41 inédite : fauvette à tête noire",
+    "payload": { "text": "fauvette à tête noire au printemps" },
+    "expected": {
+      "period": { "kind": "season", "season": "spring", "yearScope": "all" },
+      "text": "fauvette à tête noire"
+    }
+  },
+  {
+    "label": "42 inédite : chouette hulotte",
+    "payload": { "text": "chouettes hulottes près de chez moi" },
+    "expected": {
+      "near": { "kind": "current_position" },
+      "text": "chouette hulotte"
+    }
+  },
+  {
+    "label": "43 inédite : faucon crécerelle",
+    "payload": { "text": "faucons crécerelles en 2023" },
+    "expected": {
+      "years": [2023],
+      "text": "faucon crécerelle"
+    }
+  },
+  {
+    "label": "44 inédite : bergeronnette grise",
+    "payload": { "text": "bergeronnettes grises ce mois-ci" },
+    "expected": {
+      "period": { "kind": "this_month" },
+      "text": "bergeronnette grise"
+    }
+  },
+  {
+    "label": "45 inédite : vipère aspic",
+    "payload": { "text": "vipères aspics cette année" },
+    "expected": {
+      "period": { "kind": "this_year" },
+      "text": "vipère aspic"
+    }
+  },
+  {
+    "label": "46 inédite : salamandre tachetée",
+    "payload": { "text": "salamandres tachetées en automne" },
+    "expected": {
+      "period": { "kind": "season", "season": "autumn", "yearScope": "all" },
+      "text": "salamandre tachetée"
+    }
+  },
+  {
+    "label": "47 inédite : pigeon ramier",
+    "payload": { "text": "pigeons ramiers en octobre" },
+    "expected": {
+      "period": { "kind": "month", "month": 10, "yearScope": "all" },
+      "text": "pigeon ramier"
+    }
+  },
+  {
+    "label": "48 inédite : deux ensembles",
+    "payload": { "text": "des fauvettes et des mouettes au printemps" },
+    "expected": {
+      "period": { "kind": "season", "season": "spring", "yearScope": "all" },
+      "categories": ["fauvettes", "larides"]
+    }
   }
 ]

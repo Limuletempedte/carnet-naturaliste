@@ -157,8 +157,9 @@ export function featureModelEnvName(feature: TextFeatureName): string {
  * l'emporte sur `AI_TEXT_MODEL` ; absent ou vide, c'est le modèle commun. Un
  * nom sans prix connu rend la configuration de CETTE fonctionnalité invalide
  * (null, `misconfigured`) : jamais de repli silencieux sur le modèle commun,
- * et les autres fonctionnalités ne sont pas touchées (décision du 2026-11-20 :
- * Haiku 5.5 pour la recherche, Sonnet 5.5 pour le bilan et la note).
+ * et les autres fonctionnalités ne sont pas touchées. Aucun n'est posé en
+ * production : après essai, les trois fonctionnalités restent sur
+ * `AI_TEXT_MODEL` (Sonnet 5.5, décision du 2026-11-21).
  */
 export function resolveFeatureModel(commonModel: string, override: string | undefined): string | null {
     const model = (override ?? '').trim();
@@ -1174,11 +1175,12 @@ Règles :
 - Si la phrase n'est pas une recherche dans des observations (question générale, demande, conversation, texte sans rapport), laisse TOUS les champs vides, text compris.
 - period : "this_month" (ce mois-ci), "last_month" (le mois dernier), "this_year" (cette année), "last_year" (l'an dernier, l'année dernière), "last_n_days" avec days (« les 10 derniers jours » = 10, « ces deux dernières semaines » = 14, « aujourd'hui » = 1), "month" avec month pour un mois nommé (« en mai » = 5), "season" avec season pour une saison nommée (« au printemps » = "spring"). Pour "month" et "season", yearScope dit l'année : "all" sans précision (tous les mois de mai), "this_year" (« cet été », « en mai cette année »), "last_year" (« en mai l'an dernier »), "most_recent" (« en mai dernier », « l'été dernier ») ; "all" pour les autres types. Une période vague (« récemment ») ou à venir (« le mois prochain ») : "none". Les champs sans objet valent 0, "none" ou "all".
 - years : seulement les années écrites en chiffres (« en 2024 » = [2024], « de 2020 à 2022 » = [2020, 2021, 2022]). Une année écrite l'emporte sur une expression relative : « en mai 2024 » = month 5, yearScope "all", years [2024].
+- AVANT de remplir groups, categories ou genera, décide pour chaque nom d'animal, de plante ou de champignon de la phrase s'il désigne une ESPÈCE précise ou un ENSEMBLE. Un nom suivi d'un qualificatif (adjectif, couleur, complément) est une espèce : « canard colvert », « pic épeiche », « grèbe huppé », « lézard des murailles », « héron cendré ». Son nom ENTIER (le nom et son qualificatif, jamais coupé) va dans text, et il ne donne NI catégorie, NI groupe, NI genre. Un nom seul (« les canards », « des pics », « grèbes ») désigne l'ensemble : catégorie ou groupe, et rien dans text. Exemples : « canards colverts cette année » = text "canards colverts", categories [] ; « les canards cette année » = categories ["canards"], text "".
 - groups : les groupes de la liste que la phrase nomme, plusieurs possibles (« oiseaux » = "Oiseaux", « libellules » = "Odonate", « chauves-souris » = "Chiroptères") ; « papillons » sans précision = "Papillons de jour" et "Papillon de nuit".
 - categories : quand la phrase nomme l'un de ces ensembles d'espèces (clé : sens), plusieurs possibles ; « rapaces » sans précision = les deux catégories de rapaces. N'ajoute pas le groupe qui les contient.
 ${SEARCH_CATEGORY_LINES}
 - genera : en dernier recours seulement, pour un ensemble d'espèces qui n'est ni un groupe ni une catégorie (« les sittelles » = ["Sitta"]), ou un genre latin écrit dans la phrase ; 20 au plus, un genre par élément (« Genre »).
-- Une espèce précise (« héron cendré », « martin-pêcheur ») ne devient ni un groupe, ni une catégorie, ni un genre : son nom ENTIER va dans text, et categories reste vide (« hérons cendrés vus en 2025 » = text "hérons cendrés", years [2025], categories [] : ce n'est pas la catégorie des hérons). Une catégorie ne s'applique que si la phrase nomme l'ensemble lui-même (« les hérons », « des canards »).
+- Rappel : une espèce précise (« héron cendré », « martin-pêcheur ») ne devient ni un groupe, ni une catégorie, ni un genre. Ne coupe jamais son nom (jamais text "cendrés" ou "colverts" seul) et n'ajoute jamais la catégorie à laquelle elle appartient.
 - statuses : les statuts de la liste rouge (UICN) que la phrase demande (« espèces menacées » = VU, EN, CR ; « quasi menacées » = NT ; « préoccupation mineure » = LC).
 - habitats : seulement un milieu que la phrase nomme (« en forêt » = les trois forêts, « en montagne » = "Montagne", « en ville » = "Milieu urbain").
 - department : un département nommé, tel qu'écrit (« en Gironde » = "Gironde", « dans le 33 » = "33"). commune : une commune nommée (« à Pessac »), telle qu'écrite.
