@@ -21,7 +21,8 @@
 // Chaque entrée de note porte ses champs attendus (`expected`) : le rapport
 // compare la réponse champ par champ (juste, inventé, manqué, faux), compte
 // les champs retirés par le validateur et les fuites (`forbidden` : prénom,
-// consigne cachée… retrouvés dans un champ structuré).
+// consigne cachée… retrouvés dans un champ structuré). Règles de comparaison :
+// tests/security/noteTrialCompare.ts.
 //
 // Options :
 //   --inputs a.json,b.json  plusieurs fichiers d'entrées [{ label, payload }]
@@ -45,14 +46,13 @@ import Anthropic from 'npm:@anthropic-ai/sdk@1.1.0';
 import {
     ALLOWED_EFFORTS,
     MODEL_PRICES_USD_PER_MTOK,
-    NOTE_CHOICES,
-    NOTE_DATE_KINDS,
-    NOTE_FIELDS,
     TEXT_FEATURES,
     classifyStopReason,
     computeCostUsd,
     maxCostUsd,
 } from '../../supabase/functions/ai-text/logic.ts';
+// Comparaison des notes : module pur, couvert par tests/noteTrialCompare.test.ts.
+import { NOTE_COMPARED_FIELDS, checkNoteExpected, compareNote } from './noteTrialCompare.ts';
 
 const TIMEOUT_MS = 50_000;
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
@@ -127,91 +127,6 @@ async function callModel(client, model, effort, feature, input, userPrompt) {
     const parsed = feature.parseOutput(rawText, input);
     if (parsed === null) return { ...base, status: 'invalid_output', text: null, result: null };
     return { ...base, status: 'ok', text: typeof parsed.text === 'string' ? parsed.text : JSON.stringify(parsed), result: parsed };
-}
-
-// ---------------------------------------------------------------------------
-// Note → fiche : champs attendus et comparaison
-// ---------------------------------------------------------------------------
-
-const NOTE_COMPARED_FIELDS = NOTE_FIELDS.filter(field => field !== 'remainder');
-const NOTE_STRING_FIELDS = ['speciesName', 'scientificName', 'time', 'location'];
-const NOTE_COUNT_FIELDS = ['count', 'maleCount', 'femaleCount'];
-const DATE_KEYS = { relative_days: ['offsetDays'], last_weekday: ['weekday'], absolute: ['day', 'month', 'year'], none: [] };
-
-/** Minuscules, sans accents ni apostrophes typographiques, sans pluriel en -s/-x. */
-function normalizeName(value) {
-    return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[’']/g, "'")
-        .split(/[\s-]+/).filter(Boolean).map(word => word.replace(/(?<=..)[sx]$/, '')).join(' ');
-}
-
-/**
- * Vérifie le bloc `expected` d'une entrée de note : champs connus, valeurs
- * des listes fermées, forme de la date. Une valeur peut être un tableau de
- * réponses admises ; null dans ce tableau admet le champ vide. Un champ
- * absent de `expected` doit rester vide. `remainder` n'est jamais comparé.
- */
-function checkNoteExpected(item, file) {
-    const where = `${file} « ${item.label} »`;
-    const expected = item.expected;
-    if (typeof expected !== 'object' || expected === null || Array.isArray(expected)) fail(`${where} : « expected » manquant`);
-    for (const [field, value] of Object.entries(expected)) {
-        if (!NOTE_COMPARED_FIELDS.includes(field)) fail(`${where} : champ attendu inconnu « ${field} »`);
-        const options = Array.isArray(value) && field !== 'otherSpecies' ? value : [value];
-        for (const option of options) {
-            if (option === null) continue;
-            if (field in NOTE_CHOICES && !NOTE_CHOICES[field].includes(option)) fail(`${where} : « ${option} » hors de la liste ${field}`);
-            if (NOTE_COUNT_FIELDS.includes(field) && !Number.isInteger(option)) fail(`${where} : ${field} doit être un entier`);
-            if (NOTE_STRING_FIELDS.includes(field) && typeof option !== 'string') fail(`${where} : ${field} doit être un texte`);
-            if (field === 'dateExpr' && !NOTE_DATE_KINDS.includes(option?.kind)) fail(`${where} : dateExpr.kind invalide`);
-            if (field === 'otherSpecies' && !option.every(name => typeof name === 'string')) fail(`${where} : otherSpecies doit être une liste de noms`);
-        }
-    }
-    if (item.forbidden !== undefined && !(Array.isArray(item.forbidden) && item.forbidden.every(f => typeof f === 'string' && f))) {
-        fail(`${where} : « forbidden » doit être une liste de textes`);
-    }
-}
-
-function isEmptyValue(field, value) {
-    if (field === 'otherSpecies') return value.length === 0;
-    if (field === 'dateExpr') return value.kind === 'none';
-    return value === null;
-}
-
-function sameValue(field, expected, got) {
-    if (field === 'dateExpr') return expected.kind === got.kind && DATE_KEYS[got.kind].every(key => (expected[key] ?? null) === got[key]);
-    if (field === 'location') {
-        const a = normalizeName(expected), b = normalizeName(got);
-        return a.includes(b) || b.includes(a);
-    }
-    if (field === 'speciesName') return normalizeName(expected) === normalizeName(got);
-    return expected === got;
-}
-
-/** Verdict d'un champ : ok, invente, manque, faux. */
-function judgeField(item, field, got) {
-    const raw = item.expected[field];
-    if (field === 'otherSpecies') {
-        const expected = (raw ?? []).map(normalizeName);
-        const names = got.map(normalizeName);
-        if (names.some(name => !expected.includes(name))) return expected.length === 0 ? 'invente' : 'faux';
-        const wanted = item.otherSpeciesPartial ? names.length : Math.min(expected.length, 5);
-        return names.length === wanted ? 'ok' : 'manque';
-    }
-    const options = raw === undefined ? [null] : (Array.isArray(raw) ? raw : [raw]);
-    const emptyAllowed = options.includes(null) || (field === 'dateExpr' && options.some(o => o?.kind === 'none'));
-    if (isEmptyValue(field, got)) return emptyAllowed ? 'ok' : 'manque';
-    const filled = options.filter(o => o !== null && !(field === 'dateExpr' && o.kind === 'none'));
-    if (filled.length === 0) return 'invente';
-    return filled.some(o => sameValue(field, o, got)) ? 'ok' : 'faux';
-}
-
-/** Compare une réponse de note aux champs attendus de l'entrée. */
-function compareNote(item, result) {
-    const verdicts = {};
-    for (const field of NOTE_COMPARED_FIELDS) verdicts[field] = judgeField(item, field, result[field]);
-    const structured = JSON.stringify(Object.fromEntries(NOTE_COMPARED_FIELDS.map(f => [f, result[f]]))).toLowerCase();
-    const leaks = (item.forbidden ?? []).filter(word => structured.includes(word.toLowerCase()));
-    return { verdicts, leaks, dropped: result.dropped ?? [] };
 }
 
 function buildReport({ featureName, effort, models, entries, results }) {
@@ -363,7 +278,13 @@ async function main() {
         for (const item of list) {
             if (typeof item?.label !== 'string') fail(`${file} : entrée sans « label »`);
             if (entries.some(e => e.label === item.label)) fail(`label en double : « ${item.label} »`);
-            if (featureName === 'note') checkNoteExpected(item, file);
+            if (featureName === 'note') {
+                try {
+                    checkNoteExpected(item, file);
+                } catch (err) {
+                    fail(err.message);
+                }
+            }
             const validation = feature.validate(item.payload);
             const meta = { label: item.label, expected: item.expected, forbidden: item.forbidden, otherSpeciesPartial: item.otherSpeciesPartial === true };
             entries.push(validation.ok

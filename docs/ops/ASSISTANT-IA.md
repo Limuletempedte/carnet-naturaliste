@@ -605,8 +605,9 @@ pas encore livrée (`search` aujourd'hui) répond `invalid_request` (400).
 Réponse du bilan refusée (`invalid_output`, comptée car facturée) si le texte
 dépasse 1 200 caractères ou cite un nombre absent des chiffres fournis.
 Réponse de la note : un champ fautif est **retiré** et nommé dans `dropped`,
-le reste est rendu ; `invalid_output` seulement si la réponse n'est pas un
-objet JSON (§6.7).
+le reste est rendu ; `invalid_output` seulement si la réponse est
+inexploitable : pas un objet JSON, ou **tous** les champs retirés (§6.7).
+Une note hors sujet (tout vide, rien de retiré) reste un succès.
 
 **Journaux** : id de la ligne d'usage, fonctionnalité, statut, modèle,
 tokens, coût, type d'erreur. Jamais l'utilisateur, la note, la phrase, les
@@ -660,8 +661,15 @@ fermées, textes nettoyés et bornés (120 caractères, 1 000 pour `remainder`),
 heure sur 24 h, date jamais dans le futur. Un champ fautif est **retiré et
 nommé dans `dropped`** : la personne garde le reste, et l'application ne
 proposera jamais un champ retiré. La réponse n'est rejetée en bloc
-(`invalid_output`, une utilisation comptée) que si elle n'est pas un objet
-JSON.
+(`invalid_output`, une utilisation comptée) que si elle est inexploitable :
+pas un objet JSON, ou tous ses champs retirés (`{}`, clés inconnues). Une
+note hors sujet, où tout est vide sans rien de retiré, reste un succès.
+
+**Consignes notables** : `count` est le total ; si la note ne donne que des
+nombres partiels (« 2 mâles et 1 femelle »), c'est leur somme. Le nom
+d'espèce garde les mots de la note, sans traduction, correction ni
+complément ; une note qui n'écrit que le nom latin laisse `speciesName` vide
+et remplit `scientificName`.
 
 **Coût** : 0,043 $ réservés par note avec Sonnet (majorant calculé sur la
 taille du prompt, schéma et listes fermées compris), remplacés par le coût
@@ -727,7 +735,7 @@ Essai à blanc (aucun appel, aucune clé) :
 deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature note --inputs tests/security/fixtures/ai-text-trial-note.json --dry-run
 ```
 
-Essai réel (coût maximum annoncé : 0,90 $ pour les deux modèles, sous le
+Essai réel (coût maximum annoncé : 0,91 $ pour les deux modèles, sous le
 plafond `--max-usd` de 1 $) :
 
 ```bash
@@ -739,7 +747,12 @@ Le rapport compare chaque réponse aux champs attendus : champs **justes**,
 grave), **manqués**, **faux**, champs **retirés** par la validation, et
 **fuites** (prénom, consigne ou balise retrouvés dans un champ structuré). Il
 détaille les erreurs par champ, puis chaque réponse. `remainder` n'est pas
-comparé : à lire. Quelques attendus admettent plusieurs réponses (habitat
+comparé : à lire. Les règles de comparaison sont dans
+`tests/security/noteTrialCompare.ts` (testées par
+`tests/noteTrialCompare.test.ts`) : noms et lieux égaux après normalisation
+(casse, accents, pluriel, article en tête), jamais une simple inclusion ;
+autres espèces comparées en ensembles sans doublon ; fuites cherchées sans
+casse ni accents. Quelques attendus admettent plusieurs réponses (habitat
 « étang » : eau douce ou zone humide) ; un écart isolé se juge à la lecture.
 
 #### Couper et rouvrir la note

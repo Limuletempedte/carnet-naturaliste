@@ -179,10 +179,7 @@
       "text": "Famille de renards : la femelle et 3 renardeaux qui jouaient devant le terrier, lisière du bois des Chaumes."
     },
     "expected": {
-      "speciesName": [
-        "Renard",
-        "Renard roux"
-      ],
+      "speciesName": "Renard",
       "count": 4,
       "femaleCount": [
         1,
@@ -249,10 +246,7 @@
       "text": "aujourd'hui j'ai vu un buzard des roseaux qui chasser au dessus de la roselière point il y avait du vent virgule beaucoup de vent"
     },
     "expected": {
-      "speciesName": [
-        "buzard des roseaux",
-        "Busard des roseaux"
-      ],
+      "speciesName": "buzard des roseaux",
       "count": 1,
       "dateExpr": {
         "kind": "relative_days",
@@ -276,10 +270,6 @@
       "text": "Erithacus rubecula chanteur, haie du verger communal, 7 h du matin."
     },
     "expected": {
-      "speciesName": [
-        "Erithacus rubecula",
-        "Rougegorge familier"
-      ],
       "scientificName": "Erithacus rubecula",
       "count": [
         1,
@@ -399,10 +389,7 @@
       "text": "Two red kites soaring over the road near Millbrook farm, sunny, about 4pm"
     },
     "expected": {
-      "speciesName": [
-        "red kite",
-        "Milan royal"
-      ],
+      "speciesName": "red kite",
       "count": 2,
       "time": [
         "16:00",

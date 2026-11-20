@@ -153,6 +153,10 @@ describe('ai-text — note : listes fermées et schéma', () => {
         expect(NOTE_SYSTEM_PROMPT).toMatch(/en fin d'après-midi/);
         // Note hors sujet : rien, pas même un résumé (pas d'assistant généraliste).
         expect(NOTE_SYSTEM_PROMPT).toMatch(/laisse tous les champs vides, remainder compris/);
+        // Effectif : somme des nombres partiels ; nom d'espèce : les mots de la note.
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/count est leur somme/);
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/sans traduction, sans correction ni complément/);
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/n'écrit que le nom latin, speciesName reste ""/);
     });
 });
 
@@ -200,10 +204,19 @@ describe('ai-text — note : lecture de la réponse', () => {
         expect(result.otherSpecies).toEqual([]);
     });
 
-    it('rejette en bloc seulement ce qui n’est pas un objet JSON', () => {
+    it('rejette en bloc ce qui n’est pas un objet JSON', () => {
         for (const text of ['', 'pas du json', '[]', 'null', '"texte"', '42', '{"speciesName": "Merle"']) {
             expect(parseNoteOutput(text, INPUT, NOW), text).toBeNull();
         }
+    });
+
+    it('rejette en bloc une réponse dont TOUS les champs sont retirés (inexploitable)', () => {
+        expect(parseNoteOutput('{}', INPUT, NOW)).toBeNull();
+        expect(parseNoteOutput(JSON.stringify({ espece: 'Merle noir', nombre: 3 }), INPUT, NOW)).toBeNull();
+        const allWrong = Object.fromEntries(NOTE_FIELDS.map(field => [field, { faux: true }]));
+        expect(parseNoteOutput(JSON.stringify(allWrong), INPUT, NOW)).toBeNull();
+        // Un seul champ lisible suffit à garder la réponse.
+        expect(parseNoteOutput(JSON.stringify({ ...allWrong, remainder: '' }), INPUT, NOW)?.dropped).toHaveLength(NOTE_FIELDS.length - 1);
     });
 
     it('retire et signale chaque champ manquant ou du mauvais type, sans rejeter la réponse', () => {
@@ -293,6 +306,20 @@ describe('ai-text — note : lecture de la réponse', () => {
                 expect(result.dateExpr.kind, JSON.stringify(bad)).toBe('none');
                 expect(result.dropped).toEqual(['dateExpr']);
             }
+        });
+
+        it('au passage d’année : le 1er janvier accepté (déjà demain ailleurs), le 3 refusé', () => {
+            const newYearsEve = new Date(Date.UTC(2026, 11, 31, 23, 30)); // déjà le 1er janvier à Paris
+            const at = (day: number) => parseNoteOutput(
+                JSON.stringify(modelAnswer(date({ kind: 'absolute', day, month: 1, year: 2027 }))), INPUT, newYearsEve,
+            );
+            expect(at(1)?.dateExpr).toMatchObject({ kind: 'absolute', day: 1, month: 1, year: 2027 });
+            expect(at(1)?.dropped).toEqual([]);
+            expect(at(3)?.dropped).toEqual(['dateExpr']);
+            expect(at(3)?.dateExpr.kind).toBe('none');
+            // Une année plus loin reste refusée.
+            expect(parseNoteOutput(JSON.stringify(modelAnswer(date({ kind: 'absolute', day: 1, month: 1, year: 2028 }))), INPUT, newYearsEve)?.dropped)
+                .toEqual(['dateExpr']);
         });
 
         it('« none » ignore les champs annexes ; un type inconnu est retiré', () => {
