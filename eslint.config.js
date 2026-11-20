@@ -5,7 +5,8 @@ import reactHooksPlugin from 'eslint-plugin-react-hooks';
 
 export default [
     {
-        ignores: ['dist/**', 'node_modules/**', 'coverage/**']
+        // .claude/** : copies de travail des sessions Claude (voir vitest.config.ts).
+        ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.claude/**']
     },
     {
         files: ['**/*.{ts,tsx}'],
