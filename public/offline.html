@@ -93,8 +93,10 @@
         <div class="icon" aria-hidden="true">📡</div>
         <h1>Mode hors-ligne</h1>
         <p>Cette page n'est pas disponible hors connexion. Vérifiez votre réseau et réessayez. Vos observations enregistrées restent accessibles depuis l'application.</p>
-        <button type="button" onclick="location.reload()">Réessayer</button>
+        <button type="button" id="retry-button">Réessayer</button>
     </div>
+    <!-- Script externe : la CSP de production bloque les onclick écrits dans le HTML. -->
+    <script src="/offline.js"></script>
 </body>
 
 </html>
