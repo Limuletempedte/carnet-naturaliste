@@ -47,8 +47,8 @@
 | Base legale | Interet legitime (amelioration UX) |
 | Donnees collectees | Termes de recherche (nom d'espece partiel) |
 | Duree de conservation | Aucune — requetes non persistees cote serveur |
-| Destinataires | iNaturalist (California Academy of Sciences), GBIF |
-| Transfert hors UE | Oui — serveurs iNaturalist (US), GBIF (Danemark/global) |
+| Destinataires | iNaturalist (California Academy of Sciences), GBIF ; Wikipédia (Wikimedia Foundation) pour la fiche de l'espèce (nom de l'espèce) |
+| Transfert hors UE | Oui — serveurs iNaturalist (US), GBIF (Danemark/global), Wikimedia (US) |
 | Mesures | User-Agent identifiant l'application. Aucune donnee personnelle transmise. |
 
 ## Traitement 5 : Donnees meteorologiques
@@ -57,7 +57,7 @@
 |---|---|
 | Finalite | Pre-remplir les conditions meteo d'une observation |
 | Base legale | Interet legitime (amelioration UX) |
-| Donnees collectees | Coordonnees GPS (transmises a l'API) |
+| Donnees collectees | Coordonnees GPS et date de l'observation (meteo), coordonnees seules (altitude), transmises a l'API sans identite |
 | Duree de conservation | Aucune — reponse consommee en memoire |
 | Destinataires | Open-Meteo (open-source, serveurs EU) |
 | Transfert hors UE | Non (serveurs en Europe) |
@@ -151,7 +151,7 @@ texte dans `ai_consents`.
 | Finalité | Proposer, à la demande de l'utilisateur, de remplir des champs de la fiche d'observation (espèce, effectifs, date, heure, lieu-dit, listes fermées) à partir d'une note libre tapée ou dictée au clavier. L'utilisateur relit chaque champ et coche ce qu'il applique ; l'application est annulable ; aucune décision automatisée. |
 | Consentement | Ligne `ai_consents` (`feature = 'note'`, version `CONSENT_VERSIONS.note` d'`ai-text`, `2026-11-v1`), donnée par une carte affichée au premier usage ou dans « Assistant IA » ; retrait par « Retirer mon accord à la note ». La version provisoire `2026-11-v0` (partie serveur seule, sans texte affiché) est refusée. |
 | Données envoyées à Anthropic | Le **texte de la note tel qu'il est écrit**, 1 000 caractères au plus (refus au-delà, jamais de troncature), nettoyé des caractères invisibles : il peut contenir des lieux, des noms d'espèces et des noms de personnes, ce que dit le consentement. Si la personne reprend le commentaire d'une fiche comme note, c'est ce commentaire. **Jamais** : date ou heure de la fiche, GPS, commune, observateurs, photo, reste de la fiche, email. |
-| Données conservées | Aucune par le Carnet : la note reste dans l'état de la page (jamais dans le stockage du navigateur ni sur le serveur) le temps de la relecture. Si la personne coche « Garder la note dans le commentaire » (proposé par défaut), le texte rejoint le commentaire de la fiche et suit le Traitement 2. |
+| Données conservées | Aucune par le Carnet sans le choix de la personne : la note reste dans l'état de la page (jamais dans le stockage du navigateur ni sur le serveur) le temps de la relecture. Les champs cochés sont écrits dans la fiche ; la note entière (« Garder la note dans le commentaire », cochée d'avance, décochée d'avance quand la note reprend le commentaire) ou son reste (jamais pré-coché) ne rejoignent le commentaire que si la case correspondante est cochée, puis suivent le Traitement 2. Le commentaire reste borné à 5 000 caractères : au-delà, rien n'y est ajouté. |
 | Autres destinataires | Le nom d'espèce proposé est vérifié par la recherche d'espèce (iNaturalist puis GBIF, Traitement 4) et sa fiche cherchée sur Wikipédia, comme un nom tapé à la main. Si la vérification échoue, le nom tel que proposé (120 caractères au plus, relu par la personne avant de cocher) est cherché de la même façon. |
 | Mesures propres | Avertissement sous la zone de texte (éviter les noms de personnes et la localisation précise d'espèces sensibles) ; champs rendus bornés et vérifiés deux fois (fonction, puis application), un champ fautif est écarté et jamais proposé ; affichage en texte React brut (une balise écrite dans la note s'affiche telle quelle) ; la note et la réponse ne sont ni journalisées ni envoyées à Sentry ; les traces réseau gardées par Sentry sont réduites à l'adresse du site appelé, sans le nom cherché. |
 

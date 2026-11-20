@@ -145,7 +145,7 @@ const FEATURE_ERROR_MESSAGES: Partial<Record<AiTextFeature, Partial<Record<AiAss
         cancelled: 'Analyse de la note arrêtée : rien n’a été appliqué. Si la note était déjà partie, cette tentative peut compter dans votre quota.',
         timeout: "L'analyse de la note a pris trop de temps : rien n'a été appliqué. Cette tentative peut compter dans votre quota ; réessayez plus tard.",
         stale_session: 'Analyse arrêtée : le compte actif a changé. Rien n’a été appliqué.',
-        network: 'Connexion interrompue pendant l’analyse de la note. Rien n’a été appliqué ; réessayez quand le réseau est stable.',
+        network: 'Connexion interrompue pendant l’analyse de la note. Rien n’a été appliqué ; cette tentative peut compter dans votre quota. Réessayez quand le réseau est stable.',
         consent_outdated: "Le texte d'accord de la note a changé : relisez-le et redonnez votre accord.",
         busy: 'Une note est déjà en cours d’analyse. Patientez quelques instants.',
         quota_exceeded: 'Vous avez utilisé toutes vos utilisations IA de ce mois. Le compteur repart le 1er du mois.',
@@ -156,8 +156,8 @@ const FEATURE_ERROR_MESSAGES: Partial<Record<AiTextFeature, Partial<Record<AiAss
         invalid_request: "La note n'a pas pu être envoyée (vide ou trop longue ?).",
         feature_disabled: 'Le remplissage depuis une note est momentanément indisponible. Votre note est gardée : réessayez plus tard.',
         misconfigured: "L'assistant est momentanément indisponible. Votre note est gardée : réessayez plus tard.",
-        internal_error: "Une erreur est survenue pendant l'analyse de la note. Réessayez plus tard.",
-        unknown: "Une erreur est survenue avec l'assistant. Votre note est gardée : réessayez plus tard.",
+        internal_error: "Une erreur est survenue pendant l'analyse de la note. Cette tentative peut compter dans votre quota ; réessayez plus tard.",
+        unknown: "Une erreur est survenue avec l'assistant. Votre note est gardée ; cette tentative peut compter dans votre quota. Réessayez plus tard.",
     },
 };
 

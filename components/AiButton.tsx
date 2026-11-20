@@ -24,6 +24,10 @@ interface AiButtonProps {
     className?: string;
     /** Accès au bouton (pour lui rendre le focus). */
     buttonRef?: React.Ref<HTMLButtonElement>;
+    /** Affiche le coût (« 1 utilisation · … ») : seulement là où le geste coûte. */
+    showCost?: boolean;
+    /** Zone dépliée par ce bouton (`aria-expanded`). */
+    expanded?: boolean;
 }
 
 /**
@@ -42,6 +46,8 @@ const AiButton: React.FC<AiButtonProps> = ({
     hint,
     className = '',
     buttonRef,
+    showCost = true,
+    expanded,
 }) => {
     const helpId = useId();
     const text = isLoading && loadingLabel ? loadingLabel : label;
@@ -58,18 +64,19 @@ const AiButton: React.FC<AiButtonProps> = ({
                 aria-label={text}
                 aria-describedby={helpId}
                 aria-busy={isLoading || undefined}
+                aria-expanded={expanded}
                 className="min-h-[44px] inline-flex items-center gap-2 rounded-full border border-ai-300 bg-ai-50 px-4 py-2 text-sm font-semibold text-ai-700 shadow-sm transition-all hover:bg-ai-100 hover:border-ai-400 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ai-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 aria-disabled:cursor-wait aria-disabled:opacity-60 dark:border-ai-400/40 dark:bg-ai-500/15 dark:text-ai-200 dark:hover:bg-ai-500/25 dark:focus-visible:ring-offset-nature-dark-surface"
             >
                 <SparklesIcon className={`w-5 h-5 ${isLoading ? 'motion-safe:animate-pulse' : ''}`} />
                 {text}
             </button>
             <p id={helpId} className="mt-1 ml-1 text-xs text-gray-500 dark:text-gray-400">
-                {isOffline ? AI_OFFLINE_REASON : (
+                {isOffline ? AI_OFFLINE_REASON : showCost ? (
                     <>
                         <span className="font-medium text-ai-700 dark:text-ai-200">{formatAiCost(remaining)}</span>
                         {hint ? <> · {hint}</> : null}
                     </>
-                )}
+                ) : hint}
             </p>
         </div>
     );

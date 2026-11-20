@@ -105,12 +105,12 @@ const AiNotePanel: React.FC<AiNotePanelProps> = ({
                                         checked={selection.has(proposal.key)}
                                         onChange={() => onToggle(proposal.key)}
                                         disabled={isApplying}
-                                        aria-describedby={`${id}-values`}
                                         className="mt-1 h-5 w-5 shrink-0 accent-ai-600"
                                     />
                                     <span className="min-w-0 flex-1">
                                         <span className="block text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{proposal.label}</span>
-                                        <span id={`${id}-values`} className="mt-1 block space-y-0.5 text-sm">
+                                        {/* Dans le libellé de la case : lu une seule fois. */}
+                                        <span className="mt-1 block space-y-0.5 text-sm">
                                             <span className="block break-words font-semibold text-nature-dark dark:text-white">
                                                 <span className="sr-only">Proposé : </span>{proposal.proposed}
                                             </span>

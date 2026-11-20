@@ -86,7 +86,8 @@ const renderForm = (initialData: Observation | null = makeObservation(), props: 
 };
 
 const field = (id: string) => document.getElementById(id) as HTMLInputElement;
-const openButton = () => screen.getByRole('button', { name: /Remplir depuis une note|Replier la note/ }) as HTMLButtonElement;
+/** Bouton d'ouverture : son libellé suit l'état (« Remplir… », « Replier… », « Résultat à relire »…). */
+const openButton = () => within(screen.getByTestId('ai-note')).getAllByRole('button')[0] as HTMLButtonElement;
 const noteBox = () => screen.getByLabelText('Votre note') as HTMLTextAreaElement;
 const analyzeButton = () => screen.getByRole('button', { name: /Analyser la note|Vérification…|Analyse en cours…/ }) as HTMLButtonElement;
 
@@ -165,9 +166,10 @@ describe('ObservationForm — note → fiche : saisie', () => {
     });
 
     it('hors ligne, la note ouverte peut être gardée dans le commentaire sans appel', () => {
-        const { rerender } = renderForm(makeObservation({ comment: 'Avant.' }));
+        const observation = makeObservation({ comment: 'Avant.' });
+        const { rerender } = renderForm(observation);
         openAndType('Note du jour');
-        rerender(<ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={makeObservation({ comment: 'Avant.' })} onToast={vi.fn()} isOffline />);
+        rerender(<ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={observation} onToast={vi.fn()} isOffline />);
         expect(analyzeButton().disabled).toBe(true);
         fireEvent.click(screen.getByRole('button', { name: 'Mettre la note dans le commentaire' }));
         expect((field('comment') as unknown as HTMLTextAreaElement).value).toBe('Avant.\n\nNote du jour');
@@ -305,6 +307,224 @@ describe('ObservationForm — note → fiche : envoi', () => {
         openAndType();
         fireEvent.click(analyzeButton());
         expect(await screen.findByText(/compte dans votre quota/)).toBeTruthy();
+    });
+});
+
+describe('ObservationForm — note → fiche : parcours, repli, accord, compteur', () => {
+    it('« Annuler » pendant la vérification de l’accès : aucun envoi', async () => {
+        const overview = deferred<AiOverview>();
+        mocks.getAiOverview.mockReturnValue(overview.promise);
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        fireEvent.click(within(screen.getByTestId('ai-note')).getByRole('button', { name: 'Annuler' }));
+        await act(async () => { overview.resolve(approved()); });
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('ai-note-panel')).toBeNull();
+    });
+
+    it('relit le compteur après une analyse annulée (elle a pu compter)', async () => {
+        mocks.callAiText.mockReturnValue(new Promise(() => undefined));
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        const before = mocks.getAiOverview.mock.calls.length;
+        fireEvent.click(within(screen.getByTestId('ai-note')).getByRole('button', { name: 'Annuler' }));
+        await waitFor(() => expect(mocks.getAiOverview.mock.calls.length).toBe(before + 1));
+    });
+
+    it('une erreur qui arrive zone repliée rouvre la zone pour être vue', async () => {
+        const pending = deferred<unknown>();
+        mocks.callAiText.mockReturnValue(pending.promise.then(() => { throw new AiAssistError('quota_exceeded', { feature: 'note' }); }));
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalled());
+        fireEvent.click(openButton());
+        expect(openButton().textContent).toMatch(/Analyse en cours/);
+        await act(async () => { pending.resolve(undefined); });
+        expect(await screen.findByTestId('ai-note-zone')).toBeTruthy();
+        expect(screen.getByRole('alert').textContent).toMatch(/toutes vos utilisations/);
+    });
+
+    it('un résultat arrivé zone repliée attend : le bouton dit « Résultat à relire »', async () => {
+        const pending = deferred<unknown>();
+        mocks.callAiText.mockReturnValue(pending.promise);
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalled());
+        fireEvent.click(openButton());
+        await act(async () => { pending.resolve({ result: serverResult({ speciesName: 'pic vert' }), remaining: 11 }); });
+        expect(screen.queryByTestId('ai-note-zone')).toBeNull();
+        expect(openButton().textContent).toMatch(/Résultat à relire/);
+    });
+
+    it('hors ligne, une note en attente reste accessible (« Analyser » désactivé)', () => {
+        const observation = makeObservation();
+        const { rerender } = renderForm(observation);
+        openAndType('Note gardée');
+        fireEvent.click(openButton());
+        rerender(<ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={observation} onToast={vi.fn()} isOffline />);
+        expect(openButton().disabled).toBe(false);
+        fireEvent.click(openButton());
+        expect(noteBox().value).toBe('Note gardée');
+        expect(analyzeButton().disabled).toBe(true);
+    });
+
+    it('l’enregistrement de l’accord qui ne répond pas : message clair et verrou relâché', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
+        try {
+            mocks.getAiOverview.mockResolvedValue(approved({}));
+            mocks.giveConsent.mockReturnValue(new Promise(() => undefined));
+            renderForm();
+            openAndType();
+            fireEvent.click(analyzeButton());
+            const card = await screen.findByTestId('ai-consent-card-note');
+            fireEvent.click(within(card).getByRole('checkbox'));
+            fireEvent.click(within(card).getByRole('button', { name: 'Accepter et analyser' }));
+            await act(async () => { vi.advanceTimersByTime(21_000); });
+            expect(await within(card).findByText(/ne répond pas/)).toBeTruthy();
+            const accept = within(card).getByRole('button', { name: 'Accepter et analyser' }) as HTMLButtonElement;
+            expect(accept.disabled).toBe(false);
+            await waitFor(() => expect(document.activeElement).toBe(accept));
+            expect(mocks.callAiText).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('« Ne rien appliquer » garde le résultat payé : on le revoit sans nouvel appel', async () => {
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Ne rien appliquer' }));
+        expect(field('count').value).toBe('1');
+        fireEvent.click(screen.getByRole('button', { name: 'Revoir les champs proposés' }));
+        expect(await screen.findByTestId('ai-note-panel')).toBeTruthy();
+        expect(mocks.callAiText).toHaveBeenCalledTimes(1);
+        // Une note modifiée demande une nouvelle analyse.
+        fireEvent.click(within(screen.getByTestId('ai-note-panel')).getByRole('button', { name: 'Ne rien appliquer' }));
+        fireEvent.change(noteBox(), { target: { value: `${NOTE} et un pic vert` } });
+        expect(screen.queryByRole('button', { name: 'Revoir les champs proposés' })).toBeNull();
+    });
+
+    it('note reprise du commentaire : « Garder la note » est décochée par défaut', async () => {
+        renderForm(makeObservation({ comment: 'Un pic vert sur la pelouse.' }));
+        fireEvent.click(openButton());
+        fireEvent.click(screen.getByRole('button', { name: 'Reprendre le commentaire de la fiche comme note' }));
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        expect((within(panel).getByRole('checkbox', { name: /Garder la note/ }) as HTMLInputElement).checked).toBe(false);
+    });
+
+    it('le reste de la note n’apparaît jamais coché quand on décoche « Garder la note »', async () => {
+        mocks.callAiText.mockResolvedValue({ result: serverResult({ speciesName: 'pic vert', remainder: 'Avec Paul.' }), remaining: 11 });
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        expect(within(panel).queryByText('Avec Paul.')).toBeNull();
+        fireEvent.click(within(panel).getByRole('checkbox', { name: /Garder la note/ }));
+        expect((within(panel).getByRole('checkbox', { name: /reste de la note/ }) as HTMLInputElement).checked).toBe(false);
+    });
+});
+
+describe('ObservationForm — note → fiche : fiche suivante et enregistrement', () => {
+    it('« Enregistrer et ajouter une autre » remet l’assistant à zéro : rien de la fiche A ne touche la fiche B', async () => {
+        const onSave = vi.fn(async () => { });
+        renderForm(null, { onSave });
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        await screen.findByTestId('ai-note-applied');
+        // La recherche d'infos sur l'espèce appliquée bloque l'enregistrement un instant.
+        const addAnother = () => screen.getAllByRole('button', { name: 'Enregistrer et ajouter une autre' })[0] as HTMLButtonElement;
+        await waitFor(() => expect(addAnother().disabled).toBe(false), { timeout: 3000 });
+        fireEvent.click(addAnother());
+        await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(field('speciesName').value).toBe(''));
+        expect(screen.queryByTestId('ai-note-zone')).toBeNull();
+        expect(screen.queryByRole('button', { name: "Annuler l'application" })).toBeNull();
+        expect(openButton().textContent).toMatch(/Remplir depuis une note/);
+        // La fiche B garde le contexte de terrain (date, heure, lieu) sans ce que la note y avait mis d'autre.
+        expect(field('count').value).toBe('1');
+    });
+
+    it('pas d’enregistrement pendant une application en cours (vérification du nom)', async () => {
+        const onSave = vi.fn(async () => { });
+        mocks.suggestSpeciesAutocomplete.mockImplementation((query: string) => (query === 'mésange charbonnière' ? new Promise(() => undefined) : Promise.resolve([])));
+        renderForm(null, { onSave });
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        await within(panel).findByRole('button', { name: 'Vérification du nom…' });
+        const save = screen.getAllByRole('button', { name: /Sauvegarder/ })[0] as HTMLButtonElement;
+        expect(save.disabled).toBe(true);
+        expect((screen.getAllByRole('button', { name: 'Enregistrer et ajouter une autre' })[0] as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.submit(save.closest('form')!);
+        expect(onSave).not.toHaveBeenCalled();
+    });
+
+    it('une autre observation éditée remet l’assistant à zéro', async () => {
+        const { rerender } = renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        await screen.findByTestId('ai-note-panel');
+        rerender(<ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={makeObservation({ id: '223e4567-e89b-42d3-a456-426614174000' })} onToast={vi.fn()} />);
+        expect(screen.queryByTestId('ai-note-panel')).toBeNull();
+        expect(screen.queryByTestId('ai-note-zone')).toBeNull();
+    });
+
+    it('après application, choisir une autre espèce dans l’autocomplétion met le nom latin à jour', async () => {
+        mocks.suggestSpeciesAutocomplete.mockImplementation(async (query: string) => {
+            if (query === 'mésange charbonnière') return [{ displayName: 'Mésange charbonnière', latinName: 'Parus major', source: 'inat', iconicTaxonName: 'Aves' }];
+            if (query === 'Mésange bleue') return [{ displayName: 'Mésange bleue', latinName: 'Cyanistes caeruleus', source: 'inat', iconicTaxonName: 'Aves' }];
+            return [];
+        });
+        renderForm(null);
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        await screen.findByTestId('ai-note-applied');
+        expect(field('latinName').value).toBe('Parus major');
+        fireEvent.change(field('speciesName'), { target: { value: 'Mésange bleue' } });
+        const option = await screen.findByText('Cyanistes caeruleus', {}, { timeout: 2000 });
+        fireEvent.mouseDown(option.closest('button')!);
+        expect(field('speciesName').value).toBe('Mésange bleue');
+        expect(field('latinName').value).toBe('Cyanistes caeruleus');
+    });
+
+    it('un champ modifié pendant la vérification du nom n’est pas écrasé, et c’est dit', async () => {
+        const lookup = deferred<unknown[]>();
+        mocks.suggestSpeciesAutocomplete.mockImplementation((query: string) => (query === 'mésange charbonnière' ? lookup.promise : Promise.resolve([])));
+        renderForm(null);
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        await within(panel).findByRole('button', { name: 'Vérification du nom…' });
+        fireEvent.change(field('count'), { target: { value: '7' } });
+        await act(async () => { lookup.resolve([]); });
+        const applied = await screen.findByTestId('ai-note-applied');
+        expect(field('count').value).toBe('7');
+        expect(applied.textContent).toMatch(/Modifié pendant la vérification du nom/);
+    });
+
+    it('après application, le focus va sur le compte rendu, sans annonce en double', async () => {
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        const applied = await screen.findByTestId('ai-note-applied');
+        await waitFor(() => expect(applied.contains(document.activeElement)).toBe(true));
+        expect(screen.getByTestId('ai-note-status').textContent).toBe('');
     });
 });
 

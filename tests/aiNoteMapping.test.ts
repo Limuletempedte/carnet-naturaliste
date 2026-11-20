@@ -149,6 +149,36 @@ describe('buildNoteProposals — pré-cochage', () => {
         expect(date.detail).toContain('20/11/2026');
     });
 
+    it('ne pré-coche jamais le reste de la note', () => {
+        const [remainder] = buildNoteProposals(result({ remainder: 'Avec Paul.' }), ctx(fresh));
+        expect(remainder).toMatchObject({ key: 'remainder', preChecked: false });
+    });
+
+    it('ne pré-coche une répartition que si elle sera appliquée telle que la note la dit', () => {
+        // Nombre proposé et pré-coché : 5 = 2 + 1 + 2 non identifiés.
+        const fine = buildNoteProposals(result({ count: 5, maleCount: 2, femaleCount: 1 }), ctx(fresh));
+        expect(fine.find(p => p.key === 'breakdown')?.preChecked).toBe(true);
+        // Fiche à 10, nombre de la note (5) non pré-coché : appliquée sur 10, pas telle que la note la dit.
+        const ten = form({ count: 10 });
+        const other = buildNoteProposals(result({ count: 5, maleCount: 2, femaleCount: 1 }), ctx(ten));
+        expect(other.find(p => p.key === 'breakdown')?.preChecked).toBe(false);
+        // Sans total dans la note, une répartition qui dépasse le total de la fiche.
+        const over = buildNoteProposals(result({ maleCount: 2, femaleCount: 1 }), ctx(fresh));
+        const breakdown = over.find(p => p.key === 'breakdown');
+        expect(breakdown?.preChecked).toBe(false);
+        expect(breakdown?.detail).toMatch(/Ne sera pas appliquée/);
+        expect(breakdown?.detail).not.toMatch(/Cochez aussi/);
+    });
+
+    it('fiche sans date valable : compte depuis aujourd’hui et le dit', () => {
+        const noDate = form({ date: '' });
+        const [date] = buildNoteProposals(result({ dateExpr: { kind: 'relative_days', offsetDays: -1 } }), ctx(noDate));
+        expect(date.proposed).toBe('19/11/2026');
+        expect(date.detail).toMatch(/compté depuis aujourd'hui \(20\/11\/2026\), car la fiche n'avait pas de date valable/);
+        const applied = applyNoteFields(noDate, result({ dateExpr: { kind: 'relative_days', offsetDays: -1 } }), new Set<NoteProposalKey>(['date']), { referenceDate: '', today: TODAY, keepNote: false, noteText: '' });
+        expect(applied.form.date).toBe('2026-11-19');
+    });
+
     it('calcule la répartition affichée avec le total qui sera appliqué', () => {
         const ten = form({ count: 10 });
         const note = result({ count: 5, maleCount: 2, femaleCount: 1 });
@@ -277,8 +307,20 @@ describe('applyNoteFields', () => {
 
 describe('commentaire', () => {
     it('n’ajoute jamais un texte déjà présent (casse et espaces ignorés)', () => {
-        expect(appendToComment('', 'Note')).toBe('Note');
-        expect(appendToComment('Une NOTE  ici', 'note ici')).toBe('Une NOTE  ici');
+        expect(appendToComment('', 'Note')).toEqual({ comment: 'Note', tooLong: false });
+        expect(appendToComment('Une NOTE  ici', 'note ici')).toEqual({ comment: 'Une NOTE  ici', tooLong: false });
+    });
+
+    it('ne dépasse jamais la limite du commentaire en base (5 000 caractères)', () => {
+        const long = 'a'.repeat(4990);
+        expect(appendToComment(long, 'une note de plus')).toEqual({ comment: long, tooLong: true });
+        const outcome = applyNoteFields(form({ comment: long }), result({ remainder: 'reste de la note' }), new Set<NoteProposalKey>(['remainder']), { referenceDate: '2026-11-20', today: TODAY, keepNote: false, noteText: '' });
+        expect(outcome.form.comment).toBe(long);
+        expect(outcome.skipped[0].reason).toMatch(/5\u202f000|5 000/);
+        const kept = applyNoteFields(form({ comment: long }), result({ count: 2 }), new Set<NoteProposalKey>(['count']), { referenceDate: '2026-11-20', today: TODAY, keepNote: true, noteText: 'note entière' });
+        expect(kept.form.comment).toBe(long);
+        expect(kept.noteKept).toBe(false);
+        expect(kept.warnings.join(' ')).toMatch(/pas été ajoutée au commentaire/);
         expect(commentContains('abc', '')).toBe(false);
     });
 });

@@ -49,6 +49,24 @@ export type NoteProposalKey =
     | AiNoteChoiceField
     | 'remainder';
 
+/** Champs du formulaire écrits par chaque proposition. */
+export const NOTE_PROPOSAL_FIELDS: Record<NoteProposalKey, readonly (keyof ObservationFormData)[]> = {
+    species: ['speciesName', 'latinName'],
+    count: ['count'],
+    breakdown: ['maleCount', 'femaleCount', 'unidentifiedCount'],
+    date: ['date'],
+    time: ['time'],
+    location: ['location'],
+    observationCondition: ['observationCondition'],
+    comportement: ['comportement'],
+    sexe: ['sexe'],
+    age: ['age'],
+    phenology: ['phenology'],
+    habitat: ['habitat'],
+    weather: ['weather'],
+    remainder: ['comment'],
+};
+
 /** Ordre d'affichage ET d'application (l'espèce d'abord). */
 export const NOTE_PROPOSAL_ORDER: readonly NoteProposalKey[] = [
     'species', 'count', 'breakdown', 'date', 'time', 'location',
@@ -191,6 +209,13 @@ export const resolveNoteDate = (expr: AiNoteDateExpr, referenceIso: string, toda
     if (resolved === null || resolved > today) return null;
     return daysToIso(resolved);
 };
+
+/**
+ * Date de référence des dates relatives : celle de la fiche si elle est
+ * lisible, sinon la date du jour (fiche sans date ou date illisible).
+ */
+export const noteReferenceDate = (formDate: string, todayIso: string): string =>
+    isoToDays(formDate) !== null ? formDate : todayIso;
 
 /** « mardi 18 novembre 2026 ». */
 export const formatNoteDate = (iso: string): string => {
@@ -342,6 +367,9 @@ export const buildNoteProposals = (result: AiNoteResult, context: NoteMappingCon
             : proposals.find(proposal => proposal.key === 'count')?.preChecked === true);
         const total = countChosen ? result.count : currentTotal(current);
         const fits = total !== null && (result.maleCount ?? 0) + (result.femaleCount ?? 0) <= total;
+        // Pré-cochée seulement si elle sera appliquée telle que la note la dit :
+        // elle tient, et le total appliqué est celui de la note (s'il y en a un).
+        const asWritten = fits && (result.count === null || total === result.count);
         const parts = [
             result.maleCount !== null ? `${result.maleCount} mâle${result.maleCount > 1 ? 's' : ''}` : null,
             result.femaleCount !== null ? `${result.femaleCount} femelle${result.femaleCount > 1 ? 's' : ''}` : null,
@@ -359,22 +387,25 @@ export const buildNoteProposals = (result: AiNoteResult, context: NoteMappingCon
             detail: !fits
                 ? (total === null
                     ? "Ne sera pas appliquée : le nombre d'individus n'est pas renseigné."
-                    : `Ne sera pas appliquée : elle dépasse le total (${total}). Cochez aussi le nombre proposé.`)
+                    : `Ne sera pas appliquée : elle dépasse le total (${total}).${countProposed && !countChosen ? ' Cochez aussi le nombre proposé.' : ''}`)
                 : rest !== '' ? `Non identifiés : le reste du total (${total}).` : undefined,
-            preChecked: unchanged(context, 'maleCount', 'femaleCount', 'unidentifiedCount')
+            preChecked: asWritten && unchanged(context, 'maleCount', 'femaleCount', 'unidentifiedCount')
                 && current.maleCount === '' && current.femaleCount === '' && current.unidentifiedCount === '',
         });
     }
 
     if (!dropped.has('dateExpr') && result.dateExpr.kind !== 'none') {
-        const resolved = resolveNoteDate(result.dateExpr, snapshot.date, today);
+        const reference = noteReferenceDate(snapshot.date, today);
+        const resolved = resolveNoteDate(result.dateExpr, reference, today);
         if (resolved && resolved !== current.date) {
             const isDefault = current.date === '' || (!!defaults && current.date === defaults.date);
             push({
                 key: 'date',
                 current: current.date ? frDate(current.date) : EMPTY_LABEL,
                 proposed: frDate(resolved),
-                detail: `${formatNoteDate(resolved)} : « ${describeNoteDateExpr(result.dateExpr)} », compté depuis le ${frDate(snapshot.date)}.`,
+                detail: reference === snapshot.date
+                    ? `${formatNoteDate(resolved)} : « ${describeNoteDateExpr(result.dateExpr)} », compté depuis le ${frDate(reference)}.`
+                    : `${formatNoteDate(resolved)} : « ${describeNoteDateExpr(result.dateExpr)} », compté depuis aujourd'hui (${frDate(reference)}), car la fiche n'avait pas de date valable.`,
                 preChecked: unchanged(context, 'date') && isDefault,
             });
         }
@@ -418,7 +449,10 @@ export const buildNoteProposals = (result: AiNoteResult, context: NoteMappingCon
             current: show(current.comment),
             proposed: result.remainder,
             detail: 'Ajouté à la fin du commentaire.',
-            preChecked: unchanged(context, 'comment') && current.comment.trim() === '',
+            // Jamais pré-coché : ce reste peut contenir des noms de personnes
+            // (la consigne du serveur les y range) ; il n'entre dans la fiche
+            // que si la personne le coche elle-même.
+            preChecked: false,
         });
     }
 
@@ -441,12 +475,22 @@ export const commentContains = (comment: string | undefined, text: string): bool
     return needle.length > 0 && normalizeComment(comment ?? '').includes(needle);
 };
 
-/** Ajoute `text` à la fin du commentaire, sauf s'il y figure déjà : jamais de doublon. */
-export const appendToComment = (comment: string | undefined, text: string): string => {
+/** Longueur maximale du commentaire en base (`observations_comment_max_length_check`). */
+export const COMMENT_MAX_CHARS = 5000;
+
+export const COMMENT_TOO_LONG_WARNING = `La note n'a pas été ajoutée au commentaire : il dépasserait ${COMMENT_MAX_CHARS.toLocaleString('fr-FR')} caractères.`;
+
+/**
+ * Ajoute `text` à la fin du commentaire, sauf s'il y figure déjà : jamais de
+ * doublon. Si le commentaire dépasserait la limite de la base, rien n'est
+ * ajouté (`tooLong`).
+ */
+export const appendToComment = (comment: string | undefined, text: string): { comment: string; tooLong: boolean } => {
     const base = comment ?? '';
     const addition = text.trim();
-    if (addition === '' || commentContains(base, addition)) return base;
-    return base.trim() === '' ? addition : `${base.trimEnd()}\n\n${addition}`;
+    if (addition === '' || commentContains(base, addition)) return { comment: base, tooLong: false };
+    const next = base.trim() === '' ? addition : `${base.trimEnd()}\n\n${addition}`;
+    return next.length > COMMENT_MAX_CHARS ? { comment: base, tooLong: true } : { comment: next, tooLong: false };
 };
 
 // ---------------------------------------------------------------------------
@@ -471,6 +515,8 @@ export interface NoteApplyOutcome {
     skipped: { key: NoteProposalKey; reason: string }[];
     /** Points à vérifier dans la fiche après application. */
     warnings: string[];
+    /** La note entière a été ajoutée au commentaire. */
+    noteKept: boolean;
     /** La météo a été écrite : la marquer comme modifiée (pas d'écrasement automatique). */
     weatherApplied: boolean;
     /** Champs rangés dans « détails avancés » touchés : les déplier pour les montrer. */
@@ -531,7 +577,7 @@ export const applyNoteFields = (
             }
             case 'date': {
                 if (dropped.has('dateExpr')) break;
-                const resolved = resolveNoteDate(result.dateExpr, options.referenceDate, options.today);
+                const resolved = resolveNoteDate(result.dateExpr, noteReferenceDate(options.referenceDate, options.today), options.today);
                 if (resolved) {
                     next.date = resolved;
                     applied.push(key);
@@ -554,7 +600,12 @@ export const applyNoteFields = (
                 // La note entière gardée contient déjà ce reste : pas de doublon.
                 if (options.keepNote) break;
                 if (result.remainder !== null && !dropped.has('remainder')) {
-                    next.comment = appendToComment(next.comment, result.remainder);
+                    const added = appendToComment(next.comment, result.remainder);
+                    if (added.tooLong) {
+                        skipped.push({ key, reason: COMMENT_TOO_LONG_WARNING });
+                        break;
+                    }
+                    next.comment = added.comment;
                     applied.push(key);
                 }
                 break;
@@ -568,10 +619,16 @@ export const applyNoteFields = (
         }
     }
 
-    if (options.keepNote) next.comment = appendToComment(next.comment, options.noteText);
-
     // Nombre changé sans nouvelle répartition : l'ancienne ne tient peut-être plus.
     const warnings: string[] = [];
+    let noteKept = false;
+    if (options.keepNote) {
+        const before = next.comment;
+        const added = appendToComment(next.comment, options.noteText);
+        if (added.tooLong) warnings.push(COMMENT_TOO_LONG_WARNING);
+        next.comment = added.comment;
+        noteKept = next.comment !== before;
+    }
     if (applied.includes('count') && !applied.includes('breakdown') && validateObservationForm(next).countBreakdown) {
         warnings.push("La répartition déjà saisie ne correspond plus au nouveau nombre d'individus : corrigez-la avant d'enregistrer.");
     }
@@ -581,6 +638,7 @@ export const applyNoteFields = (
         applied,
         skipped,
         warnings,
+        noteKept,
         weatherApplied: applied.includes('weather'),
         touchesAdvancedLocation: applied.includes('location'),
         touchesAdvancedDetails: applied.some(key => ADVANCED_DETAILS.includes(key)),

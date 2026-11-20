@@ -21,6 +21,13 @@ import { isChunkLoadError } from '../utils/chunkLoadError';
  * proposé par l'assistant. `queryParams: false` ne couvre pas ces traces.
  */
 export const scrubBreadcrumb = (breadcrumb: Sentry.Breadcrumb): Sentry.Breadcrumb | null => {
+    // Traces d'interface (`ui.click`, `ui.input`…) : le sélecteur recopie
+    // `aria-label`, `alt` et `title`, donc parfois un nom d'espèce (« Choisir
+    // Parus major », image d'une espèce). Seul le nom de l'attribut reste.
+    if (typeof breadcrumb.category === 'string' && breadcrumb.category.startsWith('ui.')) {
+        if (typeof breadcrumb.message !== 'string') return breadcrumb;
+        return { ...breadcrumb, message: breadcrumb.message.replace(/\[(aria-label|alt|title)=(?:"[^"]*"|'[^']*'|[^\]]*)\]/g, '[$1]') };
+    }
     if (breadcrumb.category !== 'fetch' && breadcrumb.category !== 'xhr') return breadcrumb;
     const data = breadcrumb.data ? { ...breadcrumb.data } : undefined;
     if (data && typeof data.url === 'string') {

@@ -49,11 +49,28 @@ describe('AiNotePanel', () => {
         expect(screen.getByText('Nourrissage.')).toBeTruthy();
     });
 
-    it('n’applique rien sans clic, et désactive le bouton s’il n’y a rien à appliquer', () => {
-        const { onApply } = renderPanel({ selection: new Set(), keepNote: false });
-        const apply = screen.getByRole('button', { name: 'Appliquer la sélection' }) as HTMLButtonElement;
-        expect(apply.disabled).toBe(true);
+    it('n’applique rien sans clic sur « Appliquer la sélection »', () => {
+        const onKeepNoteChange = vi.fn();
+        const { onApply, onToggle } = renderPanel({ onKeepNoteChange });
+        fireEvent.click(screen.getByRole('checkbox', { name: /Nombre d'individus/ }));
+        fireEvent.click(screen.getByRole('checkbox', { name: /Garder la note/ }));
+        expect(onToggle).toHaveBeenCalledTimes(1);
+        expect(onKeepNoteChange).toHaveBeenCalledWith(false);
         expect(onApply).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Appliquer la sélection' }));
+        expect(onApply).toHaveBeenCalledTimes(1);
+    });
+
+    it('désactive le bouton s’il n’y a rien à appliquer', () => {
+        renderPanel({ selection: new Set(), keepNote: false });
+        expect((screen.getByRole('button', { name: 'Appliquer la sélection' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('lit les valeurs une seule fois : elles sont dans le libellé, sans description en double', () => {
+        renderPanel();
+        const box = screen.getByRole('checkbox', { name: /Nombre d'individus/ });
+        expect(box.getAttribute('aria-describedby')).toBeNull();
+        expect(box.closest('label')?.textContent).toMatch(/Actuel : 1/);
     });
 
     it('pendant la vérification du nom : bouton occupé, « Annuler » proposé', () => {

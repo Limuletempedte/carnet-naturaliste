@@ -81,7 +81,7 @@ export const NoteConsentText: React.FC = () => (
                 <li>Destinataire : Anthropic, via Anthropic Ireland Ltd pour l'Espace économique européen.</li>
                 <li>Transfert hors de l'UE : les données sont stockées aux <strong>États-Unis</strong> et peuvent être traitées hors de l'UE, dans le cadre des clauses contractuelles types de l'UE.</li>
                 <li>Chez Anthropic : effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Par défaut, ces données ne servent pas à entraîner les modèles.</li>
-                <li>Dans le Carnet : la note n'est enregistrée que dans le commentaire de la fiche, si la case « Garder la note dans le commentaire » reste cochée (elle l'est d'avance, vous pouvez la décocher). Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la note ni la réponse.</li>
+                <li>Dans le Carnet : rien de la note n'est enregistré sans votre choix. Les champs que vous cochez sont écrits dans la fiche ; la note entière, ou ce qu'elle dit d'autre, ne va dans le commentaire que si vous cochez la case correspondante (« Garder la note dans le commentaire » est cochée d'avance, vous pouvez la décocher). Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la note ni la réponse.</li>
             </ul>
         </div>
         <div>
@@ -159,9 +159,14 @@ const AiConsentCard: React.FC<AiConsentCardProps> = ({
     const [checked, setChecked] = useState(false);
     const titleId = useId();
     const sectionRef = useRef<HTMLElement | null>(null);
+    const acceptRef = useRef<HTMLButtonElement | null>(null);
     useEffect(() => {
         if (autoFocus) sectionRef.current?.focus();
     }, [autoFocus]);
+    // Échec de l'enregistrement : le focus revient sur « Accepter », à côté du message.
+    useEffect(() => {
+        if (error) acceptRef.current?.focus();
+    }, [error]);
     return (
         <section
             ref={sectionRef}
@@ -199,6 +204,7 @@ const AiConsentCard: React.FC<AiConsentCardProps> = ({
             {isOffline && <p className="text-sm text-amber-700 dark:text-amber-300">Disponible en ligne uniquement.</p>}
             <div className="flex flex-wrap items-center gap-2">
                 <button
+                    ref={acceptRef}
                     type="button"
                     onClick={() => void onAccept()}
                     disabled={!checked || isWorking || isOffline}

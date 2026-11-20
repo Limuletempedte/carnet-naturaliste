@@ -89,8 +89,9 @@ le traitement 8 du [registre](registre-traitements.md). La durée de validité d
 | Vercel (CDN) | Global | Frontend public (aucune donnee perso) | Sans objet |
 | iNaturalist | US | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |
 | GBIF | UE/Global | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |
-| Nominatim | UE/Global | Coordonnees GPS + IP | Geocodage inverse (interet legitime) |
-| Open-Meteo | UE | Coordonnees GPS | Non |
+| Wikipédia (Wikimedia Foundation) | US | Nom d'espece (fiche de l'espece) + IP | Lecture seule, pas de donnee perso |
+| Nominatim | UE/Global | Coordonnees GPS (geocodage inverse) ou adresse tapee + IP | Geocodage (interet legitime) |
+| Open-Meteo | UE | Coordonnees GPS et date (meteo), coordonnees (altitude) | Non |
 
 ---
 
@@ -98,6 +99,6 @@ le traitement 8 du [registre](registre-traitements.md). La durée de validité d
 
 - Les donnees personnelles sont hebergees dans l'UE (Supabase `eu-central-1`) : les traitements Cloudflare et les sauvegardes techniques
   suivent les conditions distinctes décrites dans le registre.
-- Les appels iNaturalist / GBIF / Nominatim sont en lecture seule (autocomplete, geocodage)
+- Les appels iNaturalist / GBIF / Wikipédia / Nominatim / Open-Meteo sont en lecture seule (autocomplete, fiche d'espece, geocodage, meteo)
   et ne transmettent pas les observations de l'utilisateur.
 - A reverifier si la region Supabase ou l'hebergeur frontend venait a changer.

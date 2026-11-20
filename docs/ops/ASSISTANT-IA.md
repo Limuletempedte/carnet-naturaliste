@@ -851,7 +851,13 @@ déploiement, au plus tard à l'ouverture de la note après la PR B.
   annulable (« Annuler l'application »). L'espèce passe d'abord par la
   vérification du nom de l'aide photo ; les autres champs sont marqués comme
   modifiés (la météo automatique ne les écrase pas). « Garder la note dans le
-  commentaire » est coché par défaut, sans jamais de doublon.
+  commentaire » est coché par défaut (décoché quand la note reprend le
+  commentaire), sans jamais de doublon ni dépasser 5 000 caractères ; le
+  reste de la note n'est jamais pré-coché. Pas d'enregistrement de la fiche
+  pendant une application ; « Enregistrer et ajouter une autre » remet
+  l'assistant à zéro. « Ne rien appliquer » garde le résultat payé
+  (« Revoir les champs proposés », sans nouvel appel, tant que la note ne
+  change pas).
 - **Ce qui ne part pas** : la date, l'heure, le GPS, la commune, la photo et
   le reste de la fiche. La note n'est ni enregistrée dans le navigateur, ni
   journalisée, ni envoyée à Sentry.
@@ -863,10 +869,21 @@ consentement de la note change (`2026-11-v0` → `2026-11-v1`). Le
 redéploiement emporte aussi les retouches de l'essai du 20 novembre (déjà sur
 `main`, pas encore en production).
 
+> ⚠️ **Ordre impératif : redéployer `ai-text` (étape 2) AVANT de retirer
+> `note` de la liste de coupure (étape 3).** La version en service (7)
+> attend encore l'accord provisoire `2026-11-v0`, alors que l'application
+> enregistre `2026-11-v1` : une note ouverte avant le redéploiement
+> répondrait `consent_outdated`, l'application reproposerait la carte
+> d'accord, et la personne tournerait en boucle (sans frais, mais sans
+> jamais d'analyse).
+
 1. **Vercel a déployé `main`** : sur le site en ligne, le bouton « Remplir
-   depuis une note » apparaît. Tant que la note est fermée, un essai répond
-   « Le remplissage depuis une note est momentanément indisponible », sans
-   rien compter.
+   depuis une note » apparaît. Au premier essai, **la carte d'accord apparaît
+   d'abord** (personne n'a encore d'accord `2026-11-v1`) ; l'accord accepté
+   est enregistré dans `ai_consents` en `2026-11-v1`, puis, tant que la note
+   est fermée, l'envoi répond « Le remplissage depuis une note est
+   momentanément indisponible », sans rien compter (la coupure est vérifiée
+   avant toute réservation).
 2. **Redéployer `ai-text` d'abord, note encore fermée** (depuis `main` à
    jour) :
 
@@ -888,9 +905,10 @@ redéploiement emporte aussi les retouches de l'essai du 20 novembre (déjà sur
    trois contrôles **401**, **204**, **403**.
 4. **Une vraie note depuis le site en ligne** (une utilisation, environ
    0,01 $) : « Remplir depuis une note », écrire par exemple « 2 mésanges
-   charbonnières hier matin dans le jardin, ensoleillé », donner l'accord sur
-   la carte, analyser, relire, appliquer, puis annuler l'application (rien
-   n'est enregistré tant que la fiche n'est pas sauvegardée).
+   charbonnières hier matin dans le jardin, ensoleillé », analyser, donner
+   l'accord **si la carte apparaît** (elle n'apparaît pas si l'accord a déjà
+   été donné à l'étape 1), relire, appliquer, puis annuler l'application
+   (rien n'est enregistré tant que la fiche n'est pas sauvegardée).
 5. **Contrôles en base**, dans l'éditeur SQL : la ligne `ai_consents` de son
    compte a `feature = 'note'` et `version = '2026-11-v1'` ; la dernière ligne
    `ai_usage` a `feature = 'note'`, statut `ok`, modèle `claude-sonnet-5-5`

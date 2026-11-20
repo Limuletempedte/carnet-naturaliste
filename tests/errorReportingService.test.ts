@@ -54,6 +54,18 @@ describe('errorReportingService — traces réseau', () => {
         expect(service.scrubBreadcrumb(console)).toBe(console);
     });
 
+    it("retire la valeur des attributs aria-label, alt et title des traces d'interface", async () => {
+        const { service } = await load();
+        const click = service.scrubBreadcrumb({
+            category: 'ui.click',
+            message: 'div.panel > button.choose[aria-label="Choisir Rougegorge familier"] > img[alt="Erithacus rubecula"][title=\'Parus major\']',
+        });
+        expect(click?.message).toBe('div.panel > button.choose[aria-label] > img[alt][title]');
+        expect(click?.message).not.toMatch(/Rougegorge|Erithacus|Parus/);
+        const input = service.scrubBreadcrumb({ category: 'ui.input', message: 'input#speciesName' });
+        expect(input?.message).toBe('input#speciesName');
+    });
+
     it('branche le filtre sur Sentry.init', async () => {
         vi.stubEnv('VITE_SENTRY_DSN', FAKE_DSN);
         const { sentry, service } = await load();
