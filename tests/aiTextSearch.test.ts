@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
     ALLOWED_TAXONOMIC_GROUPS,
+    CONSENT_VERSIONS,
     NOTE_FEATURE,
     SEARCH_CATEGORY_KEYS,
     SEARCH_FEATURE,
@@ -16,6 +18,7 @@ import {
     maxInputTokens,
     parseSearchOutput,
     readEnvelope,
+    cleanInlineText,
     validateSearchInput,
     wordsFromPhrase,
     type SearchInput,
@@ -83,6 +86,22 @@ describe('ai-text — recherche : validation de l’entrée', () => {
         expect(prompt.split('</phrase>')).toHaveLength(2);
         expect(prompt).toContain('\\u003cimg');
         expect(prompt).not.toContain('<img');
+    });
+
+    it('retire aussi les caractères ignorables (sélecteurs de variante, remplissage hangul, braille vide)', () => {
+        const hidden = ['\ufe0f', '\u{e0100}', '\u3164', '\u115f', '\u1160', '\uffa0', '\u034f', '\u2800', '\u00ad', '\u{e0041}'].join('');
+        expect(cleanInlineText(`pics${hidden} noirs`)).toBe('pics noirs');
+        expect(validateSearchInput({ text: `pics${'\ufe00'.repeat(150)}` })).toEqual({ ok: true, value: { text: 'pics' } });
+        // Les lettres accentuées et les emoji visibles restent.
+        expect(cleanInlineText('Pic épeiche 🐦')).toBe('Pic épeiche 🐦');
+    });
+
+    it('version d’accord provisoire impossible à enregistrer : fermée par défaut jusqu’à la PR B', () => {
+        // ai_consents.version est bornée à 32 caractères : aucun accord ne
+        // peut égaler cette version, ai_reserve_call répond consent_outdated.
+        const sql = readFileSync('supabase/migrations/20261106220000_ai_text_features.sql', 'utf8');
+        expect(sql).toContain('version text not null check (char_length(version) between 1 and 32)');
+        expect(CONSENT_VERSIONS.search?.length).toBeGreaterThan(32);
     });
 
     it('readEnvelope accepte la recherche ; sa charge utile est validée ensuite', () => {
@@ -320,6 +339,9 @@ describe('ai-text — recherche : lecture de la réponse', () => {
         }
         expect(parse({ genera: Array.from({ length: 20 }, (_, i) => `Genus${'a'.repeat(i)}`.replace(/\d/g, '')) }).dropped).toEqual([]);
         expect(parse({ genera: Array.from({ length: 21 }, () => 'Parus') }).dropped).toEqual(['genera']);
+        // Longueur bornée : 60 caractères au plus par élément.
+        expect(parse({ genera: [`P${'a'.repeat(59)}`] }).genera).toHaveLength(1);
+        expect(parse({ genera: [`P${'a'.repeat(60)}`] }).dropped).toEqual(['genera']);
     });
 
     describe('proximité', () => {
@@ -393,6 +415,17 @@ describe('ai-text — recherche : lecture de la réponse', () => {
             // Que de la ponctuation : pas un texte.
             expect(parse({ text: '!!!' }, { text: 'pics !!!' }).dropped).toEqual(['text']);
             expect(parse({ text: 42 }).dropped).toEqual(['text']);
+        });
+
+        it('aucun caractère de balisage ajouté par le modèle (< > " \' ` &)', () => {
+            // Les mots viennent de la phrase, pas les chevrons : retiré.
+            expect(parse({ text: 'martin-pêcheur"><a>Pessac</a><!--' }, { text: 'martin-pêcheur à Pessac' }).dropped).toEqual(['text']);
+            expect(parse({ commune: 'Pessac & Talence' }, { text: 'pics à Pessac et Talence' }).dropped).toEqual(['commune']);
+            // Présents dans la phrase : gardés tels quels (texte brut, à afficher comme tel).
+            expect(parse({ text: 'pics <b>' }, { text: 'pics <b>' }).text).toBe('pics <b>');
+            // Les deux apostrophes se valent.
+            expect(parse({ commune: "Saint-Martin-d'Hères" }, { text: 'hérons à Saint-Martin-d’Hères' }).commune).toBe("Saint-Martin-d'Hères");
+            expect(wordsFromPhrase("l'étang", 'au bord de l étang')).toBe(false);
         });
 
         it('wordsFromPhrase : chaque mot à une faute près, les mots courts exacts', () => {

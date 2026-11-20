@@ -39,10 +39,13 @@ export const CONSENT_VERSIONS: Readonly<Partial<Record<TextFeatureName, string>>
     // version provisoire `2026-11-v0` de la PR A est refusée désormais.
     note: '2026-11-v1',
     // PROVISOIRE (PR A de la recherche) : déclarée côté fonction seulement,
-    // l'application n'affiche aucune carte. La PR B DOIT la remplacer, des
-    // deux côtés, en écrivant le texte du consentement : un accord inséré à
-    // la main d'ici là sera alors refusé (tests/aiAssistService.test.ts).
-    search: '2026-11-v0',
+    // l'application n'affiche aucune carte. Plus longue que les 32
+    // caractères permis par `ai_consents.version` : aucun accord ne peut
+    // l'atteindre, donc `consent_outdated` pour tous, même si
+    // `AI_DISABLED_FEATURES` oublie `search` (fermé par défaut). La PR B
+    // DOIT la remplacer, des deux côtés, par une version enregistrable en
+    // écrivant le texte du consentement (tests/aiAssistService.test.ts).
+    search: 'pr-a-fermee-jusqu-au-texte-de-la-pr-b',
 };
 
 // ---------------------------------------------------------------------------
@@ -214,8 +217,11 @@ const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 // Caractères de format invisibles (classe Unicode Cf) : contrôles
 // bidirectionnels (RLO, LRI…), qui peuvent retourner l'affichage d'un texte,
 // largeur nulle, BOM, trait d'union conditionnel, « tags » U+E0000… qui
-// cachent des consignes. Toujours retirés.
-const FORMAT_CHARS_RE = /\p{Cf}/gu;
+// cachent des consignes. Toujours retirés, avec les autres caractères
+// « ignorables » qui n'affichent rien (sélecteurs de variante, remplissage
+// hangul, U+034F) et l'espace braille vide U+2800 : une consigne peut y être
+// codée.
+const FORMAT_CHARS_RE = /[\p{Cf}\p{Default_Ignorable_Code_Point}⠀]/gu;
 
 /** Texte sur une ligne : contrôles et bidi remplacés par une espace, espaces resserrées. */
 export function cleanInlineText(value: string): string {
@@ -956,6 +962,8 @@ export const SEARCH_LIMITS = {
     /** « les N derniers jours » : dix ans au plus. */
     maxDays: 3660,
     maxGenera: 20,
+    /** Un genre, épithète comprise. */
+    maxGenusChars: 60,
     /** Département, commune, lieu de `near`. */
     maxPlaceChars: 100,
     maxTextChars: 200,
@@ -1179,12 +1187,20 @@ function typoAllowance(word: string): number {
     return word.length <= 5 ? 1 : 2;
 }
 
+/** Caractères qui comptent pour du HTML ou une chaîne : jamais ajoutés par le modèle. */
+const MARKUP_CHARS_RE = /[<>"'`&’]/g;
+
 /**
  * Vrai si chaque mot de `value` est un mot de la phrase, à une faute de
- * frappe ou un pluriel près. Un commentaire, une traduction ou un lieu ajouté
- * par le modèle n'y passe pas. Un texte sans aucun mot est refusé.
+ * frappe ou un pluriel près, et si `value` n'ajoute aucun caractère de
+ * balisage (`< > " ' \` &`) absent de la phrase (les deux apostrophes se
+ * valent). Un commentaire, une traduction, un lieu ou une balise ajoutés
+ * par le modèle n'y passent pas. Un texte sans aucun mot est refusé.
  */
 export function wordsFromPhrase(value: string, phrase: string): boolean {
+    const apostrophe = (c: string) => (c === '’' ? '\'' : c);
+    const phraseMarkup = new Set((phrase.match(MARKUP_CHARS_RE) ?? []).map(apostrophe));
+    if ((value.match(MARKUP_CHARS_RE) ?? []).some(c => !phraseMarkup.has(apostrophe(c)))) return false;
     const source = foldedWords(phrase);
     const words = foldedWords(value);
     if (words.length === 0) return false;
@@ -1333,7 +1349,7 @@ export function parseSearchOutput(text: string, input: SearchInput, now: Date = 
         drop('genera');
     } else {
         const names = raw.genera.map(item => (typeof item === 'string' ? cleanInlineText(item) : ''));
-        if (names.every(name => GENUS_RE.test(name))) genera = [...new Set(names)];
+        if (names.every(name => name.length <= SEARCH_LIMITS.maxGenusChars && GENUS_RE.test(name))) genera = [...new Set(names)];
         else drop('genera');
     }
 

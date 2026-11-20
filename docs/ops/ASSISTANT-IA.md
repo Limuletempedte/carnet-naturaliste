@@ -573,16 +573,17 @@ dépense dans la Console.
   statut `ok`, `claude-sonnet-5-5`, 1 316 tokens d'entrée et 332 de sortie,
   **0,0060 $** (conforme à l'essai du §6.3).
 
-Pour refermer le bilan sans rien défaire (puis redéployer, §6.6) :
+Pour refermer le bilan sans rien défaire (puis redéployer, §6.6), tant que
+la recherche n'est pas ouverte (§6.8, avant sa PR B) :
 
 ```bash
-npx supabase secrets set AI_DISABLED_FEATURES=summary --project-ref xowiezzqehadcfnbkijo
+npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowiezzqehadcfnbkijo
 ```
 
 > ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire toujours la
-> liste **complète** de ce qui doit rester coupé : tant que la note est fermée
-> (§6.7, avant sa PR B), refermer le bilan s'écrit
-> `AI_DISABLED_FEATURES=summary,note`, sinon la note se rouvre.
+> liste **complète** de ce qui doit rester coupé : `summary` seul rouvrirait
+> la recherche. Une fois la recherche ouverte (après sa PR B), refermer le
+> bilan seul s'écrira `AI_DISABLED_FEATURES=summary`.
 
 ### 6.5 Comment `ai-text` décide
 
@@ -940,17 +941,19 @@ langage naturel (phase 4).
 
 #### Couper et rouvrir la note
 
-- **Refermer** (sans rien défaire) : `AI_DISABLED_FEATURES=note` (ou
-  `summary,note` pour couper aussi le bilan), puis redéployer `ai-text` et
-  refaire le contrôle de l'étape 5 de la PR A (`503 feature_disabled`).
-  L'application affiche alors « momentanément indisponible », sans erreur
-  technique, et la note tapée reste dans la zone.
+- **Refermer** (sans rien défaire) : tant que la recherche n'est pas ouverte
+  (§6.8, avant sa PR B), `AI_DISABLED_FEATURES=note,search` (ou
+  `summary,note,search` pour couper aussi le bilan) ; ensuite, `note` seul.
+  Puis redéployer `ai-text` et refaire le contrôle de l'étape 5 de la PR A
+  (`503 feature_disabled`). L'application affiche alors « momentanément
+  indisponible », sans erreur technique, et la note tapée reste dans la zone.
 
   ```bash
-  npx supabase secrets set AI_DISABLED_FEATURES=note --project-ref xowiezzqehadcfnbkijo
+  npx supabase secrets set AI_DISABLED_FEATURES=note,search --project-ref xowiezzqehadcfnbkijo
   ```
 
-- **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
+- **Toujours écrire la liste complète** : `secrets set` remplace la valeur ;
+  `note` seul rouvrirait la recherche.
 - **Rouvrir** : étapes 3 à 5 ci-dessus.
 
 ### 6.8 Lot « recherche en langage naturel » (phase 4)
@@ -959,16 +962,21 @@ langage naturel (phase 4).
 à `ai-text` (`logic.ts`). Aucune migration (`search` est déjà accepté par
 `ai_usage.feature` et `ai_consents`), `ai-identify` et `index.ts` inchangés,
 même modèle (`AI_TEXT_MODEL`), même quota et même budget. Le consentement de
-la recherche est en version **provisoire** `2026-11-v0`, déclarée côté
-fonction seulement : l'application n'affiche aucune carte, et rien n'est
-visible pour les utilisateurs. Le champ de recherche, l'analyse locale
+la recherche est en version **provisoire**, déclarée côté fonction seulement :
+l'application n'affiche aucune carte, et rien n'est visible pour les
+utilisateurs. Cette version (`pr-a-fermee-jusqu-au-texte-de-la-pr-b`) est
+**plus longue que les 32 caractères** permis par `ai_consents.version` :
+aucun accord ne peut l'atteindre, donc la fonction répond `consent_outdated`
+à tous, même si la liste de coupure oublie `search` par erreur. C'est un
+second verrou ; la coupure (`AI_DISABLED_FEATURES=search`) reste la règle. Le champ de recherche, l'analyse locale
 gratuite, les étiquettes « J'ai compris » et les textes légaux viendront avec
 la PR B.
 
 **Ce qui est envoyé à Claude** : la phrase tapée dans la recherche
 seulement, 200 caractères au plus (refus au-delà, jamais de troncature),
-mise sur une ligne et nettoyée (caractères de contrôle et invisibles
-retirés), délimitée comme une donnée. Jamais la date du jour, la position, ni
+mise sur une ligne et nettoyée (caractères de contrôle, de format et
+« ignorables » qui n'affichent rien retirés, comme pour la note et le
+bilan), délimitée comme une donnée. Jamais la date du jour, la position, ni
 aucune observation : les filtres seront appliqués par l'application, sur
 l'appareil.
 
@@ -997,9 +1005,11 @@ une liste) :
 **Validation de la réponse** : listes fermées, bornes de tous les nombres,
 genres au format « Genre » (ou « Genre espèce »), textes nettoyés et bornés.
 `text`, `department`, `commune` et `placeName` doivent être faits **des mots
-de la phrase**, à une faute de frappe ou un pluriel près : un commentaire du
-modèle, une réponse à une question, une traduction ou un lieu déduit (« en
-Gironde » ajouté à « Bordeaux ») sont retirés. Jamais de date future : une
+de la phrase**, à une faute de frappe ou un pluriel près, sans ajouter de
+caractère de balisage (`< > " ' \` &`) absent de la phrase : un commentaire
+du modèle, une réponse à une question, une traduction, une balise ou un lieu
+déduit (« en Gironde » ajouté à « Bordeaux ») sont retirés. Les genres sont
+bornés à 60 caractères. Jamais de date future : une
 année à venir est retirée ; une année écrite l'emporte sur une période
 relative (« cette année », « mai dernier »), qui est retirée ; un mois d'une
 année écrite encore à venir retire la période et les années. Comme pour la
@@ -1025,10 +1035,10 @@ remplacés par le coût réel après l'appel, à mesurer à l'essai.
    npx supabase secrets set AI_DISABLED_FEATURES=search --project-ref xowiezzqehadcfnbkijo
    ```
 
-   Pourquoi d'abord : sans ce réglage, la nouvelle version servirait la
-   recherche à quiconque enregistre lui-même un accord `search` en
-   `2026-11-v0` par l'API (la table `ai_consents` le permet). Rien de
-   dangereux, mais hors du parcours prévu.
+   Pourquoi d'abord : c'est la règle pour toute fonctionnalité pas encore
+   livrée dans l'application. La version provisoire de l'accord, impossible à
+   enregistrer, ferme déjà la recherche ; la coupure le rend explicite et
+   gratuit à vérifier (étape 5).
 
    > ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire
    > toujours la liste **complète** de ce qui doit rester coupé : ici
@@ -1060,9 +1070,10 @@ remplacés par le coût réel après l'appel, à mesurer à l'essai.
    ```
 
    Attendu : **`503 feature_disabled`**. `400 invalid_request` : l'ancienne
-   version tourne encore (redéployer). `403 consent_outdated` : la recherche
-   est **ouverte** (refusée seulement faute d'accord, sans frais) : refaire
-   l'étape 1 sur le bon projet, puis redéployer.
+   version tourne encore (redéployer). `403 consent_outdated` : la coupure
+   n'est **pas** en place (la recherche reste refusée à tous grâce à la
+   version provisoire, sans frais) : refaire l'étape 1 sur le bon projet,
+   puis redéployer.
 
 #### Essai et choix du modèle (avant la PR B)
 
@@ -1122,7 +1133,8 @@ attend une année **retirée** : elle peut apparaître dans la colonne
 
 - **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
 - **Rouvrir** : seulement après la fusion de la PR B, qui remplacera la
-  version provisoire `2026-11-v0` du consentement des deux côtés. Comme pour
+  version provisoire du consentement des deux côtés par une version
+  enregistrable. Comme pour
   la note (§6.7, « Ouvrir la note après la fusion de la PR B ») :
   **redéployer `ai-text` d'abord**, recherche encore fermée, puis retirer
   `search` de la liste (`secrets unset AI_DISABLED_FEATURES` si elle ne
