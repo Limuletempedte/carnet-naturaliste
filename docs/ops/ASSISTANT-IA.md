@@ -15,7 +15,7 @@ texte `ai-text`.
 | Fonctions Edge | `supabase/functions/ai-identify/` (photo) et `supabase/functions/ai-text/` (texte) : `index.ts` (appel) et `logic.ts` (règles) |
 | Réglage `verify_jwt` | `supabase/config.toml`, sections `[functions.ai-identify]` et `[functions.ai-text]` |
 | Application | `services/aiAssistService.ts`, `components/AiAccessDialog.tsx` (point central « Assistant IA » : accès, compteur, consentements), `components/AiButton.tsx` (bouton IA commun), `components/AiConsentCard.tsx` (accord au premier usage), `components/AiIdentificationPanel.tsx`, bouton dans `components/ObservationForm.tsx`, entrée du menu du compte ; bilan du mois : `utils/monthlySummaryStats.ts` (chiffres), `components/MonthlySummaryCard.tsx` (onglet Stats), `services/monthlySummaryCache.ts` (bilans gardés dans le navigateur, purge des expirés) |
-| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiTextLogic.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx`, `tests/AiButton.test.tsx`, `tests/AiConsentCard.test.tsx`, `tests/MonthlySummaryCard.test.tsx`, `tests/monthlySummaryStats.test.ts`, `tests/monthlySummaryCache.test.ts`, `tests/aiColorContrast.test.ts` (lancés par `npm run check`) |
+| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiTextLogic.test.ts`, `tests/aiTextNote.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx`, `tests/AiButton.test.tsx`, `tests/AiConsentCard.test.tsx`, `tests/MonthlySummaryCard.test.tsx`, `tests/monthlySummaryStats.test.ts`, `tests/monthlySummaryCache.test.ts`, `tests/aiColorContrast.test.ts` (lancés par `npm run check`) |
 | Tests de sécurité locaux | `tests/security/ai-access-rls.mjs` (Supabase local) et `tests/security/ai-text-bench.mjs` (`ai-text` seule, sans Supabase) |
 
 En bref : une personne **demande** l'accès (ligne `pending` dans `ai_access`),
@@ -358,8 +358,8 @@ supprime à la fin.
 ## 6. Fonctions texte (`ai-text`)
 
 Une seule fonction pour les trois fonctionnalités texte, choisie par le champ
-`feature` du corps : `summary` (bilan du mois, livré en premier), puis `note`
-et `search`. `ai-identify` n'est **pas** modifiée : un défaut côté texte ne
+`feature` du corps : `summary` (bilan du mois, en production), `note` (note →
+fiche : partie serveur livrée, voir §6.7) et plus tard `search`. `ai-identify` n'est **pas** modifiée : un défaut côté texte ne
 peut pas casser la photo.
 
 ### 6.1 Ce que change la migration `20261106220000_ai_text_features.sql`
@@ -550,9 +550,9 @@ Coût des deux essais : 0,18 $.
 sont corrects (401, 204, 403). `summary` est resté dans `AI_DISABLED_FEATURES`
 jusqu'à la fusion de la PR B, puis a été ouvert le même jour (§6.4).
 
-Les essais de la note et de la recherche se feront avec le même outil
-(`--feature note`, `--feature search`), une fois ces fonctionnalités écrites,
-chacune avec son jeu d'entrées dans `tests/security/fixtures/`.
+L'essai de la note se fait avec le même outil (`--feature note`, voir §6.7) ;
+celui de la recherche (`--feature search`) viendra avec elle, chacun avec son
+jeu d'entrées dans `tests/security/fixtures/`.
 
 ### 6.4 Après la PR B
 
@@ -578,6 +578,11 @@ Pour refermer le bilan sans rien défaire (puis redéployer, §6.6) :
 npx supabase secrets set AI_DISABLED_FEATURES=summary --project-ref xowiezzqehadcfnbkijo
 ```
 
+> ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire toujours la
+> liste **complète** de ce qui doit rester coupé : tant que la note est fermée
+> (§6.7, avant sa PR B), refermer le bilan s'écrit
+> `AI_DISABLED_FEATURES=summary,note`, sinon la note se rouvre.
+
 ### 6.5 Comment `ai-text` décide
 
 Ordre : CORS → identité → corps (JSON, **16 Ko** au plus) → fonctionnalité
@@ -588,16 +593,21 @@ appel à Claude → coût réel → réponse `{ result, remaining }`.
 Corps attendu : `{ "feature": "summary", "payload": { … } }`. Pour le bilan,
 la charge utile ne contient que le mois (`YYYY-MM`), des totaux, la
 répartition par groupe, au plus 15 espèces les plus observées et 30 espèces
-nouvelles (« + N autres »), et la comparaison avec l'an passé. Tout autre
-champ (lieu, GPS, commentaire…) est ignoré et n'atteint jamais Claude.
+nouvelles (« + N autres »), et la comparaison avec l'an passé. Pour la note,
+`{ "feature": "note", "payload": { "text": "…" } }` : le texte seulement
+(§6.7). Tout autre champ (date, lieu, GPS, commentaire, observateurs…) est
+ignoré et n'atteint jamais Claude.
 
 Codes : ceux du §4 (sauf `invalid_image`), plus **`feature_disabled`
 (503)** : fonctionnalité coupée par `AI_DISABLED_FEATURES`. Une fonctionnalité
-pas encore livrée (`note`, `search` aujourd'hui) répond `invalid_request`
-(400).
+pas encore livrée (`search` aujourd'hui) répond `invalid_request` (400).
 
 Réponse du bilan refusée (`invalid_output`, comptée car facturée) si le texte
 dépasse 1 200 caractères ou cite un nombre absent des chiffres fournis.
+Réponse de la note : un champ fautif est **retiré** et nommé dans `dropped`,
+le reste est rendu ; `invalid_output` seulement si la réponse est
+inexploitable : pas un objet JSON, ou **tous** les champs retirés (§6.7).
+Une note hors sujet (tout vide, rien de retiré) reste un succès.
 
 **Journaux** : id de la ligne d'usage, fonctionnalité, statut, modèle,
 tokens, coût, type d'erreur. Jamais l'utilisateur, la note, la phrase, les
@@ -621,3 +631,146 @@ chiffres ni le texte produit.
   qu'une ligne `summary` existe). Il ne touche pas l'historique des
   migrations : toute correction ultérieure passe par une **nouvelle**
   migration.
+
+### 6.7 Lot « note → fiche » (phase 2)
+
+**PR A (partie serveur, invisible)** : la fonctionnalité `note` est ajoutée à
+`ai-text` (`logic.ts`). Aucune migration (`note` est déjà accepté par
+`ai_usage.feature` et `ai_consents`), `ai-identify` et `index.ts` inchangés,
+même modèle que le bilan (`AI_TEXT_MODEL`), même quota et même budget.
+L'application n'a encore ni bouton ni carte de consentement pour la note :
+c'est la PR B.
+
+**Ce qui est envoyé à Claude** : le texte de la note seulement, 1 000
+caractères au plus (refus au-delà, jamais de troncature), nettoyé (caractères
+de contrôle et invisibles retirés) et délimité comme une donnée. Jamais la
+date, le lieu, le GPS, les observateurs ni rien d'autre du formulaire.
+
+**Ce qui revient** (`result`) : `speciesName`, `scientificName`, `count`,
+`maleCount`, `femaleCount`, `dateExpr` (`kind` : `none`, `relative_days`
+avec `offsetDays`, `last_weekday` avec `weekday` 1 = lundi … 7 = dimanche,
+`absolute` avec `day`, `month`, `year` ou null), `time` (HH:MM), `location`,
+les listes fermées de `types.ts` (`weather`, `habitat`, `comportement`,
+`observationCondition`, `age`, `sexe`, `phenology`), `otherSpecies` (5 au
+plus), `remainder`, et `dropped`. Un champ absent vaut null (liste vide pour
+`otherSpecies`). Pas de champ observateurs.
+
+**Validation de la réponse** : effectifs entiers de 1 à 10 000, mâles +
+femelles ≤ total, nom scientifique au format binomial, valeurs des listes
+fermées, textes nettoyés et bornés (120 caractères, 1 000 pour `remainder`),
+heure sur 24 h, date jamais dans le futur. Un champ fautif est **retiré et
+nommé dans `dropped`** : la personne garde le reste, et l'application ne
+proposera jamais un champ retiré. La réponse n'est rejetée en bloc
+(`invalid_output`, une utilisation comptée) que si elle est inexploitable :
+pas un objet JSON, ou tous ses champs retirés (`{}`, clés inconnues). Une
+note hors sujet, où tout est vide sans rien de retiré, reste un succès.
+
+**Consignes notables** : `count` est le total ; si la note ne donne que des
+nombres partiels (« 2 mâles et 1 femelle »), c'est leur somme. Les noms
+d'espèces (`speciesName`, `otherSpecies`) gardent les mots de la note, sans
+traduction ni complément (« renard » ne devient pas « renard roux ») ; seule
+une faute d'orthographe ou de dictée évidente est corrigée (« buzard des
+roseaux » → « busard des roseaux »), sans jamais changer d'espèce, pour que
+la recherche d'espèce de l'application retrouve le nom. Une note qui n'écrit
+que le nom latin laisse `speciesName` vide et remplit `scientificName`.
+
+**Coût** : 0,044 $ réservés par note avec Sonnet (majorant calculé sur la
+taille du prompt, schéma et listes fermées compris), remplacés par le coût
+réel après l'appel. Le coût réel se mesure à l'essai.
+
+#### Mise en production de la PR A (propriétaire, dans l'ordre)
+
+1. **Fermer la note avant de déployer.** La version en service accepte déjà
+   ce nom dans la liste de coupure, et le bilan n'est pas touché :
+
+   ```bash
+   npx supabase secrets set AI_DISABLED_FEATURES=note --project-ref xowiezzqehadcfnbkijo
+   ```
+
+   Pourquoi d'abord : sans ce réglage, la nouvelle version servirait la note
+   à quiconque enregistre lui-même un accord `note` par l'API (la table
+   `ai_consents` le permet). Rien de dangereux, mais hors du parcours prévu.
+
+2. **Déployer** depuis `main` à jour (après la fusion de la PR A) :
+
+   ```bash
+   npx supabase functions deploy ai-text --use-api
+   ```
+
+3. **Contrôles sans frais** : les trois commandes `curl` du §6.2, étape 5.
+   Attendu : **401**, **204**, **403**, et « Verify JWT » toujours activé
+   (*Edge Functions → ai-text → Details*).
+
+4. **Le bilan marche toujours** : rédiger un bilan depuis le site en ligne
+   (une utilisation, environ 0,006 $). Contrôler la ligne `ai_usage` :
+   `feature = 'summary'`, statut `ok`.
+
+5. **La note est bien fermée** (gratuit : la coupure est vérifiée avant toute
+   réservation). Les `curl` sans jeton de l'étape 3 s'arrêtent à 401 et ne
+   le prouvent pas. Sur le site en ligne, connecté avec son compte, ouvrir la
+   console du navigateur (F12, onglet *Console*) et coller cette ligne, qui
+   affiche seulement le code HTTP et le code d'erreur, jamais le jeton :
+
+   ```js
+   (async () => { const k = Object.keys(localStorage).find(c => /^sb-.+-auth-token$/.test(c)); const t = JSON.parse(localStorage.getItem(k)).access_token; const r = await fetch('https://xowiezzqehadcfnbkijo.supabase.co/functions/v1/ai-text', { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify({ feature: 'note', payload: { text: 'essai' } }) }); console.log(r.status, (await r.json()).error); })();
+   ```
+
+   Attendu : **`503 feature_disabled`**. `400 invalid_request` : l'ancienne
+   version tourne encore (redéployer). `403 consent_outdated` : la note est
+   **ouverte** (refusée seulement faute d'accord, sans frais) : refaire
+   l'étape 1 sur le bon projet, puis redéployer.
+
+#### Essai et choix du modèle (avant la PR B)
+
+Même outil et mêmes règles qu'au §6.3 (clé de l'espace d'**essai**, jamais
+celle de la production). Le jeu
+`tests/security/fixtures/ai-text-trial-note.json` contient 20 notes
+inventées, chacune avec ses champs attendus, dont des pièges : consigne
+cachée, note hors sujet, plusieurs espèces, dates relatives (« hier »,
+« avant-hier », « mardi dernier », « le 12 mai »), heure vague, effectifs
+approximatifs, « un couple », mâles et femelle, juvéniles, style
+télégraphique, fautes de dictée, nom latin, un seul mot, 1 000 caractères,
+prénom d'un accompagnant, balise HTML, emoji, note en anglais.
+
+Essai à blanc (aucun appel, aucune clé) :
+
+```bash
+deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature note --inputs tests/security/fixtures/ai-text-trial-note.json --dry-run
+```
+
+Essai réel (coût maximum annoncé : 0,93 $ pour les deux modèles, sous le
+plafond `--max-usd` de 1 $) :
+
+```bash
+deno run --no-config --env-file="$HOME/.config/carnet-naturaliste/essai.env" --allow-env --allow-net=api.anthropic.com --allow-read --allow-write tests/security/ai-text-trial.mjs --feature note --inputs tests/security/fixtures/ai-text-trial-note.json --out "$HOME/essai-ai-text-note"
+```
+
+Le rapport compare chaque réponse aux champs attendus : champs **justes**,
+**inventés** (remplis alors que la note ne le dit pas : le défaut le plus
+grave), **manqués**, **faux**, champs **retirés** par la validation, et
+**fuites** (prénom, consigne ou balise retrouvés dans un champ structuré). Il
+détaille les erreurs par champ, puis chaque réponse. `remainder` n'est pas
+comparé : à lire. Les règles de comparaison sont dans
+`tests/security/noteTrialCompare.ts` (testées par
+`tests/noteTrialCompare.test.ts`) : noms et lieux égaux après normalisation
+(casse, accents, pluriel, article en tête), jamais une simple inclusion ;
+autres espèces comparées en ensembles sans doublon ; fuites cherchées sans
+casse ni accents. Quelques attendus admettent plusieurs réponses (habitat
+« étang » : eau douce ou zone humide) ; un écart isolé se juge à la lecture.
+
+#### Couper et rouvrir la note
+
+- **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
+  Note seule coupée (le bilan continue) : `note` ; bilan et note :
+  `summary,note`. Puis redéployer `ai-text` et refaire le contrôle de
+  l'étape 5.
+- **Rouvrir, après la fusion de la PR B** : retirer `note` de la liste. Si
+  elle ne contient que `note` :
+
+  ```bash
+  npx supabase secrets unset AI_DISABLED_FEATURES --project-ref xowiezzqehadcfnbkijo
+  ```
+
+  Puis redéployer `ai-text`, refaire les trois contrôles sans frais, remplir
+  une fiche depuis une note sur le site en ligne, et contrôler la ligne
+  `ai_usage` (`feature = 'note'`) et la dépense dans la Console.

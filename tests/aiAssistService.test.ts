@@ -323,8 +323,27 @@ describe('accès', () => {
 });
 
 describe('fonctionnalités texte : constantes recopiées de la fonction ai-text', () => {
-    it('versions de consentement identiques', () => {
-        expect(AI_TEXT_CONSENT_VERSIONS).toEqual(TEXT_CONSENT_VERSIONS);
+    it('chaque version déclarée par l’application est celle de la fonction', () => {
+        // La fonction peut déclarer une fonctionnalité avant l'application
+        // (PR A de la note : serveur seul, aucune carte de consentement
+        // affichée) ; l'inverse est interdit, et une version déclarée des deux
+        // côtés doit être identique.
+        for (const [feature, version] of Object.entries(AI_TEXT_CONSENT_VERSIONS)) {
+            expect(TEXT_CONSENT_VERSIONS[feature as keyof typeof TEXT_CONSENT_VERSIONS], feature).toBe(version);
+        }
+        expect(AI_TEXT_CONSENT_VERSIONS.summary).toBe(TEXT_CONSENT_VERSIONS.summary);
+    });
+
+    it('la note n’a pas encore de consentement côté application, et sa version serveur est provisoire', () => {
+        // PR A : version provisoire côté fonction, aucune carte visible.
+        // PR B : déclarer la note ici impose de remplacer la version
+        // provisoire des deux côtés (un accord donné avant le texte du
+        // consentement sera refusé).
+        if (AI_TEXT_CONSENT_VERSIONS.note === undefined) {
+            expect(TEXT_CONSENT_VERSIONS.note).toBe('2026-11-v0');
+        } else {
+            expect(AI_TEXT_CONSENT_VERSIONS.note).not.toBe('2026-11-v0');
+        }
     });
 
     it('plafond du texte du bilan identique', () => {

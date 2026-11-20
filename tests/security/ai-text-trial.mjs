@@ -17,6 +17,13 @@
 //     --inputs tests/security/fixtures/ai-text-trial-summary.json \
 //     --out "$HOME/essai-ai-text"
 //
+// Note → fiche : --feature note --inputs tests/security/fixtures/ai-text-trial-note.json.
+// Chaque entrée de note porte ses champs attendus (`expected`) : le rapport
+// compare la réponse champ par champ (juste, inventé, manqué, faux), compte
+// les champs retirés par le validateur et les fuites (`forbidden` : prénom,
+// consigne cachée… retrouvés dans un champ structuré). Règles de comparaison :
+// tests/security/noteTrialCompare.ts.
+//
 // Options :
 //   --inputs a.json,b.json  plusieurs fichiers d'entrées [{ label, payload }]
 //   --models a,b            défaut : tous les modèles de la table des prix
@@ -44,6 +51,8 @@ import {
     computeCostUsd,
     maxCostUsd,
 } from '../../supabase/functions/ai-text/logic.ts';
+// Comparaison des notes : module pur, couvert par tests/noteTrialCompare.test.ts.
+import { NOTE_COMPARED_FIELDS, checkNoteExpected, compareNote } from './noteTrialCompare.ts';
 
 const TIMEOUT_MS = 50_000;
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
@@ -102,7 +111,7 @@ async function callModel(client, model, effort, feature, input, userPrompt) {
             status: 'failed',
             seconds: (performance.now() - started) / 1000,
             error: err instanceof Anthropic.APIError ? `APIError ${err.status ?? '?'}` : (err?.constructor?.name ?? 'Error'),
-            inputTokens: 0, outputTokens: 0, costUsd: 0, text: null, rawText: null,
+            inputTokens: 0, outputTokens: 0, costUsd: 0, text: null, result: null, rawText: null,
         };
     }
     const seconds = (performance.now() - started) / 1000;
@@ -114,10 +123,10 @@ async function callModel(client, model, effort, feature, input, userPrompt) {
     const outcome = classifyStopReason(message.stop_reason);
     const rawText = message.content.filter(block => block.type === 'text').map(block => block.text).join('');
     const base = { seconds, inputTokens, outputTokens, costUsd, stopReason: message.stop_reason, rawText };
-    if (outcome !== 'ok') return { ...base, status: outcome, text: null };
+    if (outcome !== 'ok') return { ...base, status: outcome, text: null, result: null };
     const parsed = feature.parseOutput(rawText, input);
-    if (parsed === null) return { ...base, status: 'invalid_output', text: null };
-    return { ...base, status: 'ok', text: typeof parsed.text === 'string' ? parsed.text : JSON.stringify(parsed) };
+    if (parsed === null) return { ...base, status: 'invalid_output', text: null, result: null };
+    return { ...base, status: 'ok', text: typeof parsed.text === 'string' ? parsed.text : JSON.stringify(parsed), result: parsed };
 }
 
 function buildReport({ featureName, effort, models, entries, results }) {
@@ -166,6 +175,86 @@ function buildReport({ featureName, effort, models, entries, results }) {
     return `${lines.join('\n')}\n`;
 }
 
+function buildNoteReport({ featureName, effort, models, entries, results }) {
+    const tally = rows => {
+        const counts = { ok: 0, invente: 0, manque: 0, faux: 0 };
+        for (const r of rows) for (const v of Object.values(r.comparison.verdicts)) counts[v] += 1;
+        return counts;
+    };
+    const lines = [
+        `# Essai ${featureName} — ${models.join(' contre ')} (effort ${effort})`,
+        '',
+        `${entries.length} notes, ${results.length} appels. Chaque réponse acceptée est comparée sur ${NOTE_COMPARED_FIELDS.length} champs (\`remainder\` n'est pas comparé : à lire).`,
+        '',
+        '- **inventé** : champ rempli alors que la note ne le dit pas (le défaut le plus grave) ;',
+        '- **manqué** : champ vide alors que la note le dit ;',
+        '- **faux** : champ rempli avec une autre valeur que celle attendue ;',
+        '- **retirés** : champs écartés par le validateur de la fonction ;',
+        '- **fuites** : prénom, consigne cachée ou balise retrouvés dans un champ structuré.',
+        '',
+        '| Modèle | Appels | OK | Sortie refusée | Refus du modèle | Échecs | Champs justes | Inventés | Manqués | Faux | Retirés | Fuites | Durée médiane | Tokens entrée (moy.) | Tokens sortie (moy.) | Coût moyen | Coût total |',
+        '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
+    ];
+    for (const model of models) {
+        const rows = results.filter(r => r.model === model);
+        const ok = rows.filter(r => r.status === 'ok');
+        const billed = rows.filter(r => r.status !== 'failed');
+        const t = tally(ok);
+        const total = ok.length * NOTE_COMPARED_FIELDS.length;
+        lines.push([
+            '', model, rows.length, ok.length,
+            rows.filter(r => r.status === 'invalid_output').length,
+            rows.filter(r => r.status === 'refused').length,
+            rows.filter(r => r.status === 'failed').length,
+            `${t.ok} / ${total}`, t.invente, t.manque, t.faux,
+            ok.reduce((sum, r) => sum + r.comparison.dropped.length, 0),
+            ok.reduce((sum, r) => sum + r.comparison.leaks.length, 0),
+            `${median(billed.map(r => r.seconds)).toFixed(1)} s`,
+            Math.round(mean(billed.map(r => r.inputTokens))),
+            Math.round(mean(billed.map(r => r.outputTokens))),
+            `${mean(billed.map(r => r.costUsd)).toFixed(5)} $`,
+            `${rows.reduce((sum, r) => sum + r.costUsd, 0).toFixed(4)} $`,
+            '',
+        ].join(' | ').trim());
+    }
+    lines.push('', '## Erreurs par champ', '', `| Champ | ${models.join(' | ')} |`, `|---|${models.map(() => '---').join('|')}|`);
+    for (const field of NOTE_COMPARED_FIELDS) {
+        const cells = models.map(model => {
+            const ok = results.filter(r => r.model === model && r.status === 'ok');
+            const bad = ok.filter(r => r.comparison.verdicts[field] !== 'ok').length;
+            const dropped = ok.filter(r => r.comparison.dropped.includes(field)).length;
+            return `${bad} erreur(s)${dropped ? `, ${dropped} retiré(s)` : ''}`;
+        });
+        lines.push(`| ${field} | ${cells.join(' | ')} |`);
+    }
+    for (const entry of entries) {
+        lines.push('', `## ${entry.label}`, '');
+        if (!entry.valid) {
+            lines.push('_Note refusée par la validation de la fonction : aucun appel._');
+            continue;
+        }
+        for (const model of models) {
+            const r = results.find(x => x.label === entry.label && x.model === model);
+            if (!r) continue;
+            lines.push(`**${model}** — ${r.status}, ${r.seconds.toFixed(1)} s, ${r.inputTokens} + ${r.outputTokens} tokens, ${r.costUsd.toFixed(5)} $`, '');
+            if (r.status === 'ok') {
+                const { verdicts, leaks, dropped } = r.comparison;
+                const wrong = Object.entries(verdicts).filter(([, v]) => v !== 'ok');
+                lines.push(wrong.length === 0 ? '- tous les champs comparés sont justes' : `- à revoir : ${wrong.map(([f, v]) => `${f} (${v})`).join(', ')}`);
+                if (dropped.length) lines.push(`- retirés par le validateur : ${dropped.join(', ')}`);
+                if (leaks.length) lines.push(`- **fuites** : ${leaks.join(', ')}`);
+                lines.push('', '```json', JSON.stringify(r.result, null, 2), '```');
+            } else if (r.status === 'failed') {
+                lines.push(`_Appel échoué : ${r.error}._`);
+            } else {
+                lines.push(`_Sortie non retenue (${r.status}, stop_reason ${r.stopReason}). Texte brut :_`, '', '```', r.rawText ?? '', '```');
+            }
+            lines.push('');
+        }
+    }
+    return `${lines.join('\n')}\n`;
+}
+
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const featureName = args.feature ?? 'summary';
@@ -189,10 +278,18 @@ async function main() {
         for (const item of list) {
             if (typeof item?.label !== 'string') fail(`${file} : entrée sans « label »`);
             if (entries.some(e => e.label === item.label)) fail(`label en double : « ${item.label} »`);
+            if (featureName === 'note') {
+                try {
+                    checkNoteExpected(item, file);
+                } catch (err) {
+                    fail(err.message);
+                }
+            }
             const validation = feature.validate(item.payload);
+            const meta = { label: item.label, expected: item.expected, forbidden: item.forbidden, otherSpeciesPartial: item.otherSpeciesPartial === true };
             entries.push(validation.ok
-                ? { label: item.label, valid: true, input: validation.value, userPrompt: feature.buildUserPrompt(validation.value) }
-                : { label: item.label, valid: false });
+                ? { ...meta, valid: true, input: validation.value, userPrompt: feature.buildUserPrompt(validation.value) }
+                : { ...meta, valid: false });
         }
     }
     const valid = entries.filter(e => e.valid);
@@ -223,18 +320,19 @@ async function main() {
     const results = [];
     for (const [index, entry] of valid.entries()) {
         // Les modèles en parallèle, les entrées une par une : charge légère.
-        const batch = await Promise.all(models.map(async model => ({
-            label: entry.label,
-            model,
-            ...(await callModel(client, model, effort, feature, entry.input, entry.userPrompt)),
-        })));
+        const batch = await Promise.all(models.map(async model => {
+            const call = await callModel(client, model, effort, feature, entry.input, entry.userPrompt);
+            const comparison = featureName === 'note' && call.status === 'ok' ? compareNote(entry, call.result) : undefined;
+            return { label: entry.label, model, ...call, ...(comparison ? { comparison } : {}) };
+        }));
         results.push(...batch);
         console.log(`[${index + 1}/${valid.length}] ${entry.label} : ${batch.map(r => `${r.model} ${r.status}`).join(', ')}`);
     }
 
     fs.mkdirSync(args.out, { recursive: true });
     fs.writeFileSync(path.join(args.out, 'resultats.json'), `${JSON.stringify({ feature: featureName, effort, models, results }, null, 2)}\n`);
-    fs.writeFileSync(path.join(args.out, 'rapport.md'), buildReport({ featureName, effort, models, entries, results }));
+    const report = featureName === 'note' ? buildNoteReport : buildReport;
+    fs.writeFileSync(path.join(args.out, 'rapport.md'), report({ featureName, effort, models, entries, results }));
     const total = results.reduce((sum, r) => sum + r.costUsd, 0);
     console.log(`Terminé. Coût réel : ${total.toFixed(4)} $. Rapport : ${path.join(args.out, 'rapport.md')}`);
 }
