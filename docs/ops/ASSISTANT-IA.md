@@ -578,6 +578,11 @@ Pour refermer le bilan sans rien défaire (puis redéployer, §6.6) :
 npx supabase secrets set AI_DISABLED_FEATURES=summary --project-ref xowiezzqehadcfnbkijo
 ```
 
+> ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire toujours la
+> liste **complète** de ce qui doit rester coupé : tant que la note est fermée
+> (§6.7, avant sa PR B), refermer le bilan s'écrit
+> `AI_DISABLED_FEATURES=summary,note`, sinon la note se rouvre.
+
 ### 6.5 Comment `ai-text` décide
 
 Ordre : CORS → identité → corps (JSON, **16 Ko** au plus) → fonctionnalité
@@ -689,6 +694,21 @@ réel après l'appel. Le coût réel se mesure à l'essai.
    (une utilisation, environ 0,006 $). Contrôler la ligne `ai_usage` :
    `feature = 'summary'`, statut `ok`.
 
+5. **La note est bien fermée** (gratuit : la coupure est vérifiée avant toute
+   réservation). Les `curl` sans jeton de l'étape 3 s'arrêtent à 401 et ne
+   le prouvent pas. Sur le site en ligne, connecté avec son compte, ouvrir la
+   console du navigateur (F12, onglet *Console*) et coller cette ligne, qui
+   affiche seulement le code HTTP et le code d'erreur, jamais le jeton :
+
+   ```js
+   (async () => { const k = Object.keys(localStorage).find(c => /^sb-.+-auth-token$/.test(c)); const t = JSON.parse(localStorage.getItem(k)).access_token; const r = await fetch('https://xowiezzqehadcfnbkijo.supabase.co/functions/v1/ai-text', { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify({ feature: 'note', payload: { text: 'essai' } }) }); console.log(r.status, (await r.json()).error); })();
+   ```
+
+   Attendu : **`503 feature_disabled`**. `400 invalid_request` : l'ancienne
+   version tourne encore (redéployer). `403 consent_outdated` : la note est
+   **ouverte** (refusée seulement faute d'accord, sans frais) : refaire
+   l'étape 1 sur le bon projet, puis redéployer.
+
 #### Essai et choix du modèle (avant la PR B)
 
 Même outil et mêmes règles qu'au §6.3 (clé de l'espace d'**essai**, jamais
@@ -724,8 +744,10 @@ comparé : à lire. Quelques attendus admettent plusieurs réponses (habitat
 
 #### Couper et rouvrir la note
 
-- **Couper la note seule** (le bilan continue) : `AI_DISABLED_FEATURES` =
-  `note`, puis redéployer `ai-text`. Couper les deux : `summary,note`.
+- **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
+  Note seule coupée (le bilan continue) : `note` ; bilan et note :
+  `summary,note`. Puis redéployer `ai-text` et refaire le contrôle de
+  l'étape 5.
 - **Rouvrir, après la fusion de la PR B** : retirer `note` de la liste. Si
   elle ne contient que `note` :
 

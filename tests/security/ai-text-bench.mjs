@@ -205,7 +205,7 @@ try {
     });
     const noteReserve = rpcCalls.find(c => c.name === 'ai_reserve_call');
     assert.equal(noteReserve.body.p_feature, 'note');
-    assert.equal(noteReserve.body.p_consent_version, '2026-11-v1');
+    assert.equal(noteReserve.body.p_consent_version, '2026-11-v0');
     assert(noteReserve.body.p_max_cost_usd > 0.04 && noteReserve.body.p_max_cost_usd < 0.05, String(noteReserve.body.p_max_cost_usd));
     assert.deepEqual(rpcCalls.find(c => c.name === 'ai_finalize_call').body, { p_id: 'usage-1', p_status: 'ok', p_input_tokens: 1000, p_output_tokens: 400, p_cost_usd: 0.006 });
     const noteSent = anthReqs.at(-1);

@@ -70,13 +70,13 @@ describe('ai-text — note : validation de l’entrée', () => {
     });
 
     it('refuse une charge utile sans texte, vide ou d’un autre type', () => {
-        for (const payload of [null, undefined, 'note', [], {}, { text: 42 }, { text: ['a'] }, { text: '' }, { text: ' \n\t ' }, { text: '‮​' }]) {
+        for (const payload of [null, undefined, 'note', [], {}, { text: 42 }, { text: ['a'] }, { text: '' }, { text: ' \n\t ' }, { text: '\u202e\u200b' }]) {
             expect(validateNoteInput(payload), JSON.stringify(payload)).toEqual({ ok: false });
         }
     });
 
     it('retire contrôles et caractères invisibles (bidi, largeur nulle), garde les retours à la ligne', () => {
-        const result = validateNoteInput({ text: 'Héron‮ cendré​\u0007 posé\r\n\n\n\nvent fort' });
+        const result = validateNoteInput({ text: 'Héron\u202e cendré\u200b\u0007 posé\r\n\n\n\nvent fort' });
         expect(result).toEqual({ ok: true, value: { text: 'Héron cendré posé\n\nvent fort' } });
     });
 
@@ -151,6 +151,8 @@ describe('ai-text — note : listes fermées et schéma', () => {
         expect(NOTE_SYSTEM_PROMPT).toMatch(/N'invente rien/);
         expect(NOTE_SYSTEM_PROMPT).toMatch(/Aucun nom de personne/);
         expect(NOTE_SYSTEM_PROMPT).toMatch(/en fin d'après-midi/);
+        // Note hors sujet : rien, pas même un résumé (pas d'assistant généraliste).
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/laisse tous les champs vides, remainder compris/);
     });
 });
 
@@ -225,8 +227,10 @@ describe('ai-text — note : lecture de la réponse', () => {
         expect(parse({ count: 5, maleCount: 2 })).toMatchObject({ maleCount: 2, femaleCount: null, dropped: [] });
         expect(parse({ count: 3, maleCount: 2, femaleCount: 2 })).toMatchObject({ count: 3, maleCount: null, femaleCount: null, dropped: ['maleCount', 'femaleCount'] });
         expect(parse({ count: 1, maleCount: 2 })).toMatchObject({ count: 1, maleCount: null, dropped: ['maleCount'] });
-        // Total absent : la ventilation est gardée, l'application la contrôlera.
+        // Total absent : la ventilation est gardée, l'application la contrôlera…
         expect(parse({ maleCount: 1, femaleCount: 1 })).toMatchObject({ count: null, maleCount: 1, femaleCount: 1, dropped: [] });
+        // … tant que la somme reste un effectif possible.
+        expect(parse({ maleCount: 10_000, femaleCount: 1 })).toMatchObject({ maleCount: null, femaleCount: null, dropped: ['maleCount', 'femaleCount'] });
     });
 
     it('nom scientifique au format binomial (ou trinomial)', () => {
@@ -311,7 +315,7 @@ describe('ai-text — note : lecture de la réponse', () => {
     });
 
     it('chaînes nettoyées (contrôles, bidi) et bornées à 120 caractères', () => {
-        expect(parse({ speciesName: ' Merle‮ noir​\u0000 ', location: 'Bois\nde la Garenne' }))
+        expect(parse({ speciesName: ' Merle\u202e noir\u200b\u0000 ', location: 'Bois\nde la Garenne' }))
             .toMatchObject({ speciesName: 'Merle noir', location: 'Bois de la Garenne', dropped: [] });
         expect(parse({ location: 'x'.repeat(120) }).location).toHaveLength(120);
         const result = parse({ speciesName: 'x'.repeat(121), location: 'y'.repeat(121) });

@@ -334,9 +334,16 @@ describe('fonctionnalités texte : constantes recopiées de la fonction ai-text'
         expect(AI_TEXT_CONSENT_VERSIONS.summary).toBe(TEXT_CONSENT_VERSIONS.summary);
     });
 
-    it('la note n’a pas encore de consentement côté application (aucune carte visible)', () => {
-        expect(TEXT_CONSENT_VERSIONS.note).toBeDefined();
-        expect(AI_TEXT_CONSENT_VERSIONS.note).toBeUndefined();
+    it('la note n’a pas encore de consentement côté application, et sa version serveur est provisoire', () => {
+        // PR A : version provisoire côté fonction, aucune carte visible.
+        // PR B : déclarer la note ici impose de remplacer la version
+        // provisoire des deux côtés (un accord donné avant le texte du
+        // consentement sera refusé).
+        if (AI_TEXT_CONSENT_VERSIONS.note === undefined) {
+            expect(TEXT_CONSENT_VERSIONS.note).toBe('2026-11-v0');
+        } else {
+            expect(AI_TEXT_CONSENT_VERSIONS.note).not.toBe('2026-11-v0');
+        }
     });
 
     it('plafond du texte du bilan identique', () => {

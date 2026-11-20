@@ -34,9 +34,13 @@ export type TextFeatureName = (typeof ALL_TEXT_FEATURES)[number];
  */
 export const CONSENT_VERSIONS: Readonly<Partial<Record<TextFeatureName, string>>> = {
     summary: '2026-11-v1',
-    // Déclarée ici seulement : l'application (AI_TEXT_CONSENT_VERSIONS) ne
-    // l'ajoutera qu'avec la PR B, sinon une carte de consentement apparaîtrait.
-    note: '2026-11-v1',
+    // PROVISOIRE, déclarée ici seulement : `readEnvelope` l'exige, mais
+    // l'application (AI_TEXT_CONSENT_VERSIONS) ne l'ajoutera qu'avec la PR B,
+    // sinon une carte de consentement apparaîtrait. La PR B DOIT la remplacer
+    // en écrivant le texte du consentement : un accord inséré à la main avant
+    // ce texte sera alors refusé (`consent_outdated`). Test dédié dans
+    // tests/aiAssistService.test.ts.
+    note: '2026-11-v0',
 };
 
 // ---------------------------------------------------------------------------
@@ -692,7 +696,7 @@ Règles :
 - weather, habitat, comportement, observationCondition, age, sexe, phenology : une valeur de la liste seulement si la note le dit clairement ; sinon « Non renseigné ».
 - Aucun nom de personne dans un champ : un prénom ou un nom d'accompagnateur ne va que dans remainder.
 - remainder : ce que la note dit d'autre et qui n'entre dans aucun champ, avec ses mots, en une ou deux phrases courtes ; "" s'il ne reste rien.
-- Si la note ne décrit pas une observation naturaliste, laisse tous les champs vides ; remainder peut la résumer.
+- Si la note ne décrit pas une observation naturaliste, laisse tous les champs vides, remainder compris.
 - Réponds uniquement avec l'objet JSON demandé.`;
 
 export function buildNoteUserPrompt(input: NoteInput): string {
@@ -777,8 +781,9 @@ export function parseNoteOutput(text: string, _input: NoteInput, now: Date = new
     const count = countOf('count');
     let maleCount = countOf('maleCount');
     let femaleCount = countOf('femaleCount');
-    // Ventilation incohérente : on ne sait pas laquelle est fausse, les deux partent.
-    if (count !== null && (maleCount ?? 0) + (femaleCount ?? 0) > count) {
+    // Ventilation incohérente : on ne sait pas laquelle est fausse, les deux
+    // partent. Sans total, la somme reste bornée comme un effectif.
+    if ((maleCount ?? 0) + (femaleCount ?? 0) > (count ?? NOTE_LIMITS.maxCount)) {
         if (maleCount !== null) maleCount = drop('maleCount');
         if (femaleCount !== null) femaleCount = drop('femaleCount');
     }
