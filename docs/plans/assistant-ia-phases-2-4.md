@@ -9,6 +9,7 @@
   - **Fait le 2026-11-13** : en production, `AI_TEXT_MODEL` vaut `claude-sonnet-5-5` et `ai-text` est redéployée (version 3, contrôles 401, 204 et 403 corrects).
   - **PR B du bilan** (application et textes légaux) : fusionnée le 2026-11-13 (#127), voir « Écarts de mise en œuvre (PR B du bilan) » ci-dessous.
   - **Bilan ouvert en production le 2026-11-13** (§6.4 du guide) : `AI_DISABLED_FEATURES` supprimé, `ai-text` redéployée (version 5, contrôles 401, 204 et 403 corrects), premier bilan réel `ok` à 0,0060 $. **Premier lot (bilan du mois) terminé** ; suite : note → fiche (phase 2).
+- **Deuxième lot (note → fiche)** : **PR A** (partie serveur, invisible) proposée le 2026-11-20, voir « Écarts de mise en œuvre (PR A de la note) » ci-dessous. Suite : mise en production fermée (`AI_DISABLED_FEATURES=note`, `docs/ops/ASSISTANT-IA.md` §6.7), essai Sonnet contre Haiku sur `tests/security/fixtures/ai-text-trial-note.json`, puis PR B.
 - **Écarts de mise en œuvre (PR A du bilan)** :
   - la migration finit par `notify pgrst, 'reload schema'`, et `ai_my_status` est remplacée par `create or replace` (droits conservés) ;
   - la migration de secours (`docs/ops/retour-arriere-ai-text-features.sql`) **garde** la contrainte élargie et la table `ai_consents` : remettre l'ancienne contrainte échouerait dès qu'une ligne `summary` existe ;
@@ -40,6 +41,18 @@
   - retirer l'accès photo (« Retirer mon accord ») devrait aussi supprimer les lignes `ai_consents` ;
   - un renouvellement de consentement texte se fait toujours par suppression puis insertion, jamais par upsert ;
   - le texte du bilan peut contenir du HTML ou du markdown bruts : l'afficher en texte React, et l'échapper (`escHtml`) s'il entre un jour dans l'export PDF des statistiques (`services/statsExportService.ts`, qui passe par `innerHTML`).
+- **Écarts de mise en œuvre (PR A de la note)** :
+  - **schéma sans valeur nulle** : les sorties structurées limitent à 16 les champs à type union et à 24 les champs facultatifs, et n'acceptent ni `minimum`, ni `maxLength`, ni `maxItems`. Tous les champs sont donc obligatoires ; l'absence s'écrit `""`, `0`, « Non renseigné » ou `kind: "none"`, et le validateur la rend à l'application sous forme de `null`. Les bornes sont vérifiées par le validateur seul ;
+  - les listes fermées reprennent **toutes** les valeurs des énumérations de `types.ts`, « Non renseigné » compris (égalité exacte vérifiée par un test) ; la casse d'une valeur est corrigée, car les sorties structurées ne la garantissent pas ;
+  - **un champ fautif est retiré et nommé dans `dropped`** (ordre du schéma), sans rejeter la réponse ; rejet global (`invalid_output`) seulement si la réponse n'est pas un objet JSON. Ventilation incohérente : mâles et femelles retirés tous les deux (on ne sait pas lequel est faux). Plus de 5 autres espèces : la liste entière est retirée ;
+  - `dateExpr` : `weekday` de 1 (lundi) à 7 (dimanche), `year` null quand la note ne l'écrit pas, `offsetDays` de -366 à 0 ; une date absolue avec année est refusée si elle tombe après demain (marge d'un jour pour les fuseaux) ; sans année, l'application choisira l'occurrence passée ;
+  - heure : « 8h30 » et « 7:05 » sont acceptées et rendues en `08:30`, `07:05` ; nom scientifique : binôme ou trinôme, épithète à trait d'union permise ;
+  - la limite de 1 000 caractères compte en unités UTF-16 **avant** nettoyage, comme l'attribut `maxlength` de la future zone de texte ;
+  - `max_tokens` 3 000 ; coût maximum réservé 0,043 $ avec Sonnet pour une note courte (le schéma et les listes fermées pèsent ≈ 6 Ko) ;
+  - consentement : version `2026-11-v1` déclarée **côté fonction seulement**. Le test côté application vérifie désormais que chaque version déclarée par l'application est celle de la fonction (et que la note n'en a pas encore) : ajouter `note` à `AI_TEXT_CONSENT_VERSIONS` ferait apparaître sa carte dans « Assistant IA ». La PR B l'ajoutera avec le texte du consentement (et changera la version des deux côtés si besoin) ;
+  - `index.ts` n'est pas modifié ; les journaux restent sans la note ni le résultat (vérifié par le banc `tests/security/ai-text-bench.mjs`) ;
+  - pas de contrôle « le nom ou le lieu figurent-ils dans la note ? » : les pluriels et les fautes de dictée le rendraient faux trop souvent ; la relecture par la personne reste le garde-fou ;
+  - le script d'essai compare la réponse aux champs attendus de chaque note (juste, inventé, manqué, faux, retiré, fuite).
 - **Base** : `main` à `57bbbe5`. La phase 1 (`docs/plans/assistant-ia-phase1.md`) est en production : fonction `ai-identify`, tables `ai_access` et `ai_usage`, fonctions SQL `ai_reserve_call`, `ai_finalize_call` et `ai_my_status`.
 - **Ordre de livraison** : **bilan du mois (phase 3) → note → fiche (phase 2) → recherche (phase 4)**. La première livraison porte le socle commun ; le bilan est la fonctionnalité la moins risquée pour l'éprouver, puisqu'il ne remplit aucun champ et n'envoie que des chiffres.
 - **Exploitation** : `docs/ops/ASSISTANT-IA.md`, à compléter dans chaque PR A.

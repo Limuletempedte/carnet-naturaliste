@@ -44,9 +44,12 @@ export type AiFeature = 'identify' | AiTextFeature;
 
 /**
  * Version du texte de consentement de chaque fonctionnalité texte livrée
- * (`SummaryConsentText` pour `summary`). Doit rester ÉGALE à `CONSENT_VERSIONS`
- * de supabase/functions/ai-text/logic.ts (test dédié) : changer le texte
- * impose de changer les deux, et chacun devra redonner son accord.
+ * (`SummaryConsentText` pour `summary`). Chaque version déclarée ici doit
+ * rester ÉGALE à celle de `CONSENT_VERSIONS` dans
+ * supabase/functions/ai-text/logic.ts (test dédié) : changer le texte impose
+ * de changer les deux, et chacun devra redonner son accord. La fonction peut
+ * déclarer une fonctionnalité avant l'application (`note`, partie serveur
+ * seule) : l'ajouter ici ferait apparaître sa carte dans « Assistant IA ».
  */
 export const AI_TEXT_CONSENT_VERSIONS: Readonly<Partial<Record<AiTextFeature, string>>> = {
     summary: '2026-11-v1',

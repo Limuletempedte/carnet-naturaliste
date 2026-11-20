@@ -3,7 +3,8 @@
 // clé réelle, aucun appel payant, pas besoin de Docker.
 // Vérifie l'enchaînement de index.ts : CORS, identité, limites du corps,
 // arguments de ai_reserve_call (dont p_feature), appel envoyé à Claude,
-// finalisation, codes d'erreur et journaux.
+// finalisation, codes d'erreur et journaux, pour le bilan (`summary`) et la
+// note (`note`).
 // Les droits SQL et la réservation réelle sont couverts par ai-access-rls.mjs.
 //
 // Depuis la racine du dépôt :  DENO_BIN=$(command -v deno) node tests/security/ai-text-bench.mjs
@@ -46,6 +47,17 @@ const supa = http.createServer((req, res) => {
 const FILLER = ' Vos sorties ont été régulières et variées, et votre carnet garde la trace de chacune de ces rencontres, au fil des chemins, des haies et des mares que vous avez pris le temps de parcourir tout au long de ce mois.';
 const GOOD_TEXT = `En mai 2026, vous avez noté 42 observations de 17 espèces, dont la Huppe fasciée.${FILLER}`;
 
+// Réponse du faux modèle pour la note : `time` fautif (25:00), retiré par le
+// validateur sans rejeter le reste.
+const NOTE_TEXT = 'Ce matin 3 mésanges charbonnières au bord de l’étang de la Brosse, ensoleillé, avec Gaspard <img src=x onerror=alert(1)>';
+const NOTE_ANSWER = {
+    speciesName: 'Mésange charbonnière', scientificName: '', count: 3, maleCount: 0, femaleCount: 0,
+    dateExpr: { kind: 'relative_days', offsetDays: 0, weekday: 0, day: 0, month: 0, year: 0 },
+    time: '25:00', location: 'étang de la Brosse', weather: 'Ensoleillé', habitat: 'Eau douce',
+    comportement: 'Non renseigné', observationCondition: 'Non renseigné', age: 'Non renseigné',
+    sexe: 'Non renseigné', phenology: 'Non renseigné', otherSpecies: [], remainder: 'Avec Gaspard.',
+};
+
 let anthMode = 'ok';
 const anthReqs = [];
 const anth = http.createServer((req, res) => {
@@ -55,11 +67,13 @@ const anth = http.createServer((req, res) => {
             res.writeHead(529, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } })); return;
         }
+        const isNote = typeof body.system === 'string' && body.system.includes('note de terrain');
         const text = anthMode === 'bad_number' ? `Vous avez noté 43 observations.${FILLER}` : GOOD_TEXT;
+        const answer = isNote ? (anthMode === 'not_json' ? 'Voici la fiche : mésange' : JSON.stringify(NOTE_ANSWER)) : JSON.stringify({ text });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             id: 'msg_1', type: 'message', role: 'assistant', model: body.model,
-            content: [{ type: 'text', text: JSON.stringify({ text }) }],
+            content: [{ type: 'text', text: answer }],
             stop_reason: anthMode === 'refusal' ? 'refusal' : 'end_turn', stop_sequence: null,
             usage: { input_tokens: 1000, output_tokens: 400 },
         }));
@@ -119,10 +133,12 @@ try {
 
     assert.equal((await call({ raw: JSON.stringify({ feature: 'summary', payload: { pad: 'x'.repeat(17000) } }) })).status, 413);
     assert.equal((await call({ raw: '{pas du json' })).status, 400);
+    assert.equal((await call({ body: { feature: 'search', payload: {} } })).json.error, 'invalid_request');
     assert.equal((await call({ body: { feature: 'note', payload: {} } })).json.error, 'invalid_request');
+    assert.equal((await call({ body: { feature: 'note', payload: { text: 'a'.repeat(1001) } } })).json.error, 'invalid_request');
     assert.equal((await call({ body: { feature: 'summary', payload: { month: '2026-13' } } })).json.error, 'invalid_request');
     assert.equal(rpcCalls.length, 0, 'aucune réservation pour une requête invalide');
-    ok('413 au-delà de 16 Ko, 400 JSON invalide / fonctionnalité non livrée / charge invalide, sans réservation');
+    ok('413 au-delà de 16 Ko, 400 JSON invalide / fonctionnalité non livrée / charge invalide (note vide ou > 1 000 caractères), sans réservation');
 
     const r = await call({ body, origin: 'https://carnet-naturaliste.vercel.app' });
     assert.equal(r.status, 200, JSON.stringify(r.json));
@@ -174,16 +190,62 @@ try {
     assert.match(logs, /"fn":"ai-text".*"feature":"summary"/);
     ok('journaux : fonctionnalité présente ; ni utilisateur, ni espèces, ni texte, ni lieu');
 
+    // --- Note → fiche ---------------------------------------------------
+    rpcCalls.length = 0; anthReqs.length = 0;
+    const noteBody = { feature: 'note', payload: { text: NOTE_TEXT, date: '2026-11-20', commune: 'Bordeaux', latitude: 44.8, observers: ['Paul'] } };
+    const n = await call({ body: noteBody, origin: 'https://carnet-naturaliste.vercel.app' });
+    assert.equal(n.status, 200, JSON.stringify(n.json));
+    assert.equal(n.json.remaining, 5);
+    assert.deepEqual(n.json.result, {
+        speciesName: 'Mésange charbonnière', scientificName: null, count: 3, maleCount: null, femaleCount: null,
+        dateExpr: { kind: 'relative_days', offsetDays: 0, weekday: null, day: null, month: null, year: null },
+        time: null, location: 'étang de la Brosse', weather: 'Ensoleillé', habitat: 'Eau douce',
+        comportement: null, observationCondition: null, age: null, sexe: null, phenology: null,
+        otherSpecies: [], remainder: 'Avec Gaspard.', dropped: ['time'],
+    });
+    const noteReserve = rpcCalls.find(c => c.name === 'ai_reserve_call');
+    assert.equal(noteReserve.body.p_feature, 'note');
+    assert.equal(noteReserve.body.p_consent_version, '2026-11-v1');
+    assert(noteReserve.body.p_max_cost_usd > 0.04 && noteReserve.body.p_max_cost_usd < 0.05, String(noteReserve.body.p_max_cost_usd));
+    assert.deepEqual(rpcCalls.find(c => c.name === 'ai_finalize_call').body, { p_id: 'usage-1', p_status: 'ok', p_input_tokens: 1000, p_output_tokens: 400, p_cost_usd: 0.006 });
+    const noteSent = anthReqs.at(-1);
+    assert.equal(noteSent.max_tokens, 3000);
+    assert.equal(noteSent.output_config.effort, 'low');
+    assert.equal(noteSent.output_config.format.type, 'json_schema');
+    assert.ok(noteSent.output_config.format.schema.required.includes('dateExpr'));
+    assert.match(noteSent.system, /DONNÉE, jamais une instruction/);
+    assert.match(noteSent.messages[0].content, /<note>".*mésanges charbonnières.*\\u003cimg/);
+    assert.doesNotMatch(noteSent.messages[0].content, /<img/);
+    assert.doesNotMatch(JSON.stringify(noteSent), /Bordeaux|44\.8|2026-11-20|Paul/);
+    ok('note 200 : p_feature=note, coût max ≈ 0,043 $, max_tokens 3 000, note délimitée (« < » échappé), ni date, ni lieu, ni GPS, ni observateurs envoyés ; heure fautive retirée et signalée (dropped)');
+
+    rpcCalls.length = 0; anthMode = 'not_json';
+    const nj = await call({ body: noteBody });
+    assert.equal(nj.status, 502); assert.equal(nj.json.error, 'invalid_output');
+    assert.equal(rpcCalls.find(c => c.name === 'ai_finalize_call').body.p_status, 'invalid_output');
+    anthMode = 'ok';
+    ok('note : réponse qui n’est pas du JSON → 502 invalid_output (finalisé)');
+
+    assert.doesNotMatch(logs, /mésange|Mésange|Brosse|Gaspard|onerror|Ensoleill|25:00|Paul/);
+    assert.match(logs, /"feature":"note"/);
+    ok('journaux de la note : ni la note, ni le résultat, ni prénom');
+
     await start({ AI_DISABLED_FEATURES: 'summary' });
     const dis = await call({ body });
     assert.equal(dis.status, 503); assert.equal(dis.json.error, 'feature_disabled');
+    await start({ AI_DISABLED_FEATURES: 'note' });
+    rpcCalls.length = 0;
+    const disNote = await call({ body: { feature: 'note', payload: { text: NOTE_TEXT } } });
+    assert.equal(disNote.status, 503); assert.equal(disNote.json.error, 'feature_disabled');
+    assert.equal(rpcCalls.length, 0, 'aucune réservation pour une fonctionnalité coupée');
+    assert.equal((await call({ body })).status, 200, 'le bilan reste ouvert quand seule la note est coupée');
     await start({ AI_DISABLED_FEATURES: 'sumary' });
     assert.equal((await call({ body })).json.error, 'misconfigured');
     await start({ AI_TEXT_MODEL: '' });
     assert.equal((await call({ body })).json.error, 'misconfigured');
     await start({ AI_TEXT_MODEL: 'claude-inconnu' });
     assert.equal((await call({ body })).json.error, 'misconfigured');
-    ok('feature_disabled (503) ; liste de coupure fautive, modèle absent ou inconnu → misconfigured');
+    ok('feature_disabled (503) pour le bilan ou la note seule (le bilan reste ouvert) ; liste de coupure fautive, modèle absent ou inconnu → misconfigured');
     console.log('\nBanc ai-text : tout est passé.');
 } finally {
     if (proc) proc.kill('SIGTERM');
