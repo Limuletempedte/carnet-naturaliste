@@ -19,6 +19,7 @@ import {
     parseSearchOutput,
     readEnvelope,
     cleanInlineText,
+    cleanParagraphText,
     validateSearchInput,
     wordsFromPhrase,
     type SearchInput,
@@ -89,11 +90,19 @@ describe('ai-text — recherche : validation de l’entrée', () => {
     });
 
     it('retire aussi les caractères ignorables (sélecteurs de variante, remplissage hangul, braille vide)', () => {
-        const hidden = ['\ufe0f', '\u{e0100}', '\u3164', '\u115f', '\u1160', '\uffa0', '\u034f', '\u2800', '\u00ad', '\u{e0041}'].join('');
+        const hidden = ['\ufe00', '\u{e0100}', '\u3164', '\u115f', '\u1160', '\uffa0', '\u034f', '\u2800', '\u00ad', '\u{e0041}'].join('');
         expect(cleanInlineText(`pics${hidden} noirs`)).toBe('pics noirs');
         expect(validateSearchInput({ text: `pics${'\ufe00'.repeat(150)}` })).toEqual({ ok: true, value: { text: 'pics' } });
         // Les lettres accentuées et les emoji visibles restent.
         expect(cleanInlineText('Pic épeiche 🐦')).toBe('Pic épeiche 🐦');
+    });
+
+    it('garde le sélecteur de présentation émoji U+FE0F, une seule fois à la suite (« ❤️ », « 1️⃣ »)', () => {
+        expect(cleanInlineText('pics ❤️ 1️⃣')).toBe('pics ❤️ 1️⃣');
+        expect(cleanInlineText('pics ❤\ufe0f\ufe0f\ufe0f')).toBe('pics ❤\ufe0f');
+        // Un autre sélecteur glissé entre deux U+FE0F ne les fait pas doubler.
+        expect(cleanInlineText('❤\ufe0f\ufe00\ufe0f')).toBe('❤\ufe0f');
+        expect(cleanParagraphText('Merle ❤️\nsous la pluie 1️⃣\u{e0041}')).toBe('Merle ❤️\nsous la pluie 1️⃣');
     });
 
     it('version d’accord provisoire impossible à enregistrer : fermée par défaut jusqu’à la PR B', () => {
@@ -277,8 +286,10 @@ describe('ai-text — recherche : lecture de la réponse', () => {
                 expect(result.years, JSON.stringify(bad)).toEqual([]);
                 expect(result.dropped).toEqual(['years']);
             }
-            expect(parse({ years: Array.from({ length: 31 }, (_, i) => 1990 + i) }).dropped).toEqual(['years']);
-            expect(parse({ years: Array.from({ length: 30 }, (_, i) => 1990 + i) }).years).toHaveLength(30);
+            // « de 1980 à 2024 » : 45 années, acceptées ; 60 au plus.
+            expect(parse({ years: Array.from({ length: 45 }, (_, i) => 1980 + i) }).years).toHaveLength(45);
+            expect(parse({ years: Array.from({ length: 60 }, (_, i) => 1900 + i) }).years).toHaveLength(60);
+            expect(parse({ years: Array.from({ length: 61 }, (_, i) => 1900 + i) }).dropped).toEqual(['years']);
         });
 
         it('au passage d’année : l’année suivante acceptée le 31 décembre (déjà demain ailleurs)', () => {
@@ -300,6 +311,20 @@ describe('ai-text — recherche : lecture de la réponse', () => {
             expect(parse({ ...period({ kind: 'month', month: 5, yearScope: 'all' }), years: [2024] }))
                 .toMatchObject({ period: { kind: 'month', month: 5 }, years: [2024], dropped: [] });
             expect(parse({ ...period({ kind: 'season', season: 'winter', yearScope: 'all' }), years: [2025] }).dropped).toEqual([]);
+        });
+
+        it('un mois à venir de l’année en cours : période retirée (un jour de marge)', () => {
+            // Le 20 novembre 2026 : « en décembre cette année » est à venir.
+            expect(parse(period({ kind: 'month', month: 12, yearScope: 'this_year' }))).toMatchObject({ period: null, dropped: ['period'] });
+            expect(parse(period({ kind: 'month', month: 11, yearScope: 'this_year' })).dropped).toEqual([]);
+            // Toutes les années, l'an dernier, « décembre dernier » : jamais à venir.
+            for (const yearScope of ['all', 'last_year', 'most_recent']) {
+                expect(parse(period({ kind: 'month', month: 12, yearScope })).dropped, yearScope).toEqual([]);
+            }
+            // Le 30 novembre au soir (UTC), décembre commence demain : toléré.
+            expect(parse(period({ kind: 'month', month: 12, yearScope: 'this_year' }), INPUT, new Date(Date.UTC(2026, 10, 30, 23))).dropped).toEqual([]);
+            // Les saisons sont laissées à l'application (PR B).
+            expect(parse(period({ kind: 'season', season: 'winter', yearScope: 'this_year' })).dropped).toEqual([]);
         });
 
         it('un mois d’une année écrite encore à venir : période et années retirées', () => {
@@ -389,6 +414,21 @@ describe('ai-text — recherche : lecture de la réponse', () => {
             expect(parse({ text: 'cheval' }, { text: 'les chevaux' }).text).toBe('cheval');
             expect(parse({ text: 'Martin-pêcheur' }, { text: 'martin pêcheur en 2024' }).text).toBe('Martin-pêcheur');
             expect(parse({ text: 'red kite' }, { text: 'red kites near home' }).text).toBe('red kite');
+            // Ligatures : « œ » = « oe », « æ » = « ae ».
+            expect(parse({ text: 'héron garde-bœufs' }, { text: 'heron garde boeufs' }).text).toBe('héron garde-bœufs');
+            expect(parse({ text: 'heron garde-boeufs' }, { text: 'Hérons garde-bœufs' }).text).toBe('heron garde-boeufs');
+            expect(parse({ text: 'Lycæna' }, { text: 'lycaena en juillet' }).text).toBe('Lycæna');
+        });
+
+        it('apostrophes et traits d’union sont des séparateurs ; une forme collée vaut ses mots', () => {
+            expect(parse({ commune: "Saint-Martin-d'Hères" }, { text: 'hérons à Saint Martin d Hères' }).commune).toBe("Saint-Martin-d'Hères");
+            expect(parse({ commune: 'Saint-Martin-d’Hères' }, { text: "hérons à Saint-Martin-d'Hères" }).commune).toBe('Saint-Martin-d’Hères');
+            expect(parse({ text: 'Rouge-gorge' }, { text: 'les rougegorges en hiver' }).text).toBe('Rouge-gorge');
+            expect(parse({ text: 'rougegorge' }, { text: 'les rouge gorge en hiver' }).text).toBe('rougegorge');
+            expect(parse({ text: 'Martin-pêcheur' }, { text: 'martinpecheur' }).text).toBe('Martin-pêcheur');
+            // Un mot inventé reste refusé, même collé à un mot de la phrase.
+            expect(parse({ text: 'rouge-gorge familier' }, { text: 'les rougegorges' }).dropped).toEqual(['text']);
+            expect(parse({ text: 'rougegorgefamilier' }, { text: 'les rouge gorge' }).dropped).toEqual(['text']);
         });
 
         it('retirés s’ils ajoutent des mots : commentaire, réponse, traduction, lieu déduit', () => {
@@ -398,6 +438,8 @@ describe('ai-text — recherche : lecture de la réponse', () => {
                 [{ text: 'Le guépard est le plus rapide' }, 'quel est l’animal le plus rapide ?'],
                 [{ department: 'Gironde' }, 'les hérons à Bordeaux'],
                 [{ department: 'Gironde (33)' }, 'les hérons en Gironde'],
+                [{ department: 'Gironde 3' }, 'les hérons en Gironde'],
+                [{ commune: 'Pessacs Est' }, 'les pics à Pessac'],
                 [{ commune: 'Pessac' }, 'les pics près de chez moi'],
             ];
             for (const [fields, text] of cases) {
@@ -417,15 +459,15 @@ describe('ai-text — recherche : lecture de la réponse', () => {
             expect(parse({ text: 42 }).dropped).toEqual(['text']);
         });
 
-        it('aucun caractère de balisage ajouté par le modèle (< > " \' ` &)', () => {
+        it('aucun caractère de balisage ajouté par le modèle (< > " ` &)', () => {
             // Les mots viennent de la phrase, pas les chevrons : retiré.
             expect(parse({ text: 'martin-pêcheur"><a>Pessac</a><!--' }, { text: 'martin-pêcheur à Pessac' }).dropped).toEqual(['text']);
             expect(parse({ commune: 'Pessac & Talence' }, { text: 'pics à Pessac et Talence' }).dropped).toEqual(['commune']);
             // Présents dans la phrase : gardés tels quels (texte brut, à afficher comme tel).
             expect(parse({ text: 'pics <b>' }, { text: 'pics <b>' }).text).toBe('pics <b>');
-            // Les deux apostrophes se valent.
+            // Les apostrophes ne sont pas des balises.
             expect(parse({ commune: "Saint-Martin-d'Hères" }, { text: 'hérons à Saint-Martin-d’Hères' }).commune).toBe("Saint-Martin-d'Hères");
-            expect(wordsFromPhrase("l'étang", 'au bord de l étang')).toBe(false);
+            expect(wordsFromPhrase("l'étang", 'au bord de l étang')).toBe(true);
         });
 
         it('wordsFromPhrase : chaque mot à une faute près, les mots courts exacts', () => {

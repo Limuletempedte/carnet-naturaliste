@@ -18,7 +18,7 @@
 // - un genre n'appartient qu'à une catégorie (vérifié par
 //   tests/taxonCategories.test.ts) ; d'anciens noms de genre encore
 //   présents dans des données plus anciennes sont gardés (Philomachus,
-//   Leiopicus, Elaphe, Clethrionomys…) ;
+//   Leiopicus, Elaphe, Clethrionomys, Neovison, Mesotriton, Pitymys…) ;
 // - toute modification change `TAXON_CATEGORIES_VERSION`.
 //
 // ⚠️ Les clés et les libellés sont RECOPIÉS dans
@@ -32,7 +32,7 @@
 import { TaxonomicGroup } from '../types';
 
 /** À changer à toute modification d'une catégorie (clé, libellé, genres). */
-export const TAXON_CATEGORIES_VERSION = 1;
+export const TAXON_CATEGORIES_VERSION = 2;
 
 export interface TaxonCategory {
     /** Clé stable, en minuscules ASCII. */
@@ -101,10 +101,11 @@ export const TAXON_CATEGORIES = [
         // Huîtrier, avocette, échasse, œdicnème, glaréole, gravelots et
         // pluviers, vanneaux, bécasseaux, barges, courlis, chevaliers,
         // tournepierre, bécassines, bécasse, phalaropes. Anarhynchus :
-        // gravelot à collier interrompu ; Eudromias : pluvier guignard ;
-        // Philomachus : ancien nom du combattant (Calidris pugnax).
+        // gravelot à collier interrompu ; Thinornis : petit gravelot (nom
+        // récent) ; Eudromias : pluvier guignard ; Philomachus : ancien nom
+        // du combattant (Calidris pugnax).
         genera: [
-            'Haematopus', 'Recurvirostra', 'Himantopus', 'Burhinus', 'Glareola', 'Charadrius', 'Anarhynchus',
+            'Haematopus', 'Recurvirostra', 'Himantopus', 'Burhinus', 'Glareola', 'Charadrius', 'Anarhynchus', 'Thinornis',
             'Eudromias', 'Pluvialis', 'Vanellus', 'Calidris', 'Philomachus', 'Limosa', 'Numenius', 'Tringa',
             'Xenus', 'Actitis', 'Arenaria', 'Gallinago', 'Lymnocryptes', 'Scolopax', 'Phalaropus',
         ],
@@ -194,6 +195,42 @@ export const TAXON_CATEGORIES = [
         synonyms: ['pipits et bergeronnettes', 'motacillidés'],
         genera: ['Anthus', 'Motacilla'],
     },
+    {
+        key: 'grives_merles',
+        label: 'Grives et merles',
+        group: TaxonomicGroup.BIRD,
+        synonyms: ['grives et merles', 'merles et grives'],
+        genera: ['Turdus'],
+    },
+    {
+        key: 'pigeons_tourterelles',
+        label: 'Pigeons et tourterelles',
+        group: TaxonomicGroup.BIRD,
+        synonyms: ['pigeons et tourterelles', 'columbidés', 'colombidés'],
+        genera: ['Columba', 'Streptopelia'],
+    },
+    {
+        key: 'bruants',
+        label: 'Bruants',
+        group: TaxonomicGroup.BIRD,
+        synonyms: ['bruants'],
+        // Plectrophenax : bruant des neiges ; Calcarius : bruant lapon.
+        genera: ['Emberiza', 'Plectrophenax', 'Calcarius'],
+    },
+    {
+        key: 'pouillots',
+        label: 'Pouillots',
+        group: TaxonomicGroup.BIRD,
+        synonyms: ['pouillots'],
+        genera: ['Phylloscopus'],
+    },
+    {
+        key: 'grebes',
+        label: 'Grèbes',
+        group: TaxonomicGroup.BIRD,
+        synonyms: ['grèbes', 'grebes'],
+        genera: ['Podiceps', 'Tachybaptus'],
+    },
     // --- Mammifères ------------------------------------------------------------
     {
         key: 'ongules',
@@ -207,19 +244,30 @@ export const TAXON_CATEGORIES = [
         label: 'Mustélidés (martres, fouines, belettes, blaireaux, loutres…)',
         group: TaxonomicGroup.MAMMAL,
         synonyms: ['mustélidés', 'mustelides'],
-        // Neogale : vison d'Amérique (ancien Neovison).
-        genera: ['Martes', 'Mustela', 'Meles', 'Lutra', 'Neogale'],
+        // Neogale : vison d'Amérique (Neovison, son ancien nom, gardé).
+        genera: ['Martes', 'Mustela', 'Meles', 'Lutra', 'Neogale', 'Neovison'],
     },
     {
         key: 'rongeurs',
         label: 'Rongeurs',
         group: TaxonomicGroup.MAMMAL,
         synonyms: ['rongeurs'],
-        // Clethrionomys : ancien nom des campagnols roussâtres (Myodes).
+        // Clethrionomys : ancien nom des campagnols roussâtres (Myodes) ;
+        // Terricola et Pitymys : anciens noms de campagnols souterrains
+        // (aujourd'hui Microtus) ; Tamias et Callosciurus : écureuils
+        // introduits (tamia de Sibérie, écureuil à ventre rouge).
         genera: [
-            'Sciurus', 'Marmota', 'Castor', 'Glis', 'Eliomys', 'Muscardinus', 'Cricetus', 'Myocastor', 'Ondatra',
-            'Arvicola', 'Microtus', 'Chionomys', 'Myodes', 'Clethrionomys', 'Micromys', 'Apodemus', 'Mus', 'Rattus',
+            'Sciurus', 'Tamias', 'Callosciurus', 'Marmota', 'Castor', 'Glis', 'Eliomys', 'Muscardinus', 'Cricetus',
+            'Myocastor', 'Ondatra', 'Arvicola', 'Microtus', 'Terricola', 'Pitymys', 'Chionomys', 'Myodes',
+            'Clethrionomys', 'Micromys', 'Apodemus', 'Mus', 'Rattus',
         ],
+    },
+    {
+        key: 'lievres_lapins',
+        label: 'Lièvres et lapins',
+        group: TaxonomicGroup.MAMMAL,
+        synonyms: ['lièvres et lapins', 'lapins et lièvres', 'léporidés'],
+        genera: ['Lepus', 'Oryctolagus'],
     },
     // --- Reptiles --------------------------------------------------------------
     {
@@ -228,17 +276,17 @@ export const TAXON_CATEGORIES = [
         group: TaxonomicGroup.REPTILE,
         synonyms: ['serpents', 'couleuvres et vipères', 'ophidiens'],
         // Elaphe et Rhinechis : anciens noms de couleuvres aujourd'hui
-        // rangées dans Zamenis. L'orvet (Anguis) est un lézard sans pattes :
-        // dans aucune catégorie.
+        // rangées dans Zamenis. L'orvet (Anguis), lézard sans pattes, est
+        // avec les lézards.
         genera: ['Natrix', 'Zamenis', 'Elaphe', 'Rhinechis', 'Coronella', 'Hierophis', 'Malpolon', 'Vipera'],
     },
     {
         key: 'lezards',
-        label: 'Lézards et geckos',
+        label: 'Lézards, orvets et geckos',
         group: TaxonomicGroup.REPTILE,
-        synonyms: ['lézards', 'lezards', 'lézards et geckos'],
+        synonyms: ['lézards', 'lezards', 'lézards et geckos', 'lézards et orvets'],
         genera: [
-            'Lacerta', 'Timon', 'Podarcis', 'Zootoca', 'Iberolacerta', 'Archaeolacerta', 'Algyroides',
+            'Anguis', 'Lacerta', 'Timon', 'Podarcis', 'Zootoca', 'Iberolacerta', 'Archaeolacerta', 'Algyroides',
             'Psammodromus', 'Acanthodactylus', 'Chalcides', 'Tarentola', 'Hemidactylus', 'Euleptes',
         ],
     },
@@ -266,8 +314,12 @@ export const TAXON_CATEGORIES = [
         label: 'Tritons et salamandres',
         group: TaxonomicGroup.AMPHIBIAN,
         synonyms: ['urodèles', 'urodeles', 'tritons et salamandres', 'salamandres et tritons'],
-        // Hydromantes : ancien nom des spélerpès (Speleomantes).
-        genera: ['Salamandra', 'Triturus', 'Lissotriton', 'Ichthyosaura', 'Calotriton', 'Euproctus', 'Speleomantes', 'Hydromantes'],
+        // Hydromantes : ancien nom des spélerpès (Speleomantes) ; Mesotriton :
+        // ancien nom du triton alpestre (Ichthyosaura).
+        genera: [
+            'Salamandra', 'Triturus', 'Lissotriton', 'Ichthyosaura', 'Mesotriton', 'Calotriton', 'Euproctus',
+            'Speleomantes', 'Hydromantes',
+        ],
     },
     // --- Plantes et champignons -------------------------------------------------
     {

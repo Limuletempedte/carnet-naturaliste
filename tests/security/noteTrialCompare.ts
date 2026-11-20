@@ -14,6 +14,8 @@
 //   pluriel en -s/-x, article en tête pour un lieu), jamais une simple
 //   inclusion ;
 // - autres espèces : ensembles dédoublonnés ;
+// - un champ retiré par le validateur (nommé dans `dropped`) a son propre
+//   verdict, « retiré », jamais « juste » ;
 // - fuites : recherche sans casse ni accents dans les champs structurés.
 
 import {
@@ -41,7 +43,7 @@ const DATE_KEYS: Record<NoteDateExpr['kind'], (keyof NoteDateExpr)[]> = {
 /** Espèces : le modèle en garde 5 au plus. */
 const MAX_OTHER_SPECIES = 5;
 
-export type Verdict = 'ok' | 'invente' | 'manque' | 'faux';
+export type Verdict = 'ok' | 'invente' | 'manque' | 'faux' | 'retire';
 
 export interface NoteTrialItem {
     label: string;
@@ -57,9 +59,10 @@ export interface NoteComparison {
     dropped: NoteField[];
 }
 
-/** Sans casse ni accents, apostrophes unifiées, blancs resserrés. */
+/** Sans casse ni accents (« œ » = « oe », « æ » = « ae »), apostrophes unifiées, blancs resserrés. */
 export function foldText(value: string): string {
-    return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+    return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae')
+        .replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
 }
 
 /** Nom d'espèce : `foldText`, traits d'union comme espaces, pluriel en -s/-x retiré. */
@@ -145,10 +148,12 @@ export function judgeField(item: NoteTrialItem, field: ComparedField, got: unkno
 
 /** Compare une réponse de note aux champs attendus de l'entrée. */
 export function compareNote(item: NoteTrialItem, result: NoteOutput): NoteComparison {
-    const verdicts = Object.fromEntries(
-        NOTE_COMPARED_FIELDS.map(field => [field, judgeField(item, field, result[field])]),
-    ) as Record<ComparedField, Verdict>;
+    const dropped = result.dropped ?? [];
+    const verdicts = Object.fromEntries(NOTE_COMPARED_FIELDS.map(field => [
+        field,
+        dropped.includes(field) ? 'retire' : judgeField(item, field, result[field]),
+    ])) as Record<ComparedField, Verdict>;
     const structured = foldText(JSON.stringify(Object.fromEntries(NOTE_COMPARED_FIELDS.map(f => [f, result[f]]))));
     const leaks = (item.forbidden ?? []).filter(word => structured.includes(foldText(word)));
-    return { verdicts, leaks, dropped: result.dropped ?? [] };
+    return { verdicts, leaks, dropped };
 }

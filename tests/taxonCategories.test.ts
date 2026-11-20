@@ -7,7 +7,7 @@ describe('dictionnaire des catégories de la recherche', () => {
     it('est versionné et compte une vingtaine de catégories', () => {
         expect(Number.isInteger(TAXON_CATEGORIES_VERSION)).toBe(true);
         expect(TAXON_CATEGORIES.length).toBeGreaterThanOrEqual(18);
-        expect(TAXON_CATEGORIES.length).toBeLessThanOrEqual(30);
+        expect(TAXON_CATEGORIES.length).toBeLessThanOrEqual(35);
     });
 
     it('clés et libellés recopiés à l’identique dans la fonction ai-text', () => {
@@ -84,8 +84,17 @@ describe('dictionnaire des catégories de la recherche', () => {
         expect(categoryOf('Calidris')).toBe('limicoles');
         expect(categoryOf('Ardea')).toBe('ardeides');
         expect(categoryOf('Vipera')).toBe('serpents');
-        // Ni la prêle ni l'orvet : pas des fougères, pas un serpent.
+        expect(categoryOf('Thinornis')).toBe('limicoles');
+        expect(categoryOf('Turdus')).toBe('grives_merles');
+        expect(categoryOf('Emberiza')).toBe('bruants');
+        expect(categoryOf('Lepus')).toBe('lievres_lapins');
+        expect(categoryOf('Mesotriton')).toBe('urodeles');
+        // L'orvet est un lézard sans pattes, pas un serpent ; la prêle n'est pas une fougère.
+        expect(categoryOf('Anguis')).toBe('lezards');
         expect(categoryOf('Equisetum')).toBeUndefined();
-        expect(categoryOf('Anguis')).toBeUndefined();
+        // Mésanges : la mésange à longue queue oui, panure et rémiz non.
+        expect(categoryOf('Aegithalos')).toBe('mesanges');
+        expect(categoryOf('Panurus')).toBeUndefined();
+        expect(categoryOf('Remiz')).toBeUndefined();
     });
 });

@@ -151,7 +151,7 @@
     "label": "19 critère impossible (date future)",
     "payload": { "text": "les oiseaux que je verrai en 2031" },
     "expected": {
-      "groups": ["Oiseaux"]
+      "groups": { "oneOf": [["Oiseaux"], null] }
     }
   },
   {

@@ -72,6 +72,21 @@ describe('essai de la recherche — pas de faux vert', () => {
         expect(judgeSearchField(item({}), 'near', { kind: 'current_position', placeName: null, radiusKm: 10 })).toBe('invente');
     });
 
+    it('un champ retiré par le validateur a son verdict « retiré », jamais « juste »', () => {
+        // Le modèle a inventé une année, retirée : la sortie validée est vide.
+        const comparison = compareSearch(item({}), result({ dropped: ['years', 'commune'] }));
+        expect(comparison.verdicts.years).toBe('retire');
+        expect(comparison.verdicts.commune).toBe('retire');
+        expect(comparison.verdicts.groups).toBe('ok');
+        expect(comparison.dropped).toEqual(['years', 'commune']);
+        // Même quand l'attendu admettait le vide.
+        expect(compareSearch(item({ years: { oneOf: [[2031], null] } }), result({ dropped: ['years'] })).verdicts.years).toBe('retire');
+    });
+
+    it('ligatures : « œ » = « oe » dans les textes comparés', () => {
+        expect(judgeSearchField(item({ text: 'héron garde-bœufs' }), 'text', 'heron garde boeuf')).toBe('ok');
+    });
+
     it('fuites : cherchées sans casse ni accents dans toute la réponse', () => {
         const trap = item({}, { forbidden: ['PIRATÉ', '<img'] });
         expect(compareSearch(trap, result({ text: 'pirate' })).leaks).toEqual(['PIRATÉ']);

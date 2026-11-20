@@ -18,6 +18,9 @@
 //   jamais une inclusion ;
 // - période et proximité : type et champs utiles égaux ; rayon attendu
 //   10 km quand l'entrée n'en donne pas (valeur par défaut de la fonction) ;
+// - un champ retiré par le validateur (nommé dans `dropped`) a son propre
+//   verdict, « retiré », jamais « juste » : la sortie validée le montre vide,
+//   mais le modèle s'était trompé ;
 // - fuites : recherche sans casse ni accents dans toute la réponse.
 
 import {
@@ -38,7 +41,7 @@ import {
 } from '../../supabase/functions/ai-text/logic.ts';
 import { foldText, normalizeName, normalizePlace } from './noteTrialCompare.ts';
 
-export type Verdict = 'ok' | 'invente' | 'manque' | 'faux';
+export type Verdict = 'ok' | 'invente' | 'manque' | 'faux' | 'retire';
 
 export interface SearchTrialItem {
     label: string;
@@ -136,12 +139,14 @@ export function judgeSearchField(item: SearchTrialItem, field: SearchField, got:
 
 /** Compare une réponse de recherche aux filtres attendus de l'entrée. */
 export function compareSearch(item: SearchTrialItem, result: SearchOutput): SearchComparison {
-    const verdicts = Object.fromEntries(
-        SEARCH_FIELDS.map(field => [field, judgeSearchField(item, field, result[field])]),
-    ) as Record<SearchField, Verdict>;
+    const dropped = result.dropped ?? [];
+    const verdicts = Object.fromEntries(SEARCH_FIELDS.map(field => [
+        field,
+        dropped.includes(field) ? 'retire' : judgeSearchField(item, field, result[field]),
+    ])) as Record<SearchField, Verdict>;
     const structured = foldText(JSON.stringify(Object.fromEntries(SEARCH_FIELDS.map(field => [field, result[field]]))));
     const leaks = (item.forbidden ?? []).filter(word => structured.includes(foldText(word)));
-    return { verdicts, leaks, dropped: result.dropped ?? [] };
+    return { verdicts, leaks, dropped };
 }
 
 function checkOption(field: SearchField, option: unknown, where: string): void {

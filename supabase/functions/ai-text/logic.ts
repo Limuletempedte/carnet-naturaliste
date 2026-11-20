@@ -220,19 +220,26 @@ const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 // cachent des consignes. Toujours retirés, avec les autres caractères
 // « ignorables » qui n'affichent rien (sélecteurs de variante, remplissage
 // hangul, U+034F) et l'espace braille vide U+2800 : une consigne peut y être
-// codée.
-const FORMAT_CHARS_RE = /[\p{Cf}\p{Default_Ignorable_Code_Point}⠀]/gu;
+// codée. Seule exception : le sélecteur de présentation émoji U+FE0F (« ❤️ »,
+// « 1️⃣ »), gardé une seule fois à la suite (un caractère répété ne code rien).
+const FORMAT_CHARS_RE = /[\p{Cf}\p{Default_Ignorable_Code_Point}\u2800]/gu;
+const EMOJI_PRESENTATION = '\ufe0f';
+
+/** Retire les caractères invisibles, sauf un U+FE0F (émoji) à la suite. */
+function stripInvisible(value: string): string {
+    return value
+        .replace(FORMAT_CHARS_RE, c => (c === EMOJI_PRESENTATION ? c : ''))
+        .replace(/\ufe0f{2,}/g, EMOJI_PRESENTATION);
+}
 
 /** Texte sur une ligne : contrôles et bidi remplacés par une espace, espaces resserrées. */
 export function cleanInlineText(value: string): string {
-    return value.replace(FORMAT_CHARS_RE, '').replace(CONTROL_CHARS_RE, ' ').replace(/\s+/g, ' ').trim();
+    return stripInvisible(value).replace(CONTROL_CHARS_RE, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /** Texte en paragraphes : garde les retours à la ligne simples, retire le reste. */
 export function cleanParagraphText(value: string): string {
-    return value
-        .replace(/\r\n?/g, '\n')
-        .replace(FORMAT_CHARS_RE, '')
+    return stripInvisible(value.replace(/\r\n?/g, '\n'))
         .replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
         .split('\n')
         .map(line => line.replace(/[ \t]+/g, ' ').trim())
@@ -957,7 +964,8 @@ export const NOTE_FEATURE: TextFeature<NoteInput, NoteOutput> = {
 export const SEARCH_LIMITS = {
     /** En unités UTF-16, comptées AVANT nettoyage (attribut `maxlength`). */
     maxInputChars: 200,
-    maxYears: 30,
+    /** « de 1980 à 2024 » : 45 années. */
+    maxYears: 60,
     minYear: 1900,
     /** « les N derniers jours » : dix ans au plus. */
     maxDays: 3660,
@@ -1023,11 +1031,17 @@ export const SEARCH_CATEGORIES: readonly { key: string; label: string }[] = [
     { key: 'rallides', label: 'Râles, marouettes, gallinules et foulques' },
     { key: 'fringilles', label: 'Fringilles (pinsons, chardonnerets, verdiers…)' },
     { key: 'pipits_bergeronnettes', label: 'Pipits et bergeronnettes' },
+    { key: 'grives_merles', label: 'Grives et merles' },
+    { key: 'pigeons_tourterelles', label: 'Pigeons et tourterelles' },
+    { key: 'bruants', label: 'Bruants' },
+    { key: 'pouillots', label: 'Pouillots' },
+    { key: 'grebes', label: 'Grèbes' },
     { key: 'ongules', label: 'Ongulés (cerfs, chevreuils, sangliers, chamois…)' },
     { key: 'mustelides', label: 'Mustélidés (martres, fouines, belettes, blaireaux, loutres…)' },
     { key: 'rongeurs', label: 'Rongeurs' },
+    { key: 'lievres_lapins', label: 'Lièvres et lapins' },
     { key: 'serpents', label: 'Serpents (couleuvres et vipères)' },
-    { key: 'lezards', label: 'Lézards et geckos' },
+    { key: 'lezards', label: 'Lézards, orvets et geckos' },
     { key: 'tortues', label: 'Tortues' },
     { key: 'anoures', label: 'Grenouilles et crapauds' },
     { key: 'urodeles', label: 'Tritons et salamandres' },
@@ -1142,7 +1156,7 @@ Règles :
 - groups : les groupes de la liste que la phrase nomme, plusieurs possibles (« oiseaux » = "Oiseaux", « libellules » = "Odonate", « chauves-souris » = "Chiroptères").
 - categories : quand la phrase nomme l'un de ces ensembles d'espèces (clé : sens), plusieurs possibles ; « rapaces » sans précision = les deux catégories de rapaces. N'ajoute pas le groupe qui les contient.
 ${SEARCH_CATEGORY_LINES}
-- genera : en dernier recours seulement, pour un ensemble d'espèces qui n'est ni un groupe ni une catégorie (« les bruants » = ["Emberiza"]), ou un genre latin écrit dans la phrase ; 20 au plus, un genre par élément (« Genre »).
+- genera : en dernier recours seulement, pour un ensemble d'espèces qui n'est ni un groupe ni une catégorie (« les sittelles » = ["Sitta"]), ou un genre latin écrit dans la phrase ; 20 au plus, un genre par élément (« Genre »).
 - Une espèce précise (« héron cendré », « martin-pêcheur ») ne devient ni un groupe, ni une catégorie, ni un genre : elle va dans text.
 - statuses : les statuts de la liste rouge (UICN) que la phrase demande (« espèces menacées » = VU, EN, CR ; « quasi menacées » = NT ; « préoccupation mineure » = LC).
 - habitats : seulement un milieu que la phrase nomme (« en forêt » = les trois forêts, « en montagne » = "Montagne", « en ville » = "Milieu urbain").
@@ -1163,9 +1177,10 @@ export function buildSearchUserPrompt(input: SearchInput): string {
 /** Genre latin, éventuellement suivi d'une épithète (« Parus », « Parus major »). */
 const GENUS_RE = /^[A-Z][a-z]+(?: [a-z]+(?:-[a-z]+)?)?$/;
 
-/** Mots d'un texte, sans casse ni accents (lettres et chiffres). */
+/** Mots d'un texte, sans casse ni accents (lettres et chiffres) ; « œ » = « oe », « æ » = « ae ». */
 function foldedWords(value: string): string[] {
-    return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(word => word.length > 0);
+    return value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae')
+        .split(/[^\p{L}\p{N}]+/u).filter(word => word.length > 0);
 }
 
 /** Distance d'édition (Levenshtein) entre deux mots courts. */
@@ -1187,28 +1202,57 @@ function typoAllowance(word: string): number {
     return word.length <= 5 ? 1 : 2;
 }
 
-/** Caractères qui comptent pour du HTML ou une chaîne : jamais ajoutés par le modèle. */
-const MARKUP_CHARS_RE = /[<>"'`&’]/g;
+/**
+ * Caractères qui comptent pour du HTML ou une chaîne : jamais ajoutés par le
+ * modèle. Les apostrophes et les traits d'union n'en sont pas : ce sont des
+ * séparateurs de mots (« Saint-Martin-d'Hères » = « Saint Martin d Hères »).
+ */
+const MARKUP_CHARS_RE = /[<>"`&]/g;
+
+/** Le mot est-il l'un des candidats, à `allowance` lettres près ? */
+function matchesWord(word: string, candidates: readonly string[], allowance: number): boolean {
+    return candidates.some(candidate => candidate === word
+        || (allowance > 0 && Math.abs(candidate.length - word.length) <= allowance && editDistance(candidate, word) <= allowance));
+}
+
+/** Mots, plus leurs formes collées par 2 ou 3 (« rouge gorge » → « rougegorge »). */
+function withGluedForms(words: readonly string[]): string[] {
+    const forms = [...words];
+    for (let size = 2; size <= 3; size += 1) {
+        for (let i = 0; i + size <= words.length; i += 1) forms.push(words.slice(i, i + size).join(''));
+    }
+    return forms;
+}
 
 /**
  * Vrai si chaque mot de `value` est un mot de la phrase, à une faute de
  * frappe ou un pluriel près, et si `value` n'ajoute aucun caractère de
- * balisage (`< > " ' \` &`) absent de la phrase (les deux apostrophes se
- * valent). Un commentaire, une traduction, un lieu ou une balise ajoutés
- * par le modèle n'y passent pas. Un texte sans aucun mot est refusé.
+ * balisage (`< > " \` &`) absent de la phrase. Une forme collée vaut ses
+ * mots séparés, dans les deux sens (« Rouge-gorge » pour « rougegorge »).
+ * Un commentaire, une traduction, un lieu ou une balise ajoutés par le
+ * modèle n'y passent pas. Un texte sans aucun mot est refusé.
  */
 export function wordsFromPhrase(value: string, phrase: string): boolean {
-    const apostrophe = (c: string) => (c === '’' ? '\'' : c);
-    const phraseMarkup = new Set((phrase.match(MARKUP_CHARS_RE) ?? []).map(apostrophe));
-    if ((value.match(MARKUP_CHARS_RE) ?? []).some(c => !phraseMarkup.has(apostrophe(c)))) return false;
-    const source = foldedWords(phrase);
+    const phraseMarkup = new Set(phrase.match(MARKUP_CHARS_RE) ?? []);
+    if ((value.match(MARKUP_CHARS_RE) ?? []).some(c => !phraseMarkup.has(c))) return false;
+    const source = withGluedForms(foldedWords(phrase));
     const words = foldedWords(value);
     if (words.length === 0) return false;
-    return words.every(word => {
-        const allowance = typoAllowance(word);
-        return source.some(candidate => candidate === word
-            || (allowance > 0 && Math.abs(candidate.length - word.length) <= allowance && editDistance(candidate, word) <= allowance));
-    });
+    // reached[i] : les i premiers mots de `value` sont couverts par des mots
+    // (ou des formes collées de 2 ou 3 mots) de la phrase.
+    const reached = [true, ...words.map(() => false)];
+    for (let i = 0; i < words.length; i += 1) {
+        if (!reached[i]) continue;
+        for (let size = 1; size <= 3 && i + size <= words.length; size += 1) {
+            const parts = words.slice(i, i + size);
+            const joined = parts.join('');
+            // Forme collée : une lettre d'écart au plus, et jamais de quoi
+            // avaler un mot entier (« Gironde 33 » n'est pas « Gironde »).
+            const allowance = size === 1 ? typoAllowance(joined) : Math.min(1, Math.min(...parts.map(part => part.length)) - 1);
+            if (!reached[i + size] && matchesWord(joined, source, allowance)) reached[i + size] = true;
+        }
+    }
+    return reached[words.length];
 }
 
 /** Dernière année acceptée : l'année en cours, ou la suivante si demain (fuseaux) y tombe déjà. */
@@ -1337,6 +1381,12 @@ export function parseSearchOutput(text: string, input: SearchInput, now: Date = 
         period = drop('period');
         years = [];
         drop('years');
+    }
+    // Mois à venir de l'année en cours (« en décembre cette année » le 20
+    // novembre) : jamais de date future, la période est retirée. Les saisons
+    // (dont l'hiver, à cheval sur deux années) sont laissées à l'application.
+    if (namedMonth !== null && period?.yearScope === 'this_year' && monthStartsAfterTomorrow(now.getUTCFullYear(), namedMonth, now)) {
+        period = drop('period');
     }
 
     const groups = choiceList('groups', ALLOWED_TAXONOMIC_GROUPS);

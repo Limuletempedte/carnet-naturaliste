@@ -976,7 +976,8 @@ la PR B.
 seulement, 200 caractères au plus (refus au-delà, jamais de troncature),
 mise sur une ligne et nettoyée (caractères de contrôle, de format et
 « ignorables » qui n'affichent rien retirés, comme pour la note et le
-bilan), délimitée comme une donnée. Jamais la date du jour, la position, ni
+bilan ; seul le sélecteur émoji U+FE0F est gardé, une fois, pour que
+« ❤️ » ou « 1️⃣ » restent intacts), délimitée comme une donnée. Jamais la date du jour, la position, ni
 aucune observation : les filtres seront appliqués par l'application, sur
 l'appareil.
 
@@ -990,7 +991,8 @@ une liste) :
   `all` (toutes les années), `this_year`, `last_year` ou `most_recent`
   (« en mai dernier »). La période reste **relative** : l'application la
   convertira au moment d'appliquer le filtre ;
-- `years` : les années écrites (1900 à l'année en cours, 30 au plus) ;
+- `years` : les années écrites (1900 à l'année en cours, 60 au plus :
+  « de 1980 à 2024 » en compte 45) ;
 - `groups` (groupes de l'application), `categories` (clés du dictionnaire
   `utils/taxonCategories.ts`), `statuses` (codes UICN), `habitats` : listes
   fermées, plusieurs valeurs possibles ;
@@ -1005,21 +1007,32 @@ une liste) :
 **Validation de la réponse** : listes fermées, bornes de tous les nombres,
 genres au format « Genre » (ou « Genre espèce »), textes nettoyés et bornés.
 `text`, `department`, `commune` et `placeName` doivent être faits **des mots
-de la phrase**, à une faute de frappe ou un pluriel près, sans ajouter de
-caractère de balisage (`< > " ' \` &`) absent de la phrase : un commentaire
-du modèle, une réponse à une question, une traduction, une balise ou un lieu
-déduit (« en Gironde » ajouté à « Bordeaux ») sont retirés. Les genres sont
-bornés à 60 caractères. Jamais de date future : une
-année à venir est retirée ; une année écrite l'emporte sur une période
-relative (« cette année », « mai dernier »), qui est retirée ; un mois d'une
-année écrite encore à venir retire la période et les années. Comme pour la
+de la phrase**, à une faute de frappe ou un pluriel près (« œ » vaut « oe »),
+sans ajouter de caractère de balisage (`< > " \` &`) absent de la phrase.
+Les apostrophes et les traits d'union sont des séparateurs, et une forme
+collée vaut ses mots (« Rouge-gorge » pour « rougegorge », « Saint-Martin-
+d'Hères » pour « Saint Martin d Hères ») ; la tolérance d'une lettre ne peut
+jamais avaler un mot entier (« Gironde (33) » pour « en Gironde » est
+retiré). Un commentaire du modèle, une réponse à une question, une
+traduction, une balise ou un lieu déduit (« en Gironde » ajouté à
+« Bordeaux ») sont retirés. Limite connue : « Valence » passe pour
+« Talence » (une lettre d'écart), et une abréviation (« St ») ne passe pas.
+Les genres sont bornés à 60 caractères. Jamais de date future : une année à
+venir est retirée ; une année écrite l'emporte sur une période relative
+(« cette année », « mai dernier »), qui est retirée ; un mois d'une année
+écrite encore à venir retire la période et les années ; un mois à venir de
+l'année en cours (« en décembre cette année », le 20 novembre) retire la
+période, avec un jour de marge pour les fuseaux. Les saisons ne sont pas
+contrôlées ici : leur définition appartient à l'application (PR B). Comme pour la
 note, un champ fautif est **retiré et nommé dans `dropped`**, et la réponse
 n'est rejetée en bloc (`invalid_output`, une utilisation comptée) que si elle
-n'est pas un objet JSON ou si tous ses champs sont retirés. Une phrase hors
-sujet ou une question posée à l'assistant donne une réponse vide, sans rien
-d'inventé.
+n'est pas un objet JSON ou si tous ses champs sont retirés. Pour une phrase
+hors sujet ou une question posée à l'assistant, la **consigne** demande au
+modèle de tout laisser vide ; le code ne peut pas le garantir (une réponse
+vide est un succès, une réponse remplie se lit comme une autre) : c'est
+l'essai qui vérifie que le modèle s'y tient (phrases 08 et 09 du jeu).
 
-**Coût** : 0,042 $ réservés par phrase avec Sonnet (majorant calculé sur la
+**Coût** : 0,043 $ réservés par phrase avec Sonnet (majorant calculé sur la
 taille du prompt : consignes et liste des catégories ≈ 5 Ko, schéma ≈ 3 Ko),
 remplacés par le coût réel après l'appel, à mesurer à l'essai.
 `max_tokens` : 2 500.
@@ -1097,7 +1110,7 @@ Essai à blanc (aucun appel, aucune clé) :
 deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature search --inputs tests/security/fixtures/ai-text-trial-search.json --dry-run
 ```
 
-Essai réel (coût maximum annoncé : 0,98 $ pour les deux modèles, sous le
+Essai réel (coût maximum annoncé : 0,99 $ pour les deux modèles, sous le
 plafond `--max-usd` de 1 $ ; ajouter `--models claude-sonnet-5-5` pour un
 seul modèle). Même fichier de clé d'essai qu'au §6.3 :
 
@@ -1107,18 +1120,22 @@ deno run --no-config --env-file="$HOME/.config/carnet-naturaliste/essai.env" --a
 
 Le rapport compare chaque réponse aux filtres attendus, sur les 11 champs :
 **justes**, **inventés** (filtre rempli alors que la phrase ne le demande
-pas : le défaut le plus grave), **manqués**, **faux**, champs **retirés** par
-la validation, et **fuites** (consigne cachée ou balise retrouvée dans la
-réponse). La comparaison est **stricte** dès le départ : les listes doivent
+pas : le défaut le plus grave), **manqués**, **faux**, **retirés** (champ
+écarté par la validation : le modèle s'était trompé, même si la sortie
+validée le montre vide ; jamais compté juste, pour départager les modèles
+sur ce qu'ils inventent), et **fuites** (consigne cachée ou balise
+retrouvée dans la réponse). Le rapport de la note compte désormais les
+champs retirés de la même façon. La comparaison est **stricte** dès le départ : les listes doivent
 être des ensembles **égaux** (un statut en trop est faux, jamais une simple
 inclusion), les textes égaux après normalisation (casse, accents, pluriel,
 article en tête), la période et la proximité égales champ par champ (rayon
 attendu 10 km quand la phrase n'en donne pas). Quelques attendus admettent
 plusieurs réponses, écrites `{ "oneOf": [...] }` (« papillons » : de jour,
 ou de jour et de nuit). Règles : `tests/security/searchTrialCompare.ts`,
-testées par `tests/searchTrialCompare.test.ts`. La phrase 19 (« en 2031 »)
-attend une année **retirée** : elle peut apparaître dans la colonne
-« Retirés » sans être une erreur.
+testées par `tests/searchTrialCompare.test.ts`. La phrase 19 (« les oiseaux
+que je verrai en 2031 ») admet deux réponses : tout vide (ce n'est pas une
+recherche d'observations passées) ou le seul groupe « Oiseaux ». Si le
+modèle y écrit l'année 2031, elle est retirée et comptée « retirée ».
 
 #### Couper et rouvrir la recherche
 

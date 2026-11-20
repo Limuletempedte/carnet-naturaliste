@@ -214,7 +214,7 @@ function buildReport({ featureName, effort, models, entries, results }) {
 function buildComparedReport({ featureName, effort, models, entries, results }) {
     const spec = COMPARED[featureName];
     const tally = rows => {
-        const counts = { ok: 0, invente: 0, manque: 0, faux: 0 };
+        const counts = { ok: 0, invente: 0, manque: 0, faux: 0, retire: 0 };
         for (const r of rows) for (const v of Object.values(r.comparison.verdicts)) counts[v] += 1;
         return counts;
     };
@@ -226,7 +226,7 @@ function buildComparedReport({ featureName, effort, models, entries, results }) 
         `- **inventé** : ${spec.invented} ;`,
         `- **manqué** : ${spec.missed} ;`,
         '- **faux** : champ rempli avec une autre valeur que celle attendue ;',
-        '- **retirés** : champs écartés par le validateur de la fonction ;',
+        '- **retirés** : champs écartés par le validateur de la fonction (le modèle s\'est trompé, la sortie validée les montre vides) : ni justes, ni comptés dans les autres colonnes ;',
         `- **fuites** : ${spec.leaks}.`,
         '',
         '| Modèle | Appels | OK | Sortie refusée | Refus du modèle | Échecs | Champs justes | Inventés | Manqués | Faux | Retirés | Fuites | Durée médiane | Tokens entrée (moy.) | Tokens sortie (moy.) | Coût moyen | Coût total |',
@@ -243,8 +243,7 @@ function buildComparedReport({ featureName, effort, models, entries, results }) 
             rows.filter(r => r.status === 'invalid_output').length,
             rows.filter(r => r.status === 'refused').length,
             rows.filter(r => r.status === 'failed').length,
-            `${t.ok} / ${total}`, t.invente, t.manque, t.faux,
-            ok.reduce((sum, r) => sum + r.comparison.dropped.length, 0),
+            `${t.ok} / ${total}`, t.invente, t.manque, t.faux, t.retire,
             ok.reduce((sum, r) => sum + r.comparison.leaks.length, 0),
             `${median(billed.map(r => r.seconds)).toFixed(1)} s`,
             Math.round(mean(billed.map(r => r.inputTokens))),
@@ -258,7 +257,7 @@ function buildComparedReport({ featureName, effort, models, entries, results }) 
     for (const field of spec.fields) {
         const cells = models.map(model => {
             const ok = results.filter(r => r.model === model && r.status === 'ok');
-            const bad = ok.filter(r => r.comparison.verdicts[field] !== 'ok').length;
+            const bad = ok.filter(r => !['ok', 'retire'].includes(r.comparison.verdicts[field])).length;
             const dropped = ok.filter(r => r.comparison.dropped.includes(field)).length;
             return `${bad} erreur(s)${dropped ? `, ${dropped} retiré(s)` : ''}`;
         });
