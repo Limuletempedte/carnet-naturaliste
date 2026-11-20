@@ -359,7 +359,7 @@ supprime à la fin.
 
 Une seule fonction pour les trois fonctionnalités texte, choisie par le champ
 `feature` du corps : `summary` (bilan du mois, en production), `note` (note →
-fiche : partie serveur livrée, voir §6.7) et plus tard `search`. `ai-identify` n'est **pas** modifiée : un défaut côté texte ne
+fiche, en production depuis le 2026-11-20, voir §6.7) et plus tard `search`. `ai-identify` n'est **pas** modifiée : un défaut côté texte ne
 peut pas casser la photo.
 
 ### 6.1 Ce que change la migration `20261106220000_ai_text_features.sql`
@@ -638,8 +638,8 @@ chiffres ni le texte produit.
 `ai-text` (`logic.ts`). Aucune migration (`note` est déjà accepté par
 `ai_usage.feature` et `ai_consents`), `ai-identify` et `index.ts` inchangés,
 même modèle que le bilan (`AI_TEXT_MODEL`), même quota et même budget.
-L'application n'a encore ni bouton ni carte de consentement pour la note :
-c'est la PR B.
+Le bouton, le panneau de relecture et la carte de consentement sont venus
+avec la PR B (#136, plus bas).
 
 **Ce qui est envoyé à Claude** : le texte de la note seulement, 1 000
 caractères au plus (refus au-delà, jamais de troncature), nettoyé (caractères
@@ -819,11 +819,12 @@ listes fermées) et 220 en sortie par note ; sortie la plus longue : 332
 tokens, loin du plafond de 3 000. Coût des deux passages : 0,40 $
 (0,2016 $ + 0,1950 $).
 
-**État en production** : `ai-text` (version 7, PR A) est déployée depuis le
-2026-11-20 avec la note **fermée** (`AI_DISABLED_FEATURES=note`), contrôles
-401, 204 et 403 corrects, bilan vérifié (`ok`), note vérifiée fermée
-(`503 feature_disabled`). Les retouches ci-dessus partiront au prochain
-déploiement, au plus tard à l'ouverture de la note après la PR B.
+**État en production après la PR A** : `ai-text` (version 7) a été déployée
+le 2026-11-20 avec la note **fermée** (`AI_DISABLED_FEATURES=note`),
+contrôles 401, 204 et 403 corrects, bilan vérifié (`ok`), note vérifiée
+fermée (`503 feature_disabled`). Les retouches ci-dessus sont parties avec le
+redéploiement d'ouverture du même jour (version 10, voir « Fait le
+2026-11-20 » plus bas).
 
 #### PR B : ce que voit la personne (application et textes légaux)
 
@@ -914,6 +915,25 @@ redéploiement emporte aussi les retouches de l'essai du 20 novembre (déjà sur
    `ai_usage` a `feature = 'note'`, statut `ok`, modèle `claude-sonnet-5-5`
    et un coût proche de 0,01 $. Contrôler aussi la dépense dans la Console
    Anthropic.
+
+**Fait le 2026-11-20.** PR B fusionnée (#136, `5bcae92`) et déployée par
+Vercel. Puis, dans l'ordre :
+
+- `ai-text` redéployée avec la note encore fermée (la présence de
+  `AI_DISABLED_FEATURES=note` a été vérifiée juste avant) : 401, 204, 403 ;
+- `AI_DISABLED_FEATURES` supprimé (absence vérifiée dans la liste des
+  secrets), `ai-text` redéployée (version 10, « Verify JWT » actif) : 401,
+  204, 403. `ai-identify` et `delete-account` gardent le même code (leur
+  numéro de version monte à chaque changement de secret) ;
+- première note réelle du propriétaire depuis le site, à 16 h 34 : accord
+  `note` enregistré en `2026-11-v1` ; ligne `ai_usage` `note`, statut `ok`,
+  `claude-sonnet-5-5`, 3 728 tokens en entrée et 207 en sortie, **0,0095 $**.
+
+Pas vérifié par cette procédure : la dépense affichée dans la Console
+Anthropic.
+
+**Deuxième lot (note → fiche) terminé.** Suite du plan : la recherche en
+langage naturel (phase 4).
 
 #### Couper et rouvrir la note
 
