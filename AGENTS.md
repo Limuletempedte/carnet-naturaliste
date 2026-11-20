@@ -51,7 +51,7 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 
 ## Tests
 - Framework : Vitest + Testing Library React
-- Dernière validation du 20 novembre 2026 : 95 fichiers de tests (970 tests) couvrant composants, services et utils
+- Dernière validation du 20 novembre 2026 : 96 fichiers de tests (975 tests) couvrant composants, services et utils
 - Lancer `npm run test:run` pour valider les changements
 
 ## Deploiement et pieges a connaitre
@@ -67,6 +67,10 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
   forme d'export et casse les anciens consommateurs (`expand is not a function`).
   Le correctif livré limite l'override v5 à `minimatch@10` ; les branches 1/2
   restent utilisées par les anciennes API. Voir `docs/audits/v5/DEPENDANCES-2026-10-01.md`.
+- ⚠️ **`manualChunks` sous Rolldown aspire les dependances** : un chunk nomme
+  embarque aussi les modules dont il depend. Un chunk exclu du pre-cache
+  (`globIgnores`) peut ainsi devenir necessaire au demarrage, et l'app ne demarre
+  plus hors ligne. Garde-fou : `tests/precacheChunks.test.ts`.
 - **Documents legaux** : ajouter un service tiers implique de mettre a jour
   `components/LegalPages.tsx` ET `docs/legal/` (registre des traitements).
 
