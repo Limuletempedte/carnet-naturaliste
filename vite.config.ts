@@ -173,6 +173,22 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks(id) {
+            // Démarrage hors ligne : Rolldown range aussi dans un chunk nommé
+            // les dépendances des modules qu'il y place (includeDependenciesRecursively,
+            // vrai par défaut). Sans cette règle, l'aide au préchargement de Vite
+            // et les petits utilitaires Babel/oxc, importés par jsPDF mais aussi
+            // par l'entrée de l'app et par recharts, finissaient dans vendor-jspdf,
+            // exclu du pré-cache : après une seule visite, l'app ne démarrait
+            // plus hors ligne. On les range dans vendor-core, chargé au démarrage.
+            // Garde-fou : tests/precacheChunks.test.ts.
+            if (
+              id.includes('vite/preload-helper') ||
+              id.includes('/@babel/runtime/') ||
+              /@oxc-project[+/]runtime/.test(id)
+            ) {
+              return 'vendor-core';
+            }
+
             if (!id.includes('node_modules')) return undefined;
 
             if (id.includes('leaflet') || id.includes('leaflet.markercluster')) {
