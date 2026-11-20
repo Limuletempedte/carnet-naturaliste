@@ -27,5 +27,7 @@
       "@/*" :  ["./*"]
     }
   },
-  "exclude": ["supabase/functions"]
+  /* .claude : copies de travail des sessions Claude. TypeScript saute déjà les
+     dossiers qui commencent par un point ; l'exclusion le rend explicite. */
+  "exclude": ["supabase/functions", ".claude"]
 }
