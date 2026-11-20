@@ -180,7 +180,7 @@ describe('ai-text — recherche : listes fermées et schéma', () => {
         expect(SEARCH_SYSTEM_PROMPT).toMatch(/Jamais de commentaire, d'explication ni de réponse/);
         // Durcies après l'essai du 2026-11-20 (Haiku retenu pour la recherche).
         expect(SEARCH_SYSTEM_PROMPT).toMatch(/« papillons » sans précision = "Papillons de jour" et "Papillon de nuit"/);
-        // Règle générale espèce ou ensemble (2026-11-21), placée AVANT la ligne groups.
+        // Règle générale espèce ou ensemble (2026-11-20), placée AVANT la ligne groups.
         expect(SEARCH_SYSTEM_PROMPT).toMatch(/AVANT de remplir groups, categories ou genera, décide/);
         expect(SEARCH_SYSTEM_PROMPT.indexOf('AVANT de remplir groups')).toBeLessThan(SEARCH_SYSTEM_PROMPT.indexOf('- groups :'));
         expect(SEARCH_SYSTEM_PROMPT).toMatch(/Un nom seul \(« les canards », « des pics », « grèbes »\) désigne l'ensemble/);

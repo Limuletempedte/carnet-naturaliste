@@ -159,7 +159,7 @@ export function featureModelEnvName(feature: TextFeatureName): string {
  * (null, `misconfigured`) : jamais de repli silencieux sur le modèle commun,
  * et les autres fonctionnalités ne sont pas touchées. Aucun n'est posé en
  * production : après essai, les trois fonctionnalités restent sur
- * `AI_TEXT_MODEL` (Sonnet 5.5, décision du 2026-11-21).
+ * `AI_TEXT_MODEL` (Sonnet 5.5, décision du 2026-11-20).
  */
 export function resolveFeatureModel(commonModel: string, override: string | undefined): string | null {
     const model = (override ?? '').trim();

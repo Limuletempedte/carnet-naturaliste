@@ -115,7 +115,7 @@ terminal (l'historique les garderait) ni dans une conversation.
 | `AI_MONTHLY_BUDGET_USD` | `18` | budget du mois ; `0` coupe l'assistant |
 | `ALLOWED_ORIGINS` | `https://carnet-naturaliste.vercel.app` | sites autorisés, séparés par des virgules |
 | `AI_TEXT_MODEL` | `claude-sonnet-5-5` ou `claude-haiku-5-5` | modèle des fonctionnalités texte (`ai-text`) ; **obligatoire**, sans valeur par défaut |
-| `AI_TEXT_MODEL_SEARCH` | **non posé** (décision du 2026-11-21 : la recherche suit `AI_TEXT_MODEL`) | modèle de la seule recherche ; **facultatif**, l'emporterait sur `AI_TEXT_MODEL` (§6.8). Même forme, facultative et non posée, pour `AI_TEXT_MODEL_SUMMARY` (bilan) et `AI_TEXT_MODEL_NOTE` (note) |
+| `AI_TEXT_MODEL_SEARCH` | **non posé** (décision du 2026-11-20 : la recherche suit `AI_TEXT_MODEL`) | modèle de la seule recherche ; **facultatif**, l'emporterait sur `AI_TEXT_MODEL` (§6.8). Même forme, facultative et non posée, pour `AI_TEXT_MODEL_SUMMARY` (bilan) et `AI_TEXT_MODEL_NOTE` (note) |
 | `AI_DISABLED_FEATURES` | ex. `summary` ; absent = rien de coupé | fonctionnalités texte coupées, séparées par des virgules (`summary`, `note`, `search`) |
 
 Les secrets valent pour **tout le projet** : `ANTHROPIC_API_KEY`, `AI_EFFORT`,
@@ -966,7 +966,7 @@ langage naturel (phase 4).
 à `ai-text` (`logic.ts`). Aucune migration (`search` est déjà accepté par
 `ai_usage.feature` et `ai_consents`), `ai-identify` et `index.ts` inchangés,
 même modèle (`AI_TEXT_MODEL`), même quota et même budget. Après les essais
-des 20 et 21 novembre, la recherche reste sur `AI_TEXT_MODEL` (Sonnet 5.5) ;
+du 20 novembre, la recherche reste sur `AI_TEXT_MODEL` (Sonnet 5.5) ;
 un réglage par fonctionnalité existe (`AI_TEXT_MODEL_SEARCH`, voir « Modèle
 par fonctionnalité » plus bas), mais n'est pas posé. Le consentement de
 la recherche est en version **provisoire**, déclarée côté fonction seulement :
@@ -1042,7 +1042,7 @@ l'essai qui vérifie que le modèle s'y tient (phrases 08 et 09 du jeu).
 **Coût** : 0,045 $ réservés par phrase avec Sonnet, le modèle retenu
 (majorant calculé sur la taille du prompt : consignes et liste des catégories
 ≈ 6 Ko, schéma ≈ 3 Ko), remplacés par le coût réel après l'appel : environ
-0,011 $ mesuré aux essais des 20 et 21 novembre (0,0104 $ puis 0,0113 $ par
+0,011 $ mesuré aux essais du 20 novembre (0,0104 $ puis 0,0113 $ par
 phrase).
 `max_tokens` : 2 500.
 
@@ -1167,7 +1167,7 @@ que je verrai en 2031 ») admet deux réponses : tout vide (ce n'est pas une
 recherche d'observations passées) ou le seul groupe « Oiseaux ». Si le
 modèle y écrit l'année 2031, elle est retirée et comptée « retirée ».
 
-#### Essais des 20 et 21 novembre 2026 : recherche en langage naturel
+#### Essais du 20 novembre 2026 : recherche en langage naturel
 
 Clé de l'espace d'essai, effort `low`, 11 champs comparés par phrase.
 
@@ -1180,12 +1180,13 @@ Clé de l'espace d'essai, effort `low`, 11 champs comparés par phrase.
 | 4a | `claude-haiku-5-5` | trois ajouts | 38 | 405 / 418 | 8 | — | 4 | — | — | 0,0212 $ |
 | 4b | `claude-haiku-5-5` | règle générale espèce ou ensemble | 48 | 516 / 528 | 7 | 2 | 2 | — | — | 0,0280 $ |
 | 4c | `claude-sonnet-5-5` | règle générale espèce ou ensemble | 14 espèces précises inédites | 154 / 154 | 0 | 0 | 0 | — | — | 0,1578 $ |
+| 5 | `claude-sonnet-5-5` | version finale (commit `1f2a5d7`) | 11 phrases de contrôle | 121 / 121 | 0 | 0 | 0 | 0 | 0 | 0,1248 $ |
 
 (— : non relevé dans le compte rendu du passage.) Le champ retiré des
 passages 1 et 2 est l'année 2031 de la phrase 19 (année à venir, écartée par
 la validation). Passage 1, Sonnet : 2,0 s de médiane, 4 560 tokens en entrée
 et 127 en sortie, 0,0104 $ par phrase ; Haiku : 1,7 s, 4 560 et 207 tokens,
-0,00056 $ par phrase. Coût total des passages : 0,476 $.
+0,00056 $ par phrase. Coût total des sept passages : 0,6008 $.
 
 Ce que les passages ont montré :
 
@@ -1205,7 +1206,14 @@ Ce que les passages ont montré :
   gênantes (« hulottes », « crécerelles » seuls dans `text` ; aucun mot-clé
   pour « hirondelles rustiques » et « salamandres tachetées ») ;
 - **passage 4c, Sonnet**, même règle, 14 phrases d'espèces précises inédites
-  (dont les 7 ratées par Haiku) : 154 sur 154, 0,0113 $ par phrase.
+  (dont les 7 ratées par Haiku) : 154 sur 154, 0,0113 $ par phrase ;
+- **passage 5, Sonnet**, version finale des consignes (commit `1f2a5d7`),
+  11 phrases de contrôle choisies pour vérifier que la règle générale ne
+  casse pas le reste (01, 02, 10, 15, 16, 18, 22, 26, 36, 37 et 48) : 11
+  réponses exploitables sur 11, 121 champs justes sur 121, aucun écart ;
+  1,8 s de médiane, 5 026 tokens en entrée et 130 en sortie, 0,0113 $ par
+  phrase, 0,1248 $ au total. Le sous-ensemble a été limité à 11 phrases pour
+  garder le pire cas sous le plafond annoncé au propriétaire.
 
 **Leçon** : une consigne se valide sur des phrases qu'elle ne cite pas. Le
 jeu marque « (citée par la consigne) » les phrases dont l'espèce attendue est
@@ -1215,9 +1223,10 @@ murailles). Elles ne comptent plus comme inédites (un test le vérifie).
 
 **Décision du propriétaire** :
 
-- 2026-11-20 : Haiku 5.5 pour la recherche, pour le coût (18 fois moins
-  cher) ; d'où le réglage par fonctionnalité de ce lot ;
-- **2026-11-21 : Sonnet 5.5 pour la recherche**, au vu des passages 3 à 4c.
+- d'abord, le 2026-11-20 : Haiku 5.5 pour la recherche, pour le coût (18
+  fois moins cher) ; d'où le réglage par fonctionnalité de ce lot ;
+- **puis, le même jour : Sonnet 5.5 pour la recherche**, au vu des passages 3
+  à 4c, confirmé par le passage 5.
   `AI_TEXT_MODEL_SEARCH` n'est **pas** posé : la recherche utilise
   `AI_TEXT_MODEL` (`claude-sonnet-5-5`), comme le bilan et la note. Le
   réglage par fonctionnalité reste disponible.
