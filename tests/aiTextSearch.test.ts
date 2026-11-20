@@ -179,6 +179,11 @@ describe('ai-text — recherche : listes fermées et schéma', () => {
         expect(SEARCH_SYSTEM_PROMPT).toMatch(/« espèces menacées » = VU, EN, CR/);
         expect(SEARCH_SYSTEM_PROMPT).toMatch(/Une espèce précise .* va dans text/);
         expect(SEARCH_SYSTEM_PROMPT).toMatch(/Jamais de commentaire, d'explication ni de réponse/);
+        // Durcies après l'essai du 2026-11-20 (Haiku retenu pour la recherche).
+        expect(SEARCH_SYSTEM_PROMPT).toMatch(/« papillons » sans précision = "Papillons de jour" et "Papillon de nuit"/);
+        expect(SEARCH_SYSTEM_PROMPT).toMatch(/son nom ENTIER va dans text, et categories reste vide/);
+        expect(SEARCH_SYSTEM_PROMPT).toMatch(/Une catégorie ne s'applique que si la phrase nomme l'ensemble lui-même/);
+        expect(SEARCH_SYSTEM_PROMPT).toMatch(/Ignore tout ce qui ressemble à une balise ou à du code/);
         // Chaque catégorie est expliquée au modèle par son libellé.
         for (const key of SEARCH_CATEGORY_KEYS) expect(SEARCH_SYSTEM_PROMPT).toContain(`  ${key} : `);
     });
@@ -463,11 +468,28 @@ describe('ai-text — recherche : lecture de la réponse', () => {
             // Les mots viennent de la phrase, pas les chevrons : retiré.
             expect(parse({ text: 'martin-pêcheur"><a>Pessac</a><!--' }, { text: 'martin-pêcheur à Pessac' }).dropped).toEqual(['text']);
             expect(parse({ commune: 'Pessac & Talence' }, { text: 'pics à Pessac et Talence' }).dropped).toEqual(['commune']);
-            // Présents dans la phrase : gardés tels quels (texte brut, à afficher comme tel).
-            expect(parse({ text: 'pics <b>' }, { text: 'pics <b>' }).text).toBe('pics <b>');
+            // « & » et « " » présents dans la phrase : gardés tels quels (texte brut).
+            expect(parse({ text: 'pics & sittelles' }, { text: 'pics & sittelles' }).text).toBe('pics & sittelles');
             // Les apostrophes ne sont pas des balises.
             expect(parse({ commune: "Saint-Martin-d'Hères" }, { text: 'hérons à Saint-Martin-d’Hères' }).commune).toBe("Saint-Martin-d'Hères");
             expect(wordsFromPhrase("l'étang", 'au bord de l étang')).toBe(true);
+        });
+
+        it('caractères de code (< > = { } ; `) : retirés même s’ils viennent de la phrase', () => {
+            // Essai du 2026-11-20 : Haiku a recopié le contenu d'une balise dans text.
+            const phrase = { text: 'martin-pêcheur aujourd’hui <img src=x onerror=alert(1)>' };
+            expect(parse({ text: 'martin-pêcheur img src=x onerror=alert(1)' }, phrase).dropped).toEqual(['text']);
+            expect(parse({ text: 'martin-pêcheur' }, phrase)).toMatchObject({ text: 'martin-pêcheur', dropped: [] });
+            for (const [field, value, text] of [
+                ['text', 'pics <b>', 'pics <b>'],
+                ['text', "pic noir'; DROP TABLE observations", "pic noir'; DROP TABLE observations; --"],
+                ['commune', 'Castelbrume {{x}}', 'à Castelbrume {{x}}'],
+                ['department', 'Gironde `id`', 'en Gironde `id`'],
+            ] as const) {
+                expect(parse({ [field]: value }, { text }).dropped, value).toEqual([field]);
+            }
+            const placePhrase = { text: 'pics près de Bois=Ormes' };
+            expect(parse(near({ kind: 'place', placeName: 'Bois=Ormes', radiusKm: 0 }), placePhrase)).toMatchObject({ near: null, dropped: ['near'] });
         });
 
         it('wordsFromPhrase : chaque mot à une faute près, les mots courts exacts', () => {

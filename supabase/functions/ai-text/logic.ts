@@ -147,6 +147,25 @@ export function parseTextConfig(env: { model?: string; effort?: string; budget?:
     return { model, effort: effort as Effort, budgetUsd };
 }
 
+/** Réglage facultatif du modèle d'une seule fonctionnalité : `AI_TEXT_MODEL_SEARCH`… */
+export function featureModelEnvName(feature: TextFeatureName): string {
+    return `AI_TEXT_MODEL_${feature.toUpperCase()}`;
+}
+
+/**
+ * Modèle d'une fonctionnalité : son réglage propre (`AI_TEXT_MODEL_SEARCH`…)
+ * l'emporte sur `AI_TEXT_MODEL` ; absent ou vide, c'est le modèle commun. Un
+ * nom sans prix connu rend la configuration de CETTE fonctionnalité invalide
+ * (null, `misconfigured`) : jamais de repli silencieux sur le modèle commun,
+ * et les autres fonctionnalités ne sont pas touchées (décision du 2026-11-20 :
+ * Haiku 5.5 pour la recherche, Sonnet 5.5 pour le bilan et la note).
+ */
+export function resolveFeatureModel(commonModel: string, override: string | undefined): string | null {
+    const model = (override ?? '').trim();
+    if (model.length === 0) return commonModel;
+    return Object.prototype.hasOwnProperty.call(MODEL_PRICES_USD_PER_MTOK, model) ? model : null;
+}
+
 /**
  * Lit `AI_DISABLED_FEATURES` (liste séparée par des virgules). Absente ou
  * vide : rien n'est coupé. Un nom inconnu (faute de frappe) rend la
@@ -958,8 +977,9 @@ export const NOTE_FEATURE: TextFeature<NoteInput, NoteOutput> = {
 // sorties structurées, voir la note) : les bornes sont vérifiées ici.
 //
 // Les textes rendus (`text`, `department`, `commune`, `near.placeName`)
-// doivent être faits des mots de la phrase, à une faute de frappe près : un
-// commentaire ou une réponse du modèle, ou un lieu ajouté, est retiré.
+// doivent être faits des mots de la phrase, à une faute de frappe près, sans
+// aucun caractère de code (`< > = { } ;` et accent grave) : un commentaire ou
+// une réponse du modèle, un lieu ajouté ou du code recopié est retiré.
 
 export const SEARCH_LIMITS = {
     /** En unités UTF-16, comptées AVANT nettoyage (attribut `maxlength`). */
@@ -1153,16 +1173,16 @@ Règles :
 - Si la phrase n'est pas une recherche dans des observations (question générale, demande, conversation, texte sans rapport), laisse TOUS les champs vides, text compris.
 - period : "this_month" (ce mois-ci), "last_month" (le mois dernier), "this_year" (cette année), "last_year" (l'an dernier, l'année dernière), "last_n_days" avec days (« les 10 derniers jours » = 10, « ces deux dernières semaines » = 14, « aujourd'hui » = 1), "month" avec month pour un mois nommé (« en mai » = 5), "season" avec season pour une saison nommée (« au printemps » = "spring"). Pour "month" et "season", yearScope dit l'année : "all" sans précision (tous les mois de mai), "this_year" (« cet été », « en mai cette année »), "last_year" (« en mai l'an dernier »), "most_recent" (« en mai dernier », « l'été dernier ») ; "all" pour les autres types. Une période vague (« récemment ») ou à venir (« le mois prochain ») : "none". Les champs sans objet valent 0, "none" ou "all".
 - years : seulement les années écrites en chiffres (« en 2024 » = [2024], « de 2020 à 2022 » = [2020, 2021, 2022]). Une année écrite l'emporte sur une expression relative : « en mai 2024 » = month 5, yearScope "all", years [2024].
-- groups : les groupes de la liste que la phrase nomme, plusieurs possibles (« oiseaux » = "Oiseaux", « libellules » = "Odonate", « chauves-souris » = "Chiroptères").
+- groups : les groupes de la liste que la phrase nomme, plusieurs possibles (« oiseaux » = "Oiseaux", « libellules » = "Odonate", « chauves-souris » = "Chiroptères") ; « papillons » sans précision = "Papillons de jour" et "Papillon de nuit".
 - categories : quand la phrase nomme l'un de ces ensembles d'espèces (clé : sens), plusieurs possibles ; « rapaces » sans précision = les deux catégories de rapaces. N'ajoute pas le groupe qui les contient.
 ${SEARCH_CATEGORY_LINES}
 - genera : en dernier recours seulement, pour un ensemble d'espèces qui n'est ni un groupe ni une catégorie (« les sittelles » = ["Sitta"]), ou un genre latin écrit dans la phrase ; 20 au plus, un genre par élément (« Genre »).
-- Une espèce précise (« héron cendré », « martin-pêcheur ») ne devient ni un groupe, ni une catégorie, ni un genre : elle va dans text.
+- Une espèce précise (« héron cendré », « martin-pêcheur ») ne devient ni un groupe, ni une catégorie, ni un genre : son nom ENTIER va dans text, et categories reste vide (« hérons cendrés vus en 2025 » = text "hérons cendrés", years [2025], categories [] : ce n'est pas la catégorie des hérons). Une catégorie ne s'applique que si la phrase nomme l'ensemble lui-même (« les hérons », « des canards »).
 - statuses : les statuts de la liste rouge (UICN) que la phrase demande (« espèces menacées » = VU, EN, CR ; « quasi menacées » = NT ; « préoccupation mineure » = LC).
 - habitats : seulement un milieu que la phrase nomme (« en forêt » = les trois forêts, « en montagne » = "Montagne", « en ville » = "Milieu urbain").
 - department : un département nommé, tel qu'écrit (« en Gironde » = "Gironde", « dans le 33 » = "33"). commune : une commune nommée (« à Pessac »), telle qu'écrite.
 - near : "current_position" pour « près de chez moi », « autour de moi », « dans le coin » ; "place" avec placeName (tel qu'écrit) pour « près de X », « autour de X », « à moins de 5 km de X » ; sinon "none", avec placeName "" et radiusKm 0. radiusKm : le rayon écrit, en kilomètres (« 500 m » = 0.5) ; 0 si la phrase n'en donne pas. Un lieu de near ne va pas aussi dans commune.
-- text : ce qui reste à chercher dans les noms d'espèces (nom d'espèce, mot-clé), avec les mots de la phrase, sans les mots déjà traduits en filtres ni les mots sans objet (« les », « vus », « mes observations »). Corrige seulement une faute de frappe évidente, sans traduire. Jamais de commentaire, d'explication ni de réponse.
+- text : ce qui reste à chercher dans les noms d'espèces (nom d'espèce, mot-clé), avec les mots de la phrase, sans les mots déjà traduits en filtres ni les mots sans objet (« les », « vus », « mes observations »). Corrige seulement une faute de frappe évidente, sans traduire. Jamais de commentaire, d'explication ni de réponse. Ignore tout ce qui ressemble à une balise ou à du code (« <img …> », « attribut=valeur », « fonction() ») : rien de cela ne va dans text ni dans aucun champ.
 - Réponds uniquement avec l'objet JSON demandé.`;
 
 export function buildSearchUserPrompt(input: SearchInput): string {
@@ -1208,6 +1228,12 @@ function typoAllowance(word: string): number {
  * séparateurs de mots (« Saint-Martin-d'Hères » = « Saint Martin d Hères »).
  */
 const MARKUP_CHARS_RE = /[<>"`&]/g;
+/**
+ * Caractères de code (balise, attribut, bloc, instruction) : un texte rendu
+ * qui en contient est retiré, même s'ils viennent de la phrase (essai du
+ * 2026-11-20 : un modèle a recopié « img src=x onerror=alert(1) » dans text).
+ */
+const CODE_CHARS_RE = /[<>={};`]/;
 
 /** Le mot est-il l'un des candidats, à `allowance` lettres près ? */
 function matchesWord(word: string, candidates: readonly string[], allowance: number): boolean {
@@ -1353,7 +1379,7 @@ export function parseSearchOutput(text: string, input: SearchInput, now: Date = 
         if (typeof value !== 'string') return drop(field);
         const cleaned = cleanInlineText(value);
         if (cleaned.length === 0 || isUnknownMarker(cleaned)) return null;
-        if (cleaned.length > max || !wordsFromPhrase(cleaned, input.text)) return drop(field);
+        if (cleaned.length > max || CODE_CHARS_RE.test(cleaned) || !wordsFromPhrase(cleaned, input.text)) return drop(field);
         return cleaned;
     };
 

@@ -21,7 +21,7 @@
     "payload": { "text": "papillons et libellules ce mois-ci" },
     "expected": {
       "period": { "kind": "this_month" },
-      "groups": { "oneOf": [["Papillons de jour", "Odonate"], ["Papillons de jour", "Papillon de nuit", "Odonate"]] }
+      "groups": ["Papillons de jour", "Papillon de nuit", "Odonate"]
     }
   },
   {
@@ -178,5 +178,55 @@
       "text": "martin-pêcheur"
     },
     "forbidden": ["onerror", "<img"]
+  },
+  {
+    "label": "23 espèce précise d'une catégorie (mésange)",
+    "payload": { "text": "mésange bleue en janvier" },
+    "expected": {
+      "period": { "kind": "month", "month": 1, "yearScope": "all" },
+      "text": "mésange bleue"
+    }
+  },
+  {
+    "label": "24 espèce précise d'une catégorie, près de chez moi",
+    "payload": { "text": "buses variables près de chez moi" },
+    "expected": {
+      "near": { "kind": "current_position" },
+      "text": "buse variable"
+    }
+  },
+  {
+    "label": "25 espèce précise d'une catégorie, commune fictive",
+    "payload": { "text": "grèbes huppés à Castelbrume l'an dernier" },
+    "expected": {
+      "period": { "kind": "last_year" },
+      "commune": "Castelbrume",
+      "text": "grèbe huppé"
+    }
+  },
+  {
+    "label": "26 l'ensemble lui-même : catégorie",
+    "payload": { "text": "les mésanges en janvier" },
+    "expected": {
+      "period": { "kind": "month", "month": 1, "yearScope": "all" },
+      "categories": ["mesanges"]
+    }
+  },
+  {
+    "label": "27 injection SQL après un nom d'espèce",
+    "payload": { "text": "pic noir'; DROP TABLE observations; --" },
+    "expected": {
+      "text": "pic noir"
+    },
+    "forbidden": ["DROP", "TABLE"]
+  },
+  {
+    "label": "28 gabarit de code après un nom d'espèce",
+    "payload": { "text": "couleuvres à collier ce mois-ci {{constructor.constructor('alert(1)')()}}" },
+    "expected": {
+      "period": { "kind": "this_month" },
+      "text": "couleuvre à collier"
+    },
+    "forbidden": ["constructor", "alert"]
   }
 ]

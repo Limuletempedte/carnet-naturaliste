@@ -4,7 +4,8 @@
 // Vérifie l'enchaînement de index.ts : CORS, identité, limites du corps,
 // arguments de ai_reserve_call (dont p_feature), appel envoyé à Claude,
 // finalisation, codes d'erreur et journaux, pour le bilan (`summary`), la
-// note (`note`) et la recherche (`search`).
+// note (`note`) et la recherche (`search`), et le modèle propre à une
+// fonctionnalité (`AI_TEXT_MODEL_SEARCH`…).
 // Les droits SQL et la réservation réelle sont couverts par ai-access-rls.mjs.
 //
 // Depuis la racine du dépôt :  DENO_BIN=$(command -v deno) node tests/security/ai-text-bench.mjs
@@ -285,6 +286,38 @@ try {
     assert.doesNotMatch(logs, /rapaces|chez moi|onerror|Bordeaux|current_position|Buse/);
     assert.match(logs, /"feature":"search"/);
     ok('journaux de la recherche : ni la phrase, ni les filtres');
+
+    // --- Modèle propre à une fonctionnalité -------------------------------
+    await start({ AI_TEXT_MODEL_SEARCH: 'claude-haiku-5-5' });
+    rpcCalls.length = 0; anthReqs.length = 0;
+    const hs = await call({ body: searchBody });
+    assert.equal(hs.status, 200, JSON.stringify(hs.json));
+    assert.equal(anthReqs.at(-1).model, 'claude-haiku-5-5');
+    const haikuReserve = rpcCalls.find(c => c.name === 'ai_reserve_call');
+    assert.equal(haikuReserve.body.p_model, 'claude-haiku-5-5');
+    assert(haikuReserve.body.p_max_cost_usd > 0 && haikuReserve.body.p_max_cost_usd < 0.005, String(haikuReserve.body.p_max_cost_usd));
+    // 1 000 tokens à 0,10 $ + 400 à 0,50 $ par million : 0,0003 $.
+    assert.deepEqual(rpcCalls.find(c => c.name === 'ai_finalize_call').body, { p_id: 'usage-1', p_status: 'ok', p_input_tokens: 1000, p_output_tokens: 400, p_cost_usd: 0.0003 });
+    rpcCalls.length = 0;
+    assert.equal((await call({ body })).status, 200);
+    assert.equal(anthReqs.at(-1).model, 'claude-sonnet-5-5');
+    assert.equal(rpcCalls.find(c => c.name === 'ai_reserve_call').body.p_model, 'claude-sonnet-5-5');
+    assert.equal((await call({ body: noteBody })).status, 200);
+    assert.equal(anthReqs.at(-1).model, 'claude-sonnet-5-5');
+    assert.match(logs, /"feature":"search".*"model":"claude-haiku-5-5"/);
+    ok('AI_TEXT_MODEL_SEARCH=claude-haiku-5-5 : la recherche part sur Haiku (modèle envoyé, p_model, coût réservé et réel au prix de Haiku), le bilan et la note restent sur AI_TEXT_MODEL');
+
+    await start({ AI_TEXT_MODEL_SEARCH: 'claude-inconnu' });
+    rpcCalls.length = 0; anthReqs.length = 0;
+    const badModel = await call({ body: searchBody });
+    assert.equal(badModel.status, 503); assert.equal(badModel.json.error, 'misconfigured');
+    assert.equal(rpcCalls.length, 0, 'aucune réservation pour un modèle inconnu');
+    assert.equal(anthReqs.length, 0, 'aucun appel à Claude, aucun repli silencieux');
+    assert.equal((await call({ body })).status, 200, 'le bilan reste ouvert');
+    assert.equal((await call({ body: noteBody })).status, 200, 'la note reste ouverte');
+    assert.match(logs, /"reason":"feature_model","feature":"search"/);
+    assert.doesNotMatch(logs, /claude-inconnu/);
+    ok('AI_TEXT_MODEL_SEARCH inconnu → misconfigured pour la recherche seule (sans réservation ni appel), bilan et note ouverts ; la valeur fautive n’est pas journalisée');
 
     await start({ AI_DISABLED_FEATURES: 'search' });
     rpcCalls.length = 0;

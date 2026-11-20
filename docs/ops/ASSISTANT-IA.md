@@ -115,6 +115,7 @@ terminal (l'historique les garderait) ni dans une conversation.
 | `AI_MONTHLY_BUDGET_USD` | `18` | budget du mois ; `0` coupe l'assistant |
 | `ALLOWED_ORIGINS` | `https://carnet-naturaliste.vercel.app` | sites autorisés, séparés par des virgules |
 | `AI_TEXT_MODEL` | `claude-sonnet-5-5` ou `claude-haiku-5-5` | modèle des fonctionnalités texte (`ai-text`) ; **obligatoire**, sans valeur par défaut |
+| `AI_TEXT_MODEL_SEARCH` | `claude-haiku-5-5` (décision du 2026-11-20) ; absent = `AI_TEXT_MODEL` | modèle de la seule recherche ; **facultatif**, l'emporte sur `AI_TEXT_MODEL` (§6.8). Même forme, facultative, pour `AI_TEXT_MODEL_SUMMARY` (bilan) et `AI_TEXT_MODEL_NOTE` (note), non posés |
 | `AI_DISABLED_FEATURES` | ex. `summary` ; absent = rien de coupé | fonctionnalités texte coupées, séparées par des virgules (`summary`, `note`, `search`) |
 
 Les secrets valent pour **tout le projet** : `ANTHROPIC_API_KEY`, `AI_EFFORT`,
@@ -124,7 +125,9 @@ budget est commun (somme `cost_usd` du mois, toutes fonctionnalités).
 Chaque fonction **refuse de tourner** (`misconfigured`) si son modèle n'a pas
 de prix connu dans son `logic.ts`, si l'effort n'est pas `low` ou `medium`, ou
 si le budget est illisible ; `ai-text` aussi si `AI_TEXT_MODEL` est absent ou
-si `AI_DISABLED_FEATURES` contient un nom inconnu (faute de frappe). Aucun nom de secret ne doit commencer par `SUPABASE_` ni
+si `AI_DISABLED_FEATURES` contient un nom inconnu (faute de frappe). Un
+`AI_TEXT_MODEL_SEARCH` (ou `_SUMMARY`, `_NOTE`) au nom inconnu ne coupe que
+sa fonctionnalité (`misconfigured`), jamais les deux autres. Aucun nom de secret ne doit commencer par `SUPABASE_` ni
 par `VITE_`. `ANTHROPIC_BASE_URL` ne sert qu'aux tests locaux : ne jamais le
 définir en production.
 
@@ -588,7 +591,8 @@ npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowie
 ### 6.5 Comment `ai-text` décide
 
 Ordre : CORS → identité → corps (JSON, **16 Ko** au plus) → fonctionnalité
-connue, livrée et non coupée → configuration → validation de la charge utile
+connue, livrée et non coupée → configuration (modèle propre à la
+fonctionnalité compris, §1.4) → validation de la charge utile
 (au-delà d'une limite : **refus**, jamais de troncature) → réservation →
 appel à Claude → coût réel → réponse `{ result, remaining }`.
 
@@ -961,7 +965,9 @@ langage naturel (phase 4).
 **PR A (partie serveur, invisible)** : la fonctionnalité `search` est ajoutée
 à `ai-text` (`logic.ts`). Aucune migration (`search` est déjà accepté par
 `ai_usage.feature` et `ai_consents`), `ai-identify` et `index.ts` inchangés,
-même modèle (`AI_TEXT_MODEL`), même quota et même budget. Le consentement de
+même modèle (`AI_TEXT_MODEL`), même quota et même budget. Depuis l'essai du
+2026-11-20, la recherche a son propre modèle, Haiku 5.5
+(`AI_TEXT_MODEL_SEARCH`, voir « Modèle par fonctionnalité » plus bas). Le consentement de
 la recherche est en version **provisoire**, déclarée côté fonction seulement :
 l'application n'affiche aucune carte, et rien n'est visible pour les
 utilisateurs. Cette version (`pr-a-fermee-jusqu-au-texte-de-la-pr-b`) est
@@ -1032,9 +1038,10 @@ modèle de tout laisser vide ; le code ne peut pas le garantir (une réponse
 vide est un succès, une réponse remplie se lit comme une autre) : c'est
 l'essai qui vérifie que le modèle s'y tient (phrases 08 et 09 du jeu).
 
-**Coût** : 0,043 $ réservés par phrase avec Sonnet (majorant calculé sur la
-taille du prompt : consignes et liste des catégories ≈ 5 Ko, schéma ≈ 3 Ko),
-remplacés par le coût réel après l'appel, à mesurer à l'essai.
+**Coût** : 0,0022 $ réservés par phrase avec Haiku, le modèle retenu
+(0,044 $ avec Sonnet ; majorant calculé sur la taille du prompt : consignes
+et liste des catégories ≈ 5 Ko, schéma ≈ 3 Ko), remplacés par le coût réel
+après l'appel : environ 0,0006 $ mesuré à l'essai du 2026-11-20.
 `max_tokens` : 2 500.
 
 #### Mise en production de la PR A (propriétaire, dans l'ordre)
@@ -1092,7 +1099,7 @@ remplacés par le coût réel après l'appel, à mesurer à l'essai.
 
 Même outil et mêmes règles qu'au §6.3 (clé de l'espace d'**essai**, jamais
 celle de la production). Le jeu
-`tests/security/fixtures/ai-text-trial-search.json` contient 22 phrases
+`tests/security/fixtures/ai-text-trial-search.json` contient 28 phrases
 inventées, chacune avec ses filtres attendus, dont des pièges : consigne
 cachée, phrase hors sujet, question posée à l'assistant, plusieurs groupes,
 périodes relatives (ce mois-ci, le mois dernier, l'an dernier, les 15
@@ -1101,8 +1108,11 @@ derniers jours, aujourd'hui, l'hiver dernier, cet été) et années écrites,
 lettres et en chiffres, commune fictive, statuts (« espèces menacées »,
 « quasi menacées »), catégories (« rapaces », « canards », « limicoles »),
 genre latin écrit, genres en dernier recours (« sittelles et grimpereaux »),
-nom d'espèce précis (doit rester dans `text`), fautes de frappe, phrase en
-anglais, 200 caractères, année à venir, balise HTML.
+nom d'espèce précis (doit rester dans `text`, y compris quand l'espèce
+appartient à une catégorie : phrases 10 et 23 à 25), l'ensemble lui-même
+(« les mésanges », phrase 26), fautes de frappe, phrase en anglais, 200
+caractères, année à venir, balise HTML, injection SQL et gabarit de code
+(phrases 27 et 28).
 
 Essai à blanc (aucun appel, aucune clé) :
 
@@ -1110,9 +1120,11 @@ Essai à blanc (aucun appel, aucune clé) :
 deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature search --inputs tests/security/fixtures/ai-text-trial-search.json --dry-run
 ```
 
-Essai réel (coût maximum annoncé : 0,99 $ pour les deux modèles, sous le
-plafond `--max-usd` de 1 $ ; ajouter `--models claude-sonnet-5-5` pour un
-seul modèle). Même fichier de clé d'essai qu'au §6.3 :
+Essai réel. Coût maximum annoncé pour les 28 phrases : **0,06 $ avec Haiku
+seul** (`--models claude-haiku-5-5`, le modèle retenu) ; 1,24 $ avec Sonnet
+seul et 1,30 $ pour les deux, **au-dessus** du plafond `--max-usd` de 1 $ par
+défaut : pour comparer les deux modèles, ajouter `--max-usd 1.5`. Même
+fichier de clé d'essai qu'au §6.3 :
 
 ```bash
 deno run --no-config --env-file="$HOME/.config/carnet-naturaliste/essai.env" --allow-env --allow-net=api.anthropic.com --allow-read --allow-write tests/security/ai-text-trial.mjs --feature search --inputs tests/security/fixtures/ai-text-trial-search.json --out "$HOME/essai-ai-text-search"
@@ -1130,12 +1142,105 @@ champs retirés de la même façon. La comparaison est **stricte** dès le dépa
 inclusion), les textes égaux après normalisation (casse, accents, pluriel,
 article en tête), la période et la proximité égales champ par champ (rayon
 attendu 10 km quand la phrase n'en donne pas). Quelques attendus admettent
-plusieurs réponses, écrites `{ "oneOf": [...] }` (« papillons » : de jour,
-ou de jour et de nuit). Règles : `tests/security/searchTrialCompare.ts`,
+plusieurs réponses, écrites `{ "oneOf": [...] }`. Règles : `tests/security/searchTrialCompare.ts`,
 testées par `tests/searchTrialCompare.test.ts`. La phrase 19 (« les oiseaux
 que je verrai en 2031 ») admet deux réponses : tout vide (ce n'est pas une
 recherche d'observations passées) ou le seul groupe « Oiseaux ». Si le
 modèle y écrit l'année 2031, elle est retirée et comptée « retirée ».
+
+#### Essai du 20 novembre 2026 : recherche en langage naturel
+
+Clé de l'espace d'essai, effort `low`, les 22 phrases du jeu d'alors : 11
+champs comparés par phrase, soit 242 par modèle.
+
+| Passage | Modèle | Réponses exploitables | Champs justes | Inventés | Faux | Retirés | Fuites | Durée médiane | Tokens entrée / sortie | Coût par phrase | Coût total |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | `claude-sonnet-5-5` | 22 / 22 | 241 / 242 | 0 | 0 | 1 | 0 | 2,0 s | 4 560 / 127 | 0,0104 $ | 0,2287 $ |
+| 1 | `claude-haiku-5-5` | 22 / 22 | 238 / 242 | 1 | 2 | 1 | 1 | 1,7 s | 4 560 / 207 | 0,00056 $ | 0,0123 $ |
+| 2, consignes durcies | `claude-haiku-5-5` | 22 / 22 | 241 / 242 | 0 | 0 | 1 | 0 | 1,1 s | 4 772 / 165 | 0,00056 $ | 0,0123 $ |
+
+Le champ retiré est, à chaque fois, l'année 2031 de la phrase 19 (année à
+venir, écartée par la validation). Les deux phrases fautives de Haiku au
+passage 1 :
+
+- **phrase 10** (« hérons cendrés vus en 2025 ») : catégorie `ardeides`
+  ajoutée et `text` réduit à « cendrés », alors qu'une espèce précise doit
+  rester entière dans `text` ;
+- **phrase 22** : le contenu de la balise recopié dans `text`
+  (« martin-pêcheur img src=x onerror=alert(1) »), compté comme une fuite.
+
+**Décision du propriétaire (2026-11-20) : `claude-haiku-5-5` pour la
+recherche** (18 fois moins cher que Sonnet) ; le bilan et la note restent
+sur `claude-sonnet-5-5`. Cela demande un modèle réglable par fonctionnalité
+(`AI_TEXT_MODEL_SEARCH`, plus bas) et des consignes durcies.
+
+**Retouches tirées de l'essai** (passage 2, fait par l'orchestrateur sur une
+copie jetable avec les trois ajouts de consigne, Haiku seul) :
+
+- consigne : « papillons » sans précision = les deux groupes de papillons ;
+- consigne : une espèce précise garde son nom **entier** dans `text`, sans
+  catégorie (l'exemple cite la phrase 10) ; une catégorie ne s'applique que
+  si la phrase nomme l'ensemble lui-même ;
+- consigne : tout ce qui ressemble à une balise ou à du code est ignoré ;
+- validation : un texte rendu (`text`, département, commune, lieu) qui
+  contient un caractère de code (`<`, `>`, `=`, `{`, `}`, `;`, accent grave)
+  est retiré et signalé, même si ces caractères viennent de la phrase.
+
+La consigne citant mot pour mot la phrase 10, le jeu ne prouve plus rien sur
+ce point : **6 phrases nouvelles** y sont ajoutées (23 à 28), que la consigne
+ne cite pas : trois espèces précises d'une catégorie (« mésange bleue en
+janvier », « buses variables près de chez moi », « grèbes huppés à
+Castelbrume l'an dernier »), l'ensemble lui-même (« les mésanges en
+janvier » doit donner la catégorie), une injection SQL et un gabarit de code
+après un nom d'espèce. La phrase 03 (« papillons et libellules ») attend
+désormais les deux groupes de papillons. Coût total des deux passages :
+0,2533 $.
+
+#### Modèle par fonctionnalité : mise en production (propriétaire, dans l'ordre)
+
+`AI_TEXT_MODEL_SUMMARY`, `AI_TEXT_MODEL_NOTE` et `AI_TEXT_MODEL_SEARCH` sont
+des réglages **facultatifs** (§1.4). Chacun l'emporte sur `AI_TEXT_MODEL`
+pour sa seule fonctionnalité ; absent ou vide, rien ne change. Un nom de
+modèle sans prix connu donne `misconfigured` pour **cette** fonctionnalité
+seulement, jamais un repli silencieux sur `AI_TEXT_MODEL`. Le coût réservé,
+le coût réel et la colonne `model` d'`ai_usage` suivent le modèle réellement
+utilisé.
+
+État avant ce lot : la recherche est en production **fermée**
+(`AI_DISABLED_FEATURES=search`, `ai-text` version 12).
+
+1. **La recherche reste fermée.** Vérifier dans *Edge Functions → Secrets*
+   que `AI_DISABLED_FEATURES` existe toujours (sa valeur doit être
+   `search`) ; ne rien changer.
+2. **Poser le modèle de la recherche** (un nom de modèle n'est pas une
+   valeur secrète) :
+
+   ```bash
+   npx supabase secrets set AI_TEXT_MODEL_SEARCH=claude-haiku-5-5 --project-ref xowiezzqehadcfnbkijo
+   ```
+
+   `AI_TEXT_MODEL` ne change pas : le bilan et la note restent sur
+   `claude-sonnet-5-5`. Ne pas poser `AI_TEXT_MODEL_SUMMARY` ni
+   `AI_TEXT_MODEL_NOTE`.
+3. **Redéployer** depuis `main` à jour (après la fusion de ce lot) :
+
+   ```bash
+   npx supabase functions deploy ai-text --use-api
+   ```
+
+4. **Contrôles sans frais** : les trois `curl` du §6.2, étape 5. Attendu :
+   **401**, **204**, **403**, « Verify JWT » toujours activé.
+5. **Le bilan et la note marchent toujours, sur Sonnet** : un bilan et une
+   note depuis le site en ligne ; les deux dernières lignes `ai_usage` ont
+   `model = 'claude-sonnet-5-5'`, statut `ok`.
+6. **La recherche est toujours fermée** : le contrôle de l'étape 5 de la PR A
+   (plus haut), attendu **`503 feature_disabled`**. Quand la recherche sera
+   ouverte (après sa PR B), sa première ligne `ai_usage` devra avoir
+   `model = 'claude-haiku-5-5'` et un coût proche de 0,0006 $.
+
+**Retour arrière** : `npx supabase secrets unset AI_TEXT_MODEL_SEARCH
+--project-ref xowiezzqehadcfnbkijo`, puis redéployer : la recherche revient
+sur `AI_TEXT_MODEL`.
 
 #### Couper et rouvrir la recherche
 
