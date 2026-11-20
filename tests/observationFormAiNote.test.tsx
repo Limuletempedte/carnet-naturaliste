@@ -224,6 +224,46 @@ describe('ObservationForm — note → fiche : envoi', () => {
         expect(mocks.callAiText).not.toHaveBeenCalled();
     });
 
+    it('replier la zone masque seulement : l’analyse continue et son résultat attend', async () => {
+        const pending = deferred<unknown>();
+        mocks.callAiText.mockReturnValue(pending.promise);
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        fireEvent.click(openButton());
+        expect(screen.queryByTestId('ai-note-zone')).toBeNull();
+        await act(async () => {
+            pending.resolve({ result: serverResult({ speciesName: 'pic vert' }), remaining: 11 });
+        });
+        expect(mocks.callAiText.mock.calls[0][2].signal.aborted).toBe(false);
+        fireEvent.click(openButton());
+        expect(await screen.findByTestId('ai-note-panel')).toBeTruthy();
+        expect(field('speciesName').value).toBe('');
+    });
+
+    it('un double clic dans le même instant ne fait qu’un envoi (verrou synchrone)', async () => {
+        renderForm();
+        openAndType();
+        const button = analyzeButton();
+        act(() => { button.click(); button.click(); });
+        await screen.findByTestId('ai-note-panel');
+        expect(mocks.callAiText).toHaveBeenCalledTimes(1);
+    });
+
+    it('rend le focus au bouton « Analyser » quand la carte d’accord disparaît', async () => {
+        mocks.getAiOverview.mockResolvedValue(approved({}));
+        mocks.callAiText.mockReturnValue(new Promise(() => undefined));
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const card = await screen.findByTestId('ai-consent-card-note');
+        fireEvent.click(within(card).getByRole('checkbox'));
+        mocks.getAiOverview.mockResolvedValue(approved());
+        fireEvent.click(within(card).getByRole('button', { name: 'Accepter et analyser' }));
+        await waitFor(() => expect(document.activeElement?.textContent).toMatch(/Analyse en cours/));
+    });
+
     it('« Annuler » pendant l’attente arrête tout : rien n’est appliqué', async () => {
         const pending = deferred<unknown>();
         mocks.callAiText.mockReturnValue(pending.promise);
@@ -235,7 +275,7 @@ describe('ObservationForm — note → fiche : envoi', () => {
             pending.resolve({ result: serverResult({ speciesName: 'mésange', count: 3 }), remaining: 11 });
         });
         expect(screen.queryByTestId('ai-note-panel')).toBeNull();
-        expect(screen.getByText(/arrêtée : rien n’a été appliqué/)).toBeTruthy();
+        expect(screen.getByText(/arrêtée : rien n’a été appliqué/).textContent).toMatch(/peut compter dans votre quota/);
         expect(field('speciesName').value).toBe('');
         expect(mocks.callAiText.mock.calls[0][2].signal.aborted).toBe(true);
     });
@@ -359,6 +399,103 @@ describe('ObservationForm — note → fiche : relecture et application', () => 
         expect(field('speciesName').value).toBe('Mésange charbonnière');
         expect(field('latinName').value).toBe('Parus major');
         expect(mocks.suggestSpeciesAutocomplete).toHaveBeenCalledWith('Parus major', 5, expect.anything());
+    });
+
+    it('nom commun seul sur une fiche qui a un nom latin : demande avant de le changer', async () => {
+        mocks.callAiText.mockResolvedValue({ result: serverResult({ speciesName: 'pouillot véloce' }), remaining: 11 });
+        mocks.suggestSpeciesAutocomplete.mockResolvedValue([{ displayName: 'Pouillot véloce', latinName: 'Phylloscopus collybita', source: 'inat', iconicTaxonName: 'Aves' }]);
+        renderForm(makeObservation({ speciesName: 'Mésange charbonnière', latinName: 'Parus major' }));
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('checkbox', { name: /Espèce/ }));
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog.textContent).toMatch(/Parus major/);
+        expect(dialog.textContent).toMatch(/Phylloscopus collybita/);
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmer' }));
+        await screen.findByTestId('ai-note-applied');
+        expect(field('speciesName').value).toBe('Pouillot véloce');
+        expect(field('latinName').value).toBe('Phylloscopus collybita');
+    });
+
+    it('nom introuvable sur une fiche qui a un nom latin : propose de le vider, jamais de le garder en silence', async () => {
+        mocks.callAiText.mockResolvedValue({ result: serverResult({ speciesName: 'pouillot véloce' }), remaining: 11 });
+        renderForm(makeObservation({ speciesName: 'Mésange charbonnière', latinName: 'Parus major' }));
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('checkbox', { name: /Espèce/ }));
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(dialog.textContent).toMatch(/Le vider/);
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmer' }));
+        await screen.findByTestId('ai-note-applied');
+        expect(field('speciesName').value).toBe('pouillot véloce');
+        expect(field('latinName').value).toBe('');
+    });
+
+    it('hors ligne au moment d’appliquer : dit que le nom n’a pas pu être vérifié', async () => {
+        const { rerender } = renderForm(null);
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        rerender(<ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={null} onToast={vi.fn()} isOffline />);
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        const applied = await screen.findByTestId('ai-note-applied');
+        expect(applied.textContent).toMatch(/n'a pas pu être vérifié/);
+        expect(applied.textContent).not.toMatch(/introuvable/);
+        expect(mocks.suggestSpeciesAutocomplete).not.toHaveBeenCalledWith('mésange charbonnière', 5, expect.anything());
+    });
+
+    it('une case pré-cochée se décoche si l’on modifie ce champ dans la fiche', async () => {
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        const location = within(panel).getByRole('checkbox', { name: /Lieu-dit/ }) as HTMLInputElement;
+        expect(location.checked).toBe(true);
+        // Le premier « détails avancés » est celui de la Localisation (lieu-dit).
+        fireEvent.click(screen.getAllByRole('button', { name: /Afficher les détails avancés/ })[0]);
+        fireEvent.change(field('location'), { target: { value: 'Bois de Vincennes' } });
+        expect((within(panel).getByRole('checkbox', { name: /Lieu-dit/ }) as HTMLInputElement).checked).toBe(false);
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        await screen.findByTestId('ai-note-applied');
+        expect(field('location').value).toBe('Bois de Vincennes');
+    });
+
+    it('« Annuler l’application » garde ce que la personne a saisi après', async () => {
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        await screen.findByTestId('ai-note-applied');
+        expect(field('count').value).toBe('3');
+        fireEvent.change(field('comment'), { target: { value: 'Écrit après.' } });
+        fireEvent.change(field('time'), { target: { value: '09:45' } });
+        fireEvent.click(screen.getByRole('button', { name: "Annuler l'application" }));
+        expect(field('count').value).toBe('1');
+        expect(field('speciesName').value).toBe('');
+        expect((field('comment') as unknown as HTMLTextAreaElement).value).toBe('Écrit après.');
+        expect(field('time').value).toBe('09:45');
+    });
+
+    it('« Annuler » pendant la vérification du nom : rien n’est appliqué, même si la réponse arrive', async () => {
+        const lookup = deferred<unknown[]>();
+        mocks.suggestSpeciesAutocomplete.mockImplementation((query: string) => (query === 'mésange charbonnière' ? lookup.promise : Promise.resolve([])));
+        renderForm();
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        fireEvent.click(await within(panel).findByRole('button', { name: 'Annuler' }));
+        await act(async () => {
+            lookup.resolve([{ displayName: 'Mésange charbonnière', latinName: 'Parus major', source: 'inat', iconicTaxonName: 'Aves' }]);
+        });
+        expect(screen.queryByTestId('ai-note-applied')).toBeNull();
+        expect(field('speciesName').value).toBe('');
+        expect(field('count').value).toBe('1');
     });
 
     it('ne propose jamais un champ retiré par la fonction', async () => {

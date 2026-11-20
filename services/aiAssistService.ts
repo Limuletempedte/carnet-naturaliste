@@ -142,8 +142,8 @@ const FEATURE_ERROR_MESSAGES: Partial<Record<AiTextFeature, Partial<Record<AiAss
     },
     note: {
         offline: "La note ne peut être analysée qu'en ligne. Vous pouvez la garder dans le commentaire.",
-        cancelled: 'Analyse de la note arrêtée : rien n’a été appliqué.',
-        timeout: "L'analyse de la note a pris trop de temps. Rien n'a été appliqué ; réessayez plus tard.",
+        cancelled: 'Analyse de la note arrêtée : rien n’a été appliqué. Si la note était déjà partie, cette tentative peut compter dans votre quota.',
+        timeout: "L'analyse de la note a pris trop de temps : rien n'a été appliqué. Cette tentative peut compter dans votre quota ; réessayez plus tard.",
         stale_session: 'Analyse arrêtée : le compte actif a changé. Rien n’a été appliqué.',
         network: 'Connexion interrompue pendant l’analyse de la note. Rien n’a été appliqué ; réessayez quand le réseau est stable.',
         consent_outdated: "Le texte d'accord de la note a changé : relisez-le et redonnez votre accord.",

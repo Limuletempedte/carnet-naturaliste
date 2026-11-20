@@ -19,7 +19,6 @@ import {
     AI_NOTE_CHOICES,
     buildNoteProposals,
     commentContains,
-    initialNoteSelection,
     type NoteProposalKey,
 } from '../utils/aiNoteMapping';
 import { dateToIsoLocal } from '../utils/dateUtils';
@@ -120,7 +119,8 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
     const [open, setOpen] = useState(false);
     const [noteText, setNoteText] = useState('');
     const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
-    const [selection, setSelection] = useState<Set<NoteProposalKey>>(new Set());
+    /** Cases que la personne a cochées ou décochées elle-même ; les autres suivent le pré-cochage. */
+    const [choices, setChoices] = useState<Map<NoteProposalKey, boolean>>(new Map());
     const [keepNote, setKeepNote] = useState(true);
     const [consentWorking, setConsentWorking] = useState(false);
     const [consentError, setConsentError] = useState<string | null>(null);
@@ -150,10 +150,19 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
     const reviewResult = reviewing ? phase.result : null;
     const reviewSnapshot = reviewing ? phase.snapshot : null;
 
-    // Les propositions suivent le formulaire : la valeur « actuelle » reste juste.
-    const proposals = useMemo(() => (reviewResult && reviewSnapshot
-        ? buildNoteProposals(reviewResult, { snapshot: reviewSnapshot, current: formData, defaults: formDefaults, today })
-        : []), [reviewResult, reviewSnapshot, formData, formDefaults, today]);
+    // Les propositions suivent le formulaire : la valeur « actuelle » reste
+    // juste, et une case pré-cochée se décoche d'elle-même si la personne
+    // modifie ce champ dans la fiche (sauf si elle a choisi la case elle-même).
+    const { proposals, selection } = useMemo(() => {
+        if (!reviewResult || !reviewSnapshot) return { proposals: [], selection: new Set<NoteProposalKey>() };
+        const context = { snapshot: reviewSnapshot, current: formData, defaults: formDefaults, today };
+        const pick = (list: ReturnType<typeof buildNoteProposals>) => new Set(list
+            .filter(proposal => choices.get(proposal.key) ?? proposal.preChecked)
+            .map(proposal => proposal.key));
+        const chosen = pick(buildNoteProposals(reviewResult, context));
+        const shown = buildNoteProposals(reviewResult, { ...context, selection: chosen });
+        return { proposals: shown, selection: pick(shown) };
+    }, [reviewResult, reviewSnapshot, formData, formDefaults, today, choices]);
 
     useEffect(() => { formDataRef.current = formData; }, [formData]);
 
@@ -191,14 +200,15 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
         element.focus();
     }, [phase, open]);
 
-    const loadOverview = async (context: SessionContext): Promise<AiOverview | null> => {
+    const loadOverview = async (context: SessionContext, runId: number): Promise<AiOverview | null> => {
         try {
             const next = await getAiOverview(context);
-            if (!isSessionCurrent(context)) return null;
+            if (!isSessionCurrent(context) || runRef.current !== runId) return null;
             onRemainingChange(next.access.kind === 'approved' ? next.access.remaining : null);
             return next;
         } catch (error) {
-            if (!isSessionCurrent(context)) return null;
+            // Parcours annulé entre-temps : son erreur n'efface pas le message d'annulation.
+            if (!isSessionCurrent(context) || runRef.current !== runId) return null;
             setPhase({ kind: 'error', message: error instanceof AiAssistError ? error.message : "Impossible de joindre l'assistant. Réessayez plus tard." });
             setAnnouncement('');
             return null;
@@ -231,11 +241,15 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
             }
             const latest = formDataRef.current;
             const snapshot = { ...latest, gps: { ...latest.gps } };
-            const initial = buildNoteProposals(result, { snapshot, current: snapshot, defaults: formDefaults, today: dateToIsoLocal(new Date()) });
-            setSelection(initialNoteSelection(initial));
+            // « Garder la note » est coché d'avance : le reste de la note est alors masqué.
+            const shown = buildNoteProposals(result, { snapshot, current: snapshot, defaults: formDefaults, today: dateToIsoLocal(new Date()) })
+                .filter(proposal => proposal.key !== 'remainder').length;
+            setChoices(new Map());
             setKeepNote(true);
             setPhase({ kind: 'review', result, snapshot });
-            setAnnouncement(`${initial.length} champ${initial.length > 1 ? 's' : ''} proposé${initial.length > 1 ? 's' : ''}, à relire avant d'appliquer.`);
+            setAnnouncement(shown > 0
+                ? `${shown} champ${shown > 1 ? 's' : ''} proposé${shown > 1 ? 's' : ''}, à relire avant d'appliquer.`
+                : 'Aucun champ de la fiche à modifier ; vous pouvez garder la note dans le commentaire.');
             focusTarget.current = 'panel';
         } catch (error) {
             if (controller.signal.aborted || runRef.current !== runId || !isSessionCurrent(context)) return;
@@ -246,7 +260,7 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
                 rememberRemaining(wrapped.remaining, context);
             }
             if (wrapped.code === 'consent_outdated') {
-                const refreshed = await loadOverview(context);
+                const refreshed = await loadOverview(context, runId);
                 if (refreshed && runRef.current === runId) setPhase({ kind: 'consent', outdated: true });
                 return;
             }
@@ -279,7 +293,7 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
         setAnnouncement('Vérification de votre accès…');
         try {
             // Toujours relu : l'accord a pu changer dans « Assistant IA » entre-temps.
-            const current = await loadOverview(context);
+            const current = await loadOverview(context, runId);
             if (!current || runRef.current !== runId) return;
             const blocked = accessMessage(current);
             if (blocked) {
@@ -330,9 +344,11 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
             await giveConsent('note', context);
             // « Annuler » pendant l'enregistrement : l'accord est donné, mais rien n'est envoyé.
             if (!stillWanted()) return;
-            const refreshed = await loadOverview(context);
+            const refreshed = await loadOverview(context, runId);
             if (!refreshed || !stillWanted()) return;
             setConsentWorking(false);
+            // La carte disparaît : le focus revient au bouton « Analyser ».
+            focusTarget.current = 'analyze';
             await analyze(context, runId, text);
         } catch (error) {
             if (!stillWanted()) return;
@@ -344,12 +360,8 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
     };
 
     const handleToggle = (key: NoteProposalKey) => {
-        setSelection(previous => {
-            const next = new Set(previous);
-            if (next.has(key)) next.delete(key);
-            else next.add(key);
-            return next;
-        });
+        const checked = selection.has(key);
+        setChoices(previous => new Map(previous).set(key, !checked));
     };
 
     const handleApply = async () => {
@@ -386,6 +398,12 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
                 ? `Appliqué : ${report.applied.join(', ')}.${report.warnings.length > 0 ? ` ${report.warnings.join(' ')}` : ''}`
                 : 'Rien n’a été appliqué.');
             focusTarget.current = 'applied';
+        } catch {
+            // Message fixe : l'erreur d'origine pourrait citer un champ de la note.
+            if (runRef.current !== runId) return;
+            setPhase({ kind: 'review', result, snapshot });
+            setAnnouncement('L’application a échoué : rien n’a été appliqué. Réessayez.');
+            focusTarget.current = 'panel';
         } finally {
             if (applyAbortRef.current === controller) applyAbortRef.current = null;
             unlock(runId);
@@ -427,9 +445,9 @@ const AiNoteAssist: React.FC<AiNoteAssistProps> = ({
 
     const handleToggleOpen = () => {
         if (open) {
-            // Replier ne perd pas la note (gardée en mémoire), mais arrête un parcours en cours.
-            if (phase.kind === 'checking' || phase.kind === 'analyzing') handleStop();
-            if (phase.kind === 'applying') handleCancelApply();
+            // Replier MASQUE seulement : la note, un envoi déjà demandé (peut-être
+            // déjà compté) et son résultat sont gardés. Seuls les boutons
+            // « Annuler » arrêtent un parcours.
             setOpen(false);
             focusTarget.current = 'open';
             return;

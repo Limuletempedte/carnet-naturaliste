@@ -97,6 +97,11 @@ export interface NoteMappingContext {
     defaults?: Pick<ObservationFormData, 'date' | 'time'> | null;
     /** Date du jour (`YYYY-MM-DD`, heure locale) : aucune date proposée au-delà. */
     today: string;
+    /**
+     * Cases cochées : la répartition affichée est calculée avec le total qui
+     * sera réellement appliqué (le nombre proposé seulement s'il est coché).
+     */
+    selection?: ReadonlySet<NoteProposalKey>;
 }
 
 export const UNKNOWN_CHOICE = 'Non renseigné';
@@ -330,12 +335,18 @@ export const buildNoteProposals = (result: AiNoteResult, context: NoteMappingCon
     const hasBreakdown = (result.maleCount !== null || result.femaleCount !== null)
         && !dropped.has('maleCount') && !dropped.has('femaleCount');
     if (hasBreakdown) {
-        const total = result.count ?? currentTotal(current);
+        // Total appliqué : le nombre proposé s'il est (ou sera) coché, sinon celui de la fiche.
+        const countProposed = proposals.some(proposal => proposal.key === 'count');
+        const countChosen = countProposed && (context.selection
+            ? context.selection.has('count')
+            : proposals.find(proposal => proposal.key === 'count')?.preChecked === true);
+        const total = countChosen ? result.count : currentTotal(current);
+        const fits = total !== null && (result.maleCount ?? 0) + (result.femaleCount ?? 0) <= total;
         const parts = [
             result.maleCount !== null ? `${result.maleCount} mâle${result.maleCount > 1 ? 's' : ''}` : null,
             result.femaleCount !== null ? `${result.femaleCount} femelle${result.femaleCount > 1 ? 's' : ''}` : null,
         ].filter(Boolean);
-        const rest = total !== null ? derivedUnidentified(total, result.maleCount, result.femaleCount) : '';
+        const rest = total !== null && fits ? derivedUnidentified(total, result.maleCount, result.femaleCount) : '';
         const currentParts = [
             current.maleCount !== '' ? `${current.maleCount} mâle(s)` : null,
             current.femaleCount !== '' ? `${current.femaleCount} femelle(s)` : null,
@@ -345,7 +356,11 @@ export const buildNoteProposals = (result: AiNoteResult, context: NoteMappingCon
             key: 'breakdown',
             current: currentParts.join(', ') || EMPTY_LABEL,
             proposed: [...parts, rest !== '' ? `${rest} non identifié${rest > 1 ? 's' : ''}` : null].filter(Boolean).join(', '),
-            detail: rest !== '' ? `Non identifiés : le reste du total (${total}).` : undefined,
+            detail: !fits
+                ? (total === null
+                    ? "Ne sera pas appliquée : le nombre d'individus n'est pas renseigné."
+                    : `Ne sera pas appliquée : elle dépasse le total (${total}). Cochez aussi le nombre proposé.`)
+                : rest !== '' ? `Non identifiés : le reste du total (${total}).` : undefined,
             preChecked: unchanged(context, 'maleCount', 'femaleCount', 'unidentifiedCount')
                 && current.maleCount === '' && current.femaleCount === '' && current.unidentifiedCount === '',
         });
@@ -454,6 +469,8 @@ export interface NoteApplyOutcome {
     applied: NoteProposalKey[];
     /** Propositions cochées mais non appliquées, avec la raison. */
     skipped: { key: NoteProposalKey; reason: string }[];
+    /** Points à vérifier dans la fiche après application. */
+    warnings: string[];
     /** La météo a été écrite : la marquer comme modifiée (pas d'écrasement automatique). */
     weatherApplied: boolean;
     /** Champs rangés dans « détails avancés » touchés : les déplier pour les montrer. */
@@ -553,10 +570,17 @@ export const applyNoteFields = (
 
     if (options.keepNote) next.comment = appendToComment(next.comment, options.noteText);
 
+    // Nombre changé sans nouvelle répartition : l'ancienne ne tient peut-être plus.
+    const warnings: string[] = [];
+    if (applied.includes('count') && !applied.includes('breakdown') && validateObservationForm(next).countBreakdown) {
+        warnings.push("La répartition déjà saisie ne correspond plus au nouveau nombre d'individus : corrigez-la avant d'enregistrer.");
+    }
+
     return {
         form: next,
         applied,
         skipped,
+        warnings,
         weatherApplied: applied.includes('weather'),
         touchesAdvancedLocation: applied.includes('location'),
         touchesAdvancedDetails: applied.some(key => ADVANCED_DETAILS.includes(key)),

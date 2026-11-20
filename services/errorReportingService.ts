@@ -14,6 +14,25 @@
 import * as Sentry from '@sentry/react';
 import { isChunkLoadError } from '../utils/chunkLoadError';
 
+/**
+ * Traces réseau (`fetch`, `xhr`) réduites à l'origine : le chemin et la
+ * requête peuvent porter un nom d'espèce (iNaturalist `?q=`, Wikipédia
+ * `/summary/<nom>`), des coordonnées (Nominatim, Open-Meteo) ou un champ
+ * proposé par l'assistant. `queryParams: false` ne couvre pas ces traces.
+ */
+export const scrubBreadcrumb = (breadcrumb: Sentry.Breadcrumb): Sentry.Breadcrumb | null => {
+    if (breadcrumb.category !== 'fetch' && breadcrumb.category !== 'xhr') return breadcrumb;
+    const data = breadcrumb.data ? { ...breadcrumb.data } : undefined;
+    if (data && typeof data.url === 'string') {
+        try {
+            data.url = new URL(data.url, 'https://invalid.local').origin;
+        } catch {
+            data.url = '[url retirée]';
+        }
+    }
+    return { ...breadcrumb, data };
+};
+
 const dsn: string | undefined = import.meta.env.VITE_SENTRY_DSN;
 
 let initialized = false;
@@ -38,6 +57,7 @@ export const initErrorReporting = (): void => {
         // Retire le suivi de session (ping a chaque demarrage) : on ne veut
         // envoyer un evenement que lorsqu'une erreur survient reellement.
         integrations: (defaults) => defaults.filter((i) => i.name !== 'BrowserSession'),
+        beforeBreadcrumb: (breadcrumb) => scrubBreadcrumb(breadcrumb),
         beforeSend(event, hint) {
             const original = hint?.originalException;
             if (original instanceof Error && isChunkLoadError(original)) {

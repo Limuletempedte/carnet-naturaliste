@@ -68,6 +68,7 @@ export const NoteConsentText: React.FC = () => (
             <p className="font-semibold text-nature-dark dark:text-white">Ce qui est envoyé</p>
             <ul className="list-disc pl-5 space-y-1">
                 <li><strong>Le texte de la note, tel que vous l'avez écrit</strong> (1 000 caractères au plus), y compris les lieux et les noms de personnes qu'il contient.</li>
+                <li>Si vous reprenez le commentaire d'une fiche comme note, c'est ce commentaire qui est envoyé.</li>
             </ul>
         </div>
         <div>
@@ -80,7 +81,7 @@ export const NoteConsentText: React.FC = () => (
                 <li>Destinataire : Anthropic, via Anthropic Ireland Ltd pour l'Espace économique européen.</li>
                 <li>Transfert hors de l'UE : les données sont stockées aux <strong>États-Unis</strong> et peuvent être traitées hors de l'UE, dans le cadre des clauses contractuelles types de l'UE.</li>
                 <li>Chez Anthropic : effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Par défaut, ces données ne servent pas à entraîner les modèles.</li>
-                <li>Dans le Carnet : la note n'est pas enregistrée, sauf si vous choisissez de la garder dans le commentaire de la fiche. Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la note ni la réponse.</li>
+                <li>Dans le Carnet : la note n'est enregistrée que dans le commentaire de la fiche, si la case « Garder la note dans le commentaire » reste cochée (elle l'est d'avance, vous pouvez la décocher). Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la note ni la réponse.</li>
             </ul>
         </div>
         <div>

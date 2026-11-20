@@ -66,6 +66,8 @@ describe('AiConsentCard — note → fiche', () => {
         expect(text).toMatch(/Ce qui n'est pas envoyé/);
         expect(text).toMatch(/Ni la date ni l'heure de la fiche, ni coordonnées GPS/);
         expect(text).toMatch(/ni le reste de la fiche/);
+        expect(text).toMatch(/Si vous reprenez le commentaire d'une fiche comme note, c'est ce commentaire qui est envoyé/);
+        expect(text).toMatch(/cochée d'avance|l'est d'avance/);
         expect(text).toMatch(/Anthropic Ireland Ltd/);
         expect(text).toMatch(/États-Unis/);
         expect(text).toMatch(/clauses contractuelles types/);

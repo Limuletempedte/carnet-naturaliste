@@ -484,8 +484,18 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     // photo), puis les autres champs, marqués comme modifiés. Une seule
     // action, annulable : l'état d'avant est gardé jusqu'à la suivante.
     const formDataRef = useRef(formData);
-    useEffect(() => { formDataRef.current = formData; }, [formData]);
-    const noteUndoRef = useRef<{ form: ObservationFormData; touched: typeof fieldTouched } | null>(null);
+    /**
+     * État d'avant la dernière application (`form`, `touched`) et état juste
+     * après (`after`, relevé au rendu qui suit) : l'annulation ne remet que
+     * ce que l'application a écrit et que la personne n'a pas modifié depuis.
+     */
+    const noteUndoRef = useRef<{ form: ObservationFormData; touched: typeof fieldTouched; after: ObservationFormData | null } | null>(null);
+    useEffect(() => {
+        formDataRef.current = formData;
+        // Le premier rendu qui suit l'application est le sien : tous ses
+        // `setFormData` sont regroupés et passent avant toute saisie.
+        if (noteUndoRef.current && noteUndoRef.current.after === null) noteUndoRef.current.after = formData;
+    }, [formData]);
     const [noteLatinQuestion, setNoteLatinQuestion] = useState<{ typed: string; proposed: string; resolve: (replace: boolean) => void } | null>(null);
 
     const askNoteLatinReplacement = (typed: string, proposed: string) => new Promise<boolean>(resolve => {
@@ -497,87 +507,116 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         const warnings: string[] = [];
         const appliedLabels: string[] = [];
         let match: SpeciesSuggestion | undefined;
-        let replaceLatin = false;
+        let verified = false;
+        /** Nom latin que l'espèce appliquée apportera ('' : aucun connu). */
+        let speciesLatin = '';
         const wantsSpecies = selection.has('species') && noteSpeciesQuery(result) !== null;
 
         if (wantsSpecies) {
             const lookup = noteSpeciesQuery(result)!;
-            const typedLatin = (formDataRef.current.latinName ?? '').trim();
-            // Un nom latin tapé à la main n'est remplacé qu'après confirmation ;
-            // « Annuler » n'applique rien du tout.
-            if (result.scientificName && fieldTouched.latinName && typedLatin
-                && normalizeLatin(typedLatin) !== normalizeLatin(result.scientificName)) {
-                replaceLatin = await askNoteLatinReplacement(typedLatin, result.scientificName);
-                if (signal.aborted || !replaceLatin) return null;
+            // Hors ligne, le nom ne peut pas être vérifié : on le dit, sans
+            // prétendre qu'il est introuvable.
+            if (!isOffline && navigator.onLine) {
+                try {
+                    const suggestions = await suggestSpeciesAutocomplete(lookup.query, 5, { signal });
+                    match = findExactSpeciesMatch(suggestions, result);
+                    verified = true;
+                } catch {
+                    // Message fixe : l'erreur d'origine pourrait citer le nom cherché.
+                    logger.warn('[aiAssist] note : vérification du nom impossible');
+                }
+                if (signal.aborted) return null;
+                if (!navigator.onLine) verified = false;
             }
-            try {
-                const suggestions = await suggestSpeciesAutocomplete(lookup.query, 5, { signal });
-                match = findExactSpeciesMatch(suggestions, result);
-            } catch {
-                // Message fixe : l'erreur d'origine pourrait citer le nom cherché.
-                logger.warn('[aiAssist] note : vérification du nom impossible');
+            speciesLatin = match?.latinName ?? result.scientificName ?? '';
+            // Le nom latin doit aller avec la nouvelle espèce. Un nom latin tapé
+            // à la main qui en diffère n'est remplacé (ou vidé) qu'après
+            // confirmation ; « Annuler » n'applique rien du tout.
+            const currentLatin = (formDataRef.current.latinName ?? '').trim();
+            if (fieldTouched.latinName && currentLatin && normalizeLatin(currentLatin) !== normalizeLatin(speciesLatin)) {
+                const replace = await askNoteLatinReplacement(currentLatin, speciesLatin);
+                if (signal.aborted || !replace) return null;
             }
-            if (signal.aborted) return null;
         }
 
         // Tout est appliqué d'un coup, à partir de l'état le plus récent.
         const before = formDataRef.current;
-        noteUndoRef.current = { form: before, touched: fieldTouched };
-        let speciesLatin: string | null = null;
-        if (wantsSpecies) {
-            if (match) {
-                const matched = match;
-                applySpeciesAutocompleteSuggestion(matched);
-                if (replaceLatin || !fieldTouched.latinName || !(before.latinName ?? '').trim()) speciesLatin = matched.latinName;
-                appliedLabels.push(`espèce (${matched.displayName})`);
-            } else {
-                const name = result.speciesName ?? result.scientificName ?? '';
-                if (result.scientificName && (replaceLatin || !fieldTouched.latinName || !(before.latinName ?? '').trim())) {
-                    speciesLatin = result.scientificName;
+        noteUndoRef.current = { form: before, touched: fieldTouched, after: null };
+        const touchedBefore = fieldTouched;
+        try {
+            if (wantsSpecies) {
+                if (match) {
+                    applySpeciesAutocompleteSuggestion(match);
+                    appliedLabels.push(`espèce (${match.displayName})`);
+                } else {
+                    const name = result.speciesName ?? result.scientificName ?? '';
+                    setFormData(prev => ({ ...prev, speciesName: name }));
+                    appliedLabels.push('espèce');
+                    warnings.push(verified
+                        ? "Nom introuvable dans iNaturalist et GBIF : l'espèce a été remplie telle que proposée. Vérifiez-la avant d'enregistrer."
+                        : "Le nom de l'espèce n'a pas pu être vérifié (hors ligne ou service injoignable) : il a été rempli tel que proposé. Vérifiez-le avant d'enregistrer.");
                 }
-                setFormData(prev => ({ ...prev, speciesName: name }));
-                appliedLabels.push('espèce');
-                warnings.push("Nom introuvable dans iNaturalist et GBIF : l'espèce a été remplie telle que proposée. Vérifiez-la avant d'enregistrer.");
             }
-        }
 
-        const outcome = applyNoteFields(before, result, selection, {
-            referenceDate: request.referenceDate,
-            today: request.today,
-            keepNote: request.keepNote,
-            noteText: request.noteText,
-        });
-        const changes: Partial<ObservationFormData> = {};
-        for (const key of NOTE_FORM_KEYS) {
-            if (outcome.form[key] !== before[key]) (changes as Record<string, unknown>)[key] = outcome.form[key];
-        }
-        setFormData(prev => ({
-            ...prev,
-            ...changes,
-            ...(speciesLatin !== null ? { latinName: speciesLatin } : {}),
-        }));
-        // Marqués comme modifiés : la météo automatique ne les écrasera pas,
-        // l'enrichissement de l'espèce non plus pour le nom latin.
-        setFieldTouched(prev => ({
-            ...prev,
-            weather: prev.weather || outcome.weatherApplied,
-            latinName: prev.latinName || speciesLatin !== null,
-        }));
-        if (outcome.touchesAdvancedLocation) setShowAdvancedLocation(true);
-        if (outcome.touchesAdvancedDetails) setShowAdvancedDetails(true);
+            const outcome = applyNoteFields(before, result, selection, {
+                referenceDate: request.referenceDate,
+                today: request.today,
+                keepNote: request.keepNote,
+                noteText: request.noteText,
+            });
+            const changes: Partial<ObservationFormData> = {};
+            for (const key of NOTE_FORM_KEYS) {
+                if (outcome.form[key] !== before[key]) (changes as Record<string, unknown>)[key] = outcome.form[key];
+            }
+            setFormData(prev => ({
+                ...prev,
+                ...changes,
+                ...(wantsSpecies ? { latinName: speciesLatin } : {}),
+            }));
+            // Marqués comme modifiés : la météo automatique ne les écrasera pas,
+            // l'enrichissement de l'espèce non plus pour le nom latin (vide, il
+            // reste libre d'être complété).
+            setFieldTouched(prev => ({
+                ...prev,
+                weather: prev.weather || outcome.weatherApplied,
+                latinName: wantsSpecies ? speciesLatin !== '' : prev.latinName,
+            }));
+            if (outcome.touchesAdvancedLocation) setShowAdvancedLocation(true);
+            if (outcome.touchesAdvancedDetails) setShowAdvancedDetails(true);
 
-        appliedLabels.push(...outcome.applied.map(key => NOTE_PROPOSAL_LABELS[key].toLocaleLowerCase('fr')));
-        if (changes.comment !== undefined && request.keepNote) appliedLabels.push('note gardée dans le commentaire');
-        warnings.push(...outcome.skipped.map(item => item.reason));
-        return { applied: appliedLabels, warnings };
+            appliedLabels.push(...outcome.applied.map(key => NOTE_PROPOSAL_LABELS[key].toLocaleLowerCase('fr')));
+            if (changes.comment !== undefined && request.keepNote) appliedLabels.push('note gardée dans le commentaire');
+            warnings.push(...outcome.skipped.map(item => item.reason), ...outcome.warnings);
+            return { applied: appliedLabels, warnings };
+        } catch (error) {
+            // Une seule action : en cas d'échec, la fiche revient à l'état d'avant.
+            noteUndoRef.current = null;
+            setFormData(before);
+            setFieldTouched(touchedBefore);
+            throw error;
+        }
     };
 
     const handleNoteUndo = () => {
         const saved = noteUndoRef.current;
-        if (!saved) return;
         noteUndoRef.current = null;
-        setFormData(saved.form);
-        setFieldTouched(saved.touched);
+        if (!saved?.after) return;
+        const { form: before, after } = saved;
+        const current = formDataRef.current;
+        const next: ObservationFormData = { ...current };
+        const restored = new Set<keyof ObservationFormData>();
+        for (const key of Object.keys(after) as (keyof ObservationFormData)[]) {
+            // Non touché par l'application, ou modifié depuis par la personne : on garde.
+            if (Object.is(after[key], before[key]) || !Object.is(current[key], after[key])) continue;
+            (next as unknown as Record<string, unknown>)[key] = before[key];
+            restored.add(key);
+        }
+        setFormData(next);
+        setFieldTouched(prev => ({
+            ...prev,
+            ...(restored.has('weather') ? { weather: saved.touched.weather } : {}),
+            ...(restored.has('latinName') ? { latinName: saved.touched.latinName } : {}),
+        }));
     };
 
     const handleKeepNoteOnly = (noteText: string) => {
@@ -1202,7 +1241,9 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                     setNoteLatinQuestion(null);
                 }}
                 title="Remplacer le nom latin ?"
-                message={`Vous aviez saisi « ${noteLatinQuestion?.typed ?? ''} ». Le remplacer par « ${noteLatinQuestion?.proposed ?? ''} », proposé par la note ? Sinon, rien n'est appliqué : décochez l'espèce pour garder votre nom.`}
+                message={noteLatinQuestion?.proposed
+                    ? `Vous aviez saisi « ${noteLatinQuestion.typed} ». Le remplacer par « ${noteLatinQuestion.proposed} », le nom latin de l'espèce de la note ? Sinon, rien n'est appliqué : décochez l'espèce pour garder votre nom.`
+                    : `Vous aviez saisi « ${noteLatinQuestion?.typed ?? ''} », qui ne correspond pas à l'espèce de la note. Le vider ? Sinon, rien n'est appliqué : décochez l'espèce pour garder votre nom.`}
             />
 
             {/* Sticky Save/Cancel Bar */}

@@ -122,7 +122,7 @@ const FEATURES: readonly FeatureInfo[] = [
         title: 'Note → fiche',
         purpose: "Lit une note tapée ou dictée et propose de remplir des champs de la fiche. Vous relisez et choisissez ce qui est appliqué.",
         where: "Formulaire d'observation, en haut de la section Identification : « Remplir depuis une note ».",
-        sent: "Le texte de la note tel que vous l'avez écrit, lieux et noms compris. Jamais la date, la position GPS, la photo ni le reste de la fiche.",
+        sent: "Le texte de la note tel que vous l'avez écrit (ou le commentaire repris comme note), lieux et noms compris. Jamais la date, la position GPS, la photo ni le reste de la fiche.",
     },
 ];
 

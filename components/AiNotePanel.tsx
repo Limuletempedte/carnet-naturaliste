@@ -90,7 +90,7 @@ const AiNotePanel: React.FC<AiNotePanelProps> = ({
 
             {visible.length === 0 ? (
                 <p className="text-sm text-gray-700 dark:text-gray-300" data-testid="ai-note-nothing">
-                    Aucun champ à modifier : la fiche contient déjà ce que la note indique.
+                    Aucun champ de la fiche à modifier.
                 </p>
             ) : (
                 <ul className="space-y-2">

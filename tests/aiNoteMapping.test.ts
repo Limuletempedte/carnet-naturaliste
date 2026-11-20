@@ -149,6 +149,20 @@ describe('buildNoteProposals — pré-cochage', () => {
         expect(date.detail).toContain('20/11/2026');
     });
 
+    it('calcule la répartition affichée avec le total qui sera appliqué', () => {
+        const ten = form({ count: 10 });
+        const note = result({ count: 5, maleCount: 2, femaleCount: 1 });
+        const withCount = buildNoteProposals(note, { ...ctx(ten), selection: new Set<NoteProposalKey>(['count', 'breakdown']) });
+        expect(withCount.find(p => p.key === 'breakdown')?.proposed).toBe('2 mâles, 1 femelle, 2 non identifiés');
+        const withoutCount = buildNoteProposals(note, { ...ctx(ten), selection: new Set<NoteProposalKey>(['breakdown']) });
+        expect(withoutCount.find(p => p.key === 'breakdown')?.proposed).toBe('2 mâles, 1 femelle, 7 non identifiés');
+        // Comme l'application : 10 / 2 / 1 / 7.
+        const applied = applyNoteFields(ten, note, new Set<NoteProposalKey>(['breakdown']), { referenceDate: '2026-11-20', today: TODAY, keepNote: false, noteText: '' });
+        expect(applied.form).toMatchObject({ count: 10, maleCount: 2, femaleCount: 1, unidentifiedCount: 7 });
+        const tooSmall = buildNoteProposals(result({ count: 5, maleCount: 4, femaleCount: 2 }), { ...ctx(form({ count: 2 })), selection: new Set<NoteProposalKey>(['breakdown']) });
+        expect(tooSmall.find(p => p.key === 'breakdown')?.detail).toMatch(/Ne sera pas appliquée/);
+    });
+
     it('ne propose pas une valeur identique à la valeur actuelle', () => {
         const current = form({ speciesName: 'Mésange charbonnière', count: 3 });
         expect(buildNoteProposals(result({ speciesName: 'mésange charbonniere', count: 3, dateExpr: { kind: 'relative_days', offsetDays: 0 } }), ctx(current))).toEqual([]);
@@ -244,6 +258,12 @@ describe('applyNoteFields', () => {
         const outcome = applyNoteFields(form({ comment: 'Avant.' }), result({ remainder: 'Nourrissage au sol.' }), all(['remainder']), options);
         expect(outcome.form.comment).toBe('Avant.\n\nNourrissage au sol.');
         expect(outcome.applied).toEqual(['remainder']);
+    });
+
+    it('prévient quand un nouveau nombre rend fausse la répartition déjà saisie', () => {
+        const outcome = applyNoteFields(form({ count: 3, maleCount: 2, femaleCount: 1 }), result({ count: 5 }), all(['count']), options);
+        expect(outcome.form.count).toBe(5);
+        expect(outcome.warnings).toEqual([expect.stringContaining('ne correspond plus')]);
     });
 
     it('ne touche ni à l’espèce, ni à la position, ni aux observateurs', () => {
