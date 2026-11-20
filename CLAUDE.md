@@ -21,6 +21,7 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 - `npm run build` : build production
 - `npm run dev` : serveur de dev
 - `npm run icons` : regenere les icones PNG et le favicon.ico depuis les SVG du logo (Linux, voir `scripts/icons/README.md`)
+- `npm run logos` : regenere les logos des groupes taxonomiques (`public/Logo/`, 256 px) depuis les originaux gardes dans l'historique git (Linux, voir `scripts/icons/README.md`)
 
 ## Structure
 - `/components/` : composants React (PascalCase.tsx)
