@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-11-20
+**Date de mise a jour** : 2026-11-21
 
 ---
 
@@ -31,11 +31,11 @@
 
 | Champ | Valeur |
 |---|---|
-| Finalite | Localiser les observations sur une carte |
+| Finalite | Localiser les observations sur une carte ; filtre « près de chez moi » de la recherche en langage naturel (Traitement 9.4 : position de l'appareil gardée en mémoire le temps de la recherche, jamais envoyée ni enregistrée) |
 | Base legale | Consentement (API Geolocation du navigateur) |
 | Donnees collectees | Latitude, longitude |
 | Duree de conservation | Duree de l'observation |
-| Destinataires | Nominatim/OpenStreetMap (geocodage inverse — IP transmise) |
+| Destinataires | Nominatim/OpenStreetMap (geocodage inverse — IP transmise ; geocodage direct du nom d'un lieu cite dans une recherche, voir Traitement 9.4) |
 | Transfert hors UE | Possible (serveurs Nominatim en Europe et ailleurs) |
 | Mesures | User-Agent identifiant l'application. GPS flouté (~11 km) a l'export pour especes VU/EN/CR/EW. |
 
@@ -68,8 +68,8 @@
 |---|---|
 | Finalite | Fonctionnement hors-ligne, cache, preferences |
 | Base legale | Consentement (bandeau de consentement au stockage) |
-| Donnees collectees | Observations en cache, session, preferences UI (theme sombre, filtres) ; bilans du mois rediges par l'assistant IA et dernier compteur d'utilisations connu (Traitement 9), par personne |
-| Duree de conservation | Cache : 90 jours (TTL). Preferences : duree du navigateur. Bilans du mois : 24 mois au plus apres leur redaction (purge a l'ouverture de l'application, pour tous les comptes du navigateur) ; effaces aussi de l'appareil ou le compte est supprime. |
+| Donnees collectees | Observations en cache, session, preferences UI (theme sombre, filtres) ; bilans du mois rediges par l'assistant IA, phrases de recherche interpretees par l'assistant et dernier compteur d'utilisations connu (Traitement 9), par personne |
+| Duree de conservation | Cache : 90 jours (TTL). Preferences : duree du navigateur. Bilans du mois : 24 mois au plus apres leur redaction (purge a l'ouverture de l'application, pour tous les comptes du navigateur) ; effaces aussi de l'appareil ou le compte est supprime. Phrases de recherche interpretees : les 50 dernieres, effacees de l'appareil au retrait de l'accord a la recherche ou a l'assistant et a la suppression du compte. |
 | Destinataires | Aucun — donnees locales uniquement |
 | Transfert hors UE | Non |
 
@@ -118,11 +118,11 @@ texte dans `ai_consents`.
 |---|---|
 | Base légale | **Consentement** (art. 6.1.a), par fonctionnalité : case obligatoire, texte versionné, retrait à tout moment dans la fenêtre « Assistant IA ». **Intérêt légitime** (art. 6.1.f) pour le journal d'usage : contrôle des coûts et des abus. |
 | Données conservées par le Carnet | `ai_access` (statut de la demande, quota, version du consentement photo, dates, note) ; `ai_consents` (une ligne par fonctionnalité texte : fonctionnalité, version du texte accepté, `given_at` posé par le serveur comme preuve, art. 7.1) ; `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut). Ni photo, ni chiffres, ni note, ni hypothèses, ni texte produit. |
-| Données conservées dans le navigateur | Bilans du mois rédigés (texte, date, empreinte des chiffres), par personne, **24 mois au plus après leur rédaction** : un bilan expiré n'est jamais relu, et il est retiré à chaque ouverture de l'application pour **tous** les comptes du navigateur (y compris un compte supprimé depuis un autre appareil) ; 24 mois différents au plus. Dernier compteur d'utilisations connu (affichage hors ligne), retiré dès que l'accès n'est plus approuvé et à l'ouverture suivant la fin du mois. Jamais envoyés au serveur. Effacés de l'appareil où le compte est supprimé ; sur les autres appareils, à leur expiration ou quand la personne efface les données du site. |
+| Données conservées dans le navigateur | Bilans du mois rédigés (texte, date, empreinte des chiffres), par personne, **24 mois au plus après leur rédaction** : un bilan expiré n'est jamais relu, et il est retiré à chaque ouverture de l'application pour **tous** les comptes du navigateur (y compris un compte supprimé depuis un autre appareil) ; 24 mois différents au plus. Dernier compteur d'utilisations connu (affichage hors ligne), retiré dès que l'accès n'est plus approuvé et à l'ouverture suivant la fin du mois. Phrases de recherche interprétées par l'assistant (voir 9.4), **les 50 dernières**. Jamais envoyés au serveur. Effacés de l'appareil où le compte est supprimé ; sur les autres appareils, à leur expiration ou quand la personne efface les données du site. |
 | Destinataires | Anthropic (modèle Claude), via **Anthropic Ireland Ltd** pour l'EEE, sous-traitant ; DPA intégré aux Commercial Terms, droit irlandais. Supabase (fonctions `ai-identify` et `ai-text`, tables, UE). |
 | Transfert hors UE | **Oui** — données stockées aux États-Unis, pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`). Transfert encadré par les clauses contractuelles types de l'UE (modules 2 et 3) du DPA. |
 | Conservation | Chez Anthropic : entrées et sorties effacées sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement sur les données de l'API par défaut. Dans le Carnet : `ai_access` et `ai_consents` jusqu'au retrait de l'accord (retirer l'accès supprime aussi les lignes `ai_consents`) ou à la suppression du compte ; `ai_usage` 3 mois (purge à chaque nouvelle réservation). |
-| Mesures | Accès sur demande validée à la main ; quota et budget plafonnés ; clé API uniquement côté serveur ; droits et RLS empêchant de s'approuver soi-même, de modifier un consentement (suppression puis insertion seulement) ou d'en créer un pour autrui ; journaux sans utilisateur, photo, prompt, chiffres, note, hypothèses ni texte produit (côté serveur comme dans les journaux et Sentry de l'application) ; une donnée envoyée ne peut pas être rappelée (dit dans chaque consentement). |
+| Mesures | Accès sur demande validée à la main ; quota et budget plafonnés ; clé API uniquement côté serveur ; droits et RLS empêchant de s'approuver soi-même, de modifier un consentement (suppression puis insertion seulement) ou d'en créer un pour autrui ; journaux sans utilisateur, photo, prompt, chiffres, note, phrase de recherche, filtres, position, hypothèses ni texte produit (côté serveur comme dans les journaux et Sentry de l'application) ; une donnée envoyée ne peut pas être rappelée (dit dans chaque consentement). |
 | AIPD | Non nécessaire : petite échelle, pas de données sensibles recherchées, l'utilisateur décide de chaque envoi et de ce qu'il garde. |
 
 ### 9.1 Aide à l'identification (photo, `ai-identify`)
@@ -154,6 +154,17 @@ texte dans `ai_consents`.
 | Données conservées | Aucune par le Carnet sans le choix de la personne : la note reste dans l'état de la page (jamais dans le stockage du navigateur ni sur le serveur) le temps de la relecture. Les champs cochés sont écrits dans la fiche ; la note entière (« Garder la note dans le commentaire », cochée d'avance, décochée d'avance quand la note reprend le commentaire) ou son reste (jamais pré-coché) ne rejoignent le commentaire que si la case correspondante est cochée, puis suivent le Traitement 2. Le commentaire reste borné à 5 000 caractères : au-delà, rien n'y est ajouté. |
 | Autres destinataires | Le nom d'espèce proposé est vérifié par la recherche d'espèce (iNaturalist puis GBIF, Traitement 4) et sa fiche cherchée sur Wikipédia, comme un nom tapé à la main. Si la vérification échoue, le nom tel que proposé (120 caractères au plus, relu par la personne avant de cocher) est cherché de la même façon. |
 | Mesures propres | Avertissement sous la zone de texte (éviter les noms de personnes et la localisation précise d'espèces sensibles) ; champs rendus bornés et vérifiés deux fois (fonction, puis application), un champ fautif est écarté et jamais proposé ; affichage en texte React brut (une balise écrite dans la note s'affiche telle quelle) ; la note et la réponse ne sont ni journalisées ni envoyées à Sentry ; les traces réseau gardées par Sentry sont réduites à l'adresse du site appelé, sans le nom cherché. |
+
+### 9.4 Recherche en langage naturel (texte, `ai-text`, fonctionnalité `search`)
+
+| Champ | Valeur |
+|---|---|
+| Finalité | Traduire en filtres, à la demande de l'utilisateur, une phrase tapée dans la recherche de la liste (« les rapaces vus en mai près de chez moi ») quand l'analyse gratuite de l'application ne la comprend pas entièrement. Les filtres sont appliqués par l'application, sur l'appareil, à ses propres observations ; l'utilisateur voit chaque filtre compris (« J'ai compris : … ») avant de l'appliquer, peut en retirer un et tout annuler ; aucune décision automatisée. |
+| Consentement | Ligne `ai_consents` (`feature = 'search'`, version `CONSENT_VERSIONS.search` d'`ai-text`, `2026-11-v1`), donnée par une carte affichée au premier usage, sous le champ de recherche, ou dans « Assistant IA » ; retrait par « Retirer mon accord à la recherche ». La version provisoire de la partie serveur (plus longue que les 32 caractères de `ai_consents.version`, donc impossible à enregistrer) est remplacée. |
+| Données envoyées à Anthropic | La **phrase telle qu'elle est écrite**, 200 caractères au plus (refus au-delà, jamais de troncature), nettoyée des caractères invisibles, seulement sur le bouton « Interpréter avec l'IA » (jamais sur Entrée) : elle peut contenir des lieux et des noms, ce que dit le consentement. **Jamais** : observation, position de l'appareil, date du jour, email. L'analyse gratuite (`utils/naturalSearchLocal.ts`) n'envoie rien. |
+| Données conservées | Dans le navigateur seulement : les phrases interprétées par l'assistant, **les 50 dernières**, par personne, avec leurs filtres sous forme relative (« le mois dernier », « autour de ma position actuelle »), **sans date calculée ni coordonnées** ; clé normalisée, cache versionné avec le dictionnaire des catégories. Elles permettent de rejouer une phrase sans nouvelle utilisation, même hors ligne. Effacées de l'appareil au retrait de l'accord à la recherche ou à l'assistant, et à la suppression du compte (`ACCOUNT_SCOPED_STORAGE_PREFIXES`). Les filtres appliqués restent en mémoire le temps de la session de l'application ; un preset ne peut pas enregistrer les critères propres à la recherche (catégories, mois de toutes les années, habitats…). |
+| Autres destinataires | **Nominatim (OpenStreetMap), géocodage direct** : quand la phrase cite un lieu (« près de Pessac »), son nom, tel que rendu par l'assistant, est envoyé à Nominatim pour trouver ses coordonnées, au moment où la personne applique les filtres (base légale : exécution du service demandé, art. 6.1.b ; IP transmise comme pour toute requête web ; transfert hors UE possible, comme au Traitement 3). **Position de l'appareil** (« près de chez moi ») : demandée au navigateur, avec son autorisation, au moment d'appliquer ; gardée en mémoire seulement, jamais envoyée à l'assistant ni enregistrée. |
+| Mesures propres | Avertissement dans le consentement (éviter les noms de personnes et la localisation précise d'espèces sensibles) ; filtres rendus bornés et vérifiés deux fois (fonction, puis application), un champ fautif est écarté, signalé et jamais appliqué ; textes (nom, lieu, commune, genres) affichés en texte React brut ; la phrase, les filtres et la position ne sont ni journalisés ni envoyés à Sentry ; les traces réseau gardées par Sentry sont réduites à l'adresse du site appelé, sans le lieu cherché. |
 
 > Exploitation : [`docs/ops/ASSISTANT-IA.md`](../ops/ASSISTANT-IA.md). Plan : [`docs/plans/assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md) (sources des faits vérifiés le 2026-11-05).
 

@@ -1,6 +1,6 @@
 # Recapitulatif des conditions d'utilisation des APIs tierces
 
-**Date de mise a jour** : 2026-11-20
+**Date de mise a jour** : 2026-11-21
 
 ---
 
@@ -34,12 +34,12 @@
 
 | Champ | Detail |
 |---|---|
-| URL | `https://nominatim.openstreetmap.org/reverse` |
-| Usage | Geocodage inverse (coordonnees GPS → commune, departement, pays) |
+| URL | `https://nominatim.openstreetmap.org/reverse` et `https://nominatim.openstreetmap.org/search` |
+| Usage | Geocodage inverse (coordonnees GPS → commune, departement, pays) ; geocodage direct d'une adresse tapee dans la recherche de lieu, ou du nom d'un lieu cite dans une phrase de recherche (« pres de Pessac »), au moment ou l'utilisateur applique les filtres |
 | Conditions | [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) |
 | Rate limit | 1 req/seconde (respecte par l'app — une seule requete a la saisie GPS) |
 | Attribution | Requise — « OpenStreetMap contributors » sous licence ODbL |
-| Donnees envoyees | Latitude, longitude. L'adresse IP de l'utilisateur est visible par le serveur. |
+| Donnees envoyees | Latitude, longitude (inverse) ; adresse tapee ou nom du lieu (direct). L'adresse IP de l'utilisateur est visible par le serveur. |
 | User-Agent | `CarnetNaturaliste/5.2 (contact@carnet-naturaliste.fr)` |
 | Implementation | `services/locationService.ts` |
 
@@ -60,15 +60,15 @@
 
 | Champ | Detail |
 |---|---|
-| URL | API Anthropic, appelée **uniquement côté serveur** par les fonctions Supabase `ai-identify` (photo) et `ai-text` (fonctionnalités texte : bilan du mois, note → fiche) ; clé jamais présente dans l'application |
-| Usage | Jusqu'à 3 hypothèses d'espèce à partir d'une photo ; court texte de bilan à partir des chiffres d'un mois ; champs de fiche proposés à partir d'une note libre, relus et choisis par l'utilisateur. Sur demande d'accès validée et consentement propre à chaque fonctionnalité |
+| URL | API Anthropic, appelée **uniquement côté serveur** par les fonctions Supabase `ai-identify` (photo) et `ai-text` (fonctionnalités texte : bilan du mois, note → fiche, recherche en langage naturel) ; clé jamais présente dans l'application |
+| Usage | Jusqu'à 3 hypothèses d'espèce à partir d'une photo ; court texte de bilan à partir des chiffres d'un mois ; champs de fiche proposés à partir d'une note libre, relus et choisis par l'utilisateur ; filtres de recherche tirés d'une phrase, relus et appliqués sur l'appareil par l'utilisateur. Sur demande d'accès validée et consentement propre à chaque fonctionnalité |
 | Conditions | Commercial Terms d'Anthropic, avec le [Data Processing Addendum](https://www.anthropic.com/legal/data-processing-addendum) intégré (Anthropic Ireland Ltd pour l'EEE, clauses contractuelles types de l'UE, droit irlandais) |
 | Entraînement | Pas d'entraînement sur les données de l'API par défaut (Commercial Terms, section B) |
 | Conservation | Entrées et sorties effacées sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité les signale |
 | Localisation | Pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`) ; données stockées aux États-Unis |
 | Limites | Plafond de dépense par espace de travail de la Console ; une fois atteint, l'API renvoie une erreur 400 (« usage limits reached »), traduite en `upstream_unavailable` par la fonction |
-| Donnees envoyees | Photo : photo réencodée (JPEG, 1 280 px max, sans EXIF ni GPS), mois, pays, département, groupe taxonomique s'il a été choisi, habitat s'il est renseigné. Bilan : mois, totaux, répartition par groupe, noms des 15 espèces les plus observées avec leur effectif, jusqu'à 30 espèces nouvelles, totaux de l'année précédente (ni lieu, ni GPS, ni commentaire, ni date précise). Note : le texte de la note tel qu'il est écrit, 1 000 caractères au plus, lieux et noms compris (ni date de la fiche, ni GPS, ni reste de la fiche). Aucun identifiant ni email. |
-| Implementation | `supabase/functions/ai-identify/` et `supabase/functions/ai-text/` (serveur), `services/aiAssistService.ts`, `utils/monthlySummaryStats.ts`, `utils/aiNoteMapping.ts` (application) |
+| Donnees envoyees | Photo : photo réencodée (JPEG, 1 280 px max, sans EXIF ni GPS), mois, pays, département, groupe taxonomique s'il a été choisi, habitat s'il est renseigné. Bilan : mois, totaux, répartition par groupe, noms des 15 espèces les plus observées avec leur effectif, jusqu'à 30 espèces nouvelles, totaux de l'année précédente (ni lieu, ni GPS, ni commentaire, ni date précise). Note : le texte de la note tel qu'il est écrit, 1 000 caractères au plus, lieux et noms compris (ni date de la fiche, ni GPS, ni reste de la fiche). Recherche : la phrase telle qu'elle est écrite, 200 caractères au plus, lieux et noms compris (ni observation, ni position, ni date). Aucun identifiant ni email. |
+| Implementation | `supabase/functions/ai-identify/` et `supabase/functions/ai-text/` (serveur), `services/aiAssistService.ts`, `utils/monthlySummaryStats.ts`, `utils/aiNoteMapping.ts`, `utils/aiSearchFilters.ts`, `components/NaturalSearch.tsx` (application) |
 
 Faits vérifiés sur les pages officielles le 2026-11-05 : tableau « Faits vérifiés » de
 [`docs/plans/assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md).
@@ -79,7 +79,7 @@ Faits vérifiés sur les pages officielles le 2026-11-05 : tableau « Faits vér
 
 - **User-Agent** : toutes les APIs identifient l'application via un User-Agent dedie (VP-15/16/17)
 - **Attribution** : fichier `ATTRIBUTIONS.txt` inclus dans les sauvegardes ZIP (VP-18)
-- **RGPD** : aucune donnee personnelle n'est transmise aux APIs taxonomiques. Seule l'API Anthropic reçoit une photo, les chiffres d'un mois ou le texte d'une note, uniquement sur consentement propre à chaque fonctionnalité (Traitement 9 du registre). Les coordonnees GPS envoyees a Nominatim et Open-Meteo ne sont pas couplees a une identite utilisateur.
+- **RGPD** : aucune donnee personnelle n'est transmise aux APIs taxonomiques. Seule l'API Anthropic reçoit une photo, les chiffres d'un mois, le texte d'une note ou une phrase de recherche, uniquement sur consentement propre à chaque fonctionnalité (Traitement 9 du registre). Les coordonnees GPS envoyees a Nominatim et Open-Meteo ne sont pas couplees a une identite utilisateur.
 
 ## Fonds cartographiques — mise à jour du 7 octobre 2026
 

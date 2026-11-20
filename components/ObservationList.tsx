@@ -16,6 +16,9 @@ import { CHUNK_LOAD_USER_MESSAGE, isChunkLoadError } from '../utils/chunkLoadErr
 import { useLiquidGlassRefraction } from './LiquidGlass';
 import { SpinnerIcon, PlusIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './icons';
 import EmptyState from './EmptyState';
+import NaturalSearch from './NaturalSearch';
+import type { AppliedNaturalSearch, NaturalSearchInput } from '../hooks/useFilterControls';
+import type { CriterionRef, NearResolution } from '../utils/aiSearchFilters';
 
 // Formats d'export : une couleur par format, partagée entre le menu « Exporter »
 // du téléphone et les pastilles teintées de l'en-tête ordinateur.
@@ -68,7 +71,22 @@ interface ObservationListProps {
     isMobileView: boolean;
     isBulkDeleting?: boolean;
     isImporting: boolean;
+    /** Recherche en langage naturel appliquée (hooks/useFilterControls.ts). */
+    naturalSearch?: AppliedNaturalSearch | null;
+    onApplyNaturalSearch?: (input: NaturalSearchInput) => void;
+    onRemoveNaturalCriterion?: (ref: CriterionRef) => void;
+    onUpdateNaturalNear?: (near: NearResolution) => void;
+    onUndoNaturalSearch?: () => void;
+    /** « Réinitialiser » : tous les filtres et la recherche en langage naturel. */
+    onResetAllFilters?: () => void;
+    hasActiveFilters?: boolean;
+    /** Observations écartées d'une catégorie ou d'un genre faute de nom latin. */
+    excludedNoLatinName?: number;
+    isOffline?: boolean;
+    onOpenAiAccess?: () => void;
 }
+
+const noop = () => undefined;
 
 const ObservationList: React.FC<ObservationListProps> = ({
     observations,
@@ -97,7 +115,17 @@ const ObservationList: React.FC<ObservationListProps> = ({
     requestSort,
     isMobileView,
     isBulkDeleting = false,
-    isImporting
+    isImporting,
+    naturalSearch = null,
+    onApplyNaturalSearch = noop,
+    onRemoveNaturalCriterion = noop,
+    onUpdateNaturalNear = noop,
+    onUndoNaturalSearch = noop,
+    onResetAllFilters = noop,
+    hasActiveFilters = false,
+    excludedNoLatinName = 0,
+    isOffline = false,
+    onOpenAiAccess,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const tableRef = useRef<HTMLDivElement>(null);
@@ -301,6 +329,25 @@ const ObservationList: React.FC<ObservationListProps> = ({
 
     const taxonFilterEntries = Object.entries(TAXON_LOGOS) as Array<[TaxonomicGroup, string]>;
 
+    const renderNaturalSearch = (variant: 'mobile' | 'desktop') => (
+        <NaturalSearch
+            variant={variant}
+            inputId={variant === 'desktop' ? 'search-input' : 'search-input-mobile'}
+            searchTerm={searchTerm}
+            onSearchChange={onSearchChange}
+            naturalSearch={naturalSearch}
+            onApply={onApplyNaturalSearch}
+            onRemoveCriterion={onRemoveNaturalCriterion}
+            onUpdateNear={onUpdateNaturalNear}
+            onUndo={onUndoNaturalSearch}
+            onResetAll={onResetAllFilters}
+            hasActiveFilters={hasActiveFilters}
+            excludedNoLatinName={excludedNoLatinName}
+            isOffline={isOffline}
+            onOpenAiAccess={onOpenAiAccess}
+        />
+    );
+
     const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
 
     // Prune selection to keep only IDs visible in current filtered list
@@ -471,18 +518,8 @@ const ObservationList: React.FC<ObservationListProps> = ({
                             document.body
                         )}
 
-                        {/* Search Bar */}
-                        <div className="relative">
-                            <input
-                                type="text"
-                                placeholder="Rechercher..."
-                                aria-label="Rechercher une observation"
-                                value={searchTerm}
-                                onChange={e => onSearchChange(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-white/10 rounded-xl text-base focus:ring-2 focus:ring-nature-green/50 outline-none dark:text-white"
-                            />
-                            <svg className="w-4 h-4 text-gray-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                        </div>
+                        {/* Recherche : un nom, ou une phrase (recherche en langage naturel). */}
+                        {renderNaturalSearch('mobile')}
 
                         {/* Horizontal Filter Scroll */}
                         <div className="flex flex-wrap gap-2 pt-1.5 no-scrollbar">
@@ -643,23 +680,9 @@ const ObservationList: React.FC<ObservationListProps> = ({
                     </header>
 
                     <div className={`p-4 md:p-8 space-y-8 ${DESKTOP_PANEL_CLASS}`}>
+                        {/* Recherche sur toute la largeur : ses étiquettes « J'ai compris » ont besoin de place. */}
+                        {renderNaturalSearch('desktop')}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-end">
-                            <div className="relative md:col-span-1 group">
-                                <label htmlFor="search-input" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-3 ml-1 group-focus-within:text-nature-green transition-colors">Recherche</label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                                        <svg className="w-5 h-5 text-gray-400 group-focus-within:text-nature-green transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                                    </span>
-                                    <input
-                                        type="text"
-                                        id="search-input"
-                                        placeholder="Rechercher..."
-                                        value={searchTerm}
-                                        onChange={e => onSearchChange(e.target.value)}
-                                        className="w-full pl-12 pr-4 py-4 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white placeholder-gray-400 outline-none"
-                                    />
-                                </div>
-                            </div>
                             <div className="group">
                                 <label htmlFor="year-filter" className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-3 ml-1 group-focus-within:text-nature-green transition-colors">Année</label>
                                 <div className="relative">

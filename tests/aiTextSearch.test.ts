@@ -104,12 +104,13 @@ describe('ai-text — recherche : validation de l’entrée', () => {
         expect(cleanParagraphText('Merle ❤️\nsous la pluie 1️⃣\u{e0041}')).toBe('Merle ❤️\nsous la pluie 1️⃣');
     });
 
-    it('version d’accord provisoire impossible à enregistrer : fermée par défaut jusqu’à la PR B', () => {
-        // ai_consents.version est bornée à 32 caractères : aucun accord ne
-        // peut égaler cette version, ai_reserve_call répond consent_outdated.
+    it('version d’accord enregistrable depuis la PR B (32 caractères au plus)', () => {
+        // ai_consents.version est bornée à 32 caractères : la version
+        // provisoire de la PR A (plus longue) fermait la recherche à tous.
         const sql = readFileSync('supabase/migrations/20261106220000_ai_text_features.sql', 'utf8');
         expect(sql).toContain('version text not null check (char_length(version) between 1 and 32)');
-        expect(CONSENT_VERSIONS.search?.length).toBeGreaterThan(32);
+        expect(CONSENT_VERSIONS.search).toBe('2026-11-v1');
+        expect(CONSENT_VERSIONS.search?.length).toBeLessThanOrEqual(32);
     });
 
     it('readEnvelope accepte la recherche ; sa charge utile est validée ensuite', () => {

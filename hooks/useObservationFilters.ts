@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { Observation, Status, TaxonomicGroup } from '../types';
 import { compareIsoDate, getYearFromIsoDate } from '../utils/dateUtils';
 import { normalizeSearchText } from '../utils/textUtils';
+import { distanceKm } from '../utils/geoDistance';
+import { applyAiFilter, type AiFilter } from '../utils/aiSearchFilters';
 
 export type SortDirection = 'ascending' | 'descending';
 export type SortKey = keyof Observation | '';
@@ -25,27 +27,14 @@ export interface ObservationFilterState {
     bboxMaxLat?: string;
     bboxMinLon?: string;
     bboxMaxLon?: string;
+    /** Critères de la recherche en langage naturel sans filtre existant (utils/aiSearchFilters.ts). */
+    aiFilter?: AiFilter | null;
 }
 
 const parseOptionalNumber = (value?: string): number | null => {
     if (value === undefined || value === null || value.trim() === '') return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
-};
-
-const EARTH_RADIUS_KM = 6371;
-const toRadians = (value: number): number => value * (Math.PI / 180);
-
-const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const dLat = toRadians(lat2 - lat1);
-    const dLon = toRadians(lon2 - lon1);
-    const radLat1 = toRadians(lat1);
-    const radLat2 = toRadians(lat2);
-
-    const a = Math.sin(dLat / 2) ** 2
-        + Math.cos(radLat1) * Math.cos(radLat2) * Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return EARTH_RADIUS_KM * c;
 };
 
 const compareObservationValues = (
@@ -93,7 +82,7 @@ export const useObservationFilters = (
         setSortConfig({ key, direction });
     };
 
-    const sortedAndFilteredObservations = useMemo(() => {
+    const { sortedAndFilteredObservations, excludedNoLatinName } = useMemo(() => {
         let sortableItems = [...observations];
 
         sortableItems = sortableItems
@@ -170,6 +159,11 @@ export const useObservationFilters = (
                 return true;
             });
 
+        // Recherche en langage naturel : catégories, mois de toutes les
+        // années, habitats… (rien si aucun AiFilter).
+        const aiResult = applyAiFilter(sortableItems, filters.aiFilter);
+        sortableItems = aiResult.kept;
+
         const sortCriteria: SortCriterion[] = [];
         if (sortConfig.key) {
             sortCriteria.push({ key: sortConfig.key, direction: sortConfig.direction });
@@ -190,7 +184,7 @@ export const useObservationFilters = (
             });
         }
 
-        return sortableItems;
+        return { sortedAndFilteredObservations: sortableItems, excludedNoLatinName: aiResult.excludedNoLatinName };
     }, [additionalSorts, filters, observations, sortConfig]);
 
     const geoFilterIncomplete = useMemo(() => {
@@ -223,6 +217,8 @@ export const useObservationFilters = (
         requestSort,
         sortedAndFilteredObservations,
         availableYears,
-        geoFilterIncomplete
+        geoFilterIncomplete,
+        /** Observations écartées d'une catégorie ou d'un genre faute de nom latin. */
+        excludedNoLatinName
     };
 };

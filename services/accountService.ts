@@ -3,6 +3,7 @@ import { clearScopedOfflineData } from './storageService';
 import { supabase } from '../supabaseClient';
 import { AI_STATUS_CACHE_PREFIX } from './aiAssistService';
 import { MONTHLY_SUMMARY_CACHE_PREFIX } from './monthlySummaryCache';
+import { NATURAL_SEARCH_CACHE_PREFIX } from './naturalSearchCache';
 
 /** Données par personne gardées dans le navigateur, effacées avec le compte. */
 export const ACCOUNT_SCOPED_STORAGE_PREFIXES = [
@@ -11,6 +12,7 @@ export const ACCOUNT_SCOPED_STORAGE_PREFIXES = [
     'observation-filter-presets-v2',
     MONTHLY_SUMMARY_CACHE_PREFIX,
     AI_STATUS_CACHE_PREFIX,
+    NATURAL_SEARCH_CACHE_PREFIX,
 ] as const;
 
 /**

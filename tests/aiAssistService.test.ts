@@ -336,32 +336,20 @@ describe('accès', () => {
 });
 
 describe('fonctionnalités texte : constantes recopiées de la fonction ai-text', () => {
-    it('chaque version déclarée par l’application est celle de la fonction', () => {
-        // La fonction peut déclarer une fonctionnalité avant l'application
-        // (PR A de la recherche : serveur seul, aucune carte de consentement
-        // affichée) ; l'inverse est interdit, et une version déclarée des deux
-        // côtés doit être identique.
-        for (const [feature, version] of Object.entries(AI_TEXT_CONSENT_VERSIONS)) {
-            expect(TEXT_CONSENT_VERSIONS[feature as keyof typeof TEXT_CONSENT_VERSIONS], feature).toBe(version);
-        }
-        expect(AI_TEXT_CONSENT_VERSIONS.summary).toBe(TEXT_CONSENT_VERSIONS.summary);
-        expect(AI_TEXT_CONSENT_VERSIONS.note).toBe(TEXT_CONSENT_VERSIONS.note);
-        // Seule la recherche peut manquer côté application (PR A).
-        const serverOnly = Object.keys(TEXT_CONSENT_VERSIONS).filter(feature => !(feature in AI_TEXT_CONSENT_VERSIONS));
-        expect(serverOnly.filter(feature => feature !== 'search')).toEqual([]);
+    it('versions des accords : égalité stricte des deux tables (application et fonction)', () => {
+        // PR B de la recherche : les trois fonctionnalités texte ont leur
+        // texte d'accord ; aucune version n'existe d'un seul côté.
+        expect(AI_TEXT_CONSENT_VERSIONS).toEqual(TEXT_CONSENT_VERSIONS);
+        expect(Object.keys(AI_TEXT_CONSENT_VERSIONS).sort()).toEqual(['note', 'search', 'summary']);
     });
 
-    it('la recherche n’a pas encore de consentement côté application, et sa version serveur est provisoire', () => {
-        // PR A : version provisoire côté fonction, plus longue que les 32
-        // caractères de `ai_consents.version` : aucun accord ne l'atteint.
-        // PR B : déclarer la recherche ici impose de la remplacer des deux
-        // côtés par une version enregistrable (texte du consentement écrit).
-        if (AI_TEXT_CONSENT_VERSIONS.search === undefined) {
-            expect(TEXT_CONSENT_VERSIONS.search?.length).toBeGreaterThan(32);
-        } else {
-            expect(AI_TEXT_CONSENT_VERSIONS.search.length).toBeGreaterThan(0);
-            expect(AI_TEXT_CONSENT_VERSIONS.search.length).toBeLessThanOrEqual(32);
+    it('la version de la recherche est enregistrable (32 caractères au plus), la provisoire de la PR A est remplacée', () => {
+        for (const version of Object.values(AI_TEXT_CONSENT_VERSIONS)) {
+            expect(version.length).toBeGreaterThan(0);
+            expect(version.length).toBeLessThanOrEqual(32);
         }
+        expect(AI_TEXT_CONSENT_VERSIONS.search).toBe('2026-11-v1');
+        expect(TEXT_CONSENT_VERSIONS.search).not.toBe('pr-a-fermee-jusqu-au-texte-de-la-pr-b');
     });
 
     it('la version provisoire de la note (PR A) n’est plus acceptée', () => {
@@ -410,8 +398,27 @@ describe('consentements par fonctionnalité', () => {
         ]);
     });
 
+    it('donne l’accord de la recherche sous sa version, puis le retire', async () => {
+        await giveConsent('search');
+        expect(calls).toEqual([
+            ['delete', 'ai_consents'],
+            ['eq', 'user_id', 'user-1'],
+            ['eq', 'feature', 'search'],
+            ['insert', 'ai_consents', { user_id: 'user-1', feature: 'search', version: '2026-11-v1' }],
+        ]);
+        calls.length = 0;
+        await withdrawConsent('search');
+        expect(calls).toEqual([['delete', 'ai_consents'], ['eq', 'user_id', 'user-1'], ['eq', 'feature', 'search']]);
+    });
+
     it('refuse une fonctionnalité sans texte de consentement livré', async () => {
-        await expect(giveConsent('search')).rejects.toMatchObject({ code: 'invalid_request' });
+        await expect(giveConsent('inconnue' as never)).rejects.toMatchObject({ code: 'invalid_request' });
+        expect(calls).toEqual([]);
+    });
+
+    it('n’enregistre aucun accord hors ligne', async () => {
+        setOnline(false);
+        await expect(giveConsent('search')).rejects.toMatchObject({ code: 'offline' });
         expect(calls).toEqual([]);
     });
 

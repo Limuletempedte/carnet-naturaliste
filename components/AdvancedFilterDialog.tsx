@@ -34,6 +34,8 @@ interface AdvancedFilterDialogProps {
     onSavePreset: (name: string) => void;
     onApplyPreset: (presetId: string) => void;
     onDeletePreset: (presetId: string) => void;
+    /** Une recherche en langage naturel applique des critères qu'un preset ne peut pas garder. */
+    naturalSearchActive?: boolean;
 }
 
 const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
@@ -57,7 +59,8 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
     onReset,
     onSavePreset,
     onApplyPreset,
-    onDeletePreset
+    onDeletePreset,
+    naturalSearchActive = false
 }) => {
     const [presetName, setPresetName] = React.useState('');
     const { dialogRef, dialogProps } = useAccessibleDialog({ isOpen, onClose, titleId: 'advanced-filter-dialog-title' });
@@ -196,6 +199,11 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
                         />
                         <button onClick={handleSavePreset} className="px-3 py-2 rounded-lg bg-nature-green text-white text-sm font-semibold">Sauvegarder</button>
                     </div>
+                    {naturalSearchActive && (
+                        <p className="mb-3 text-xs text-amber-800 dark:text-amber-200" data-testid="preset-natural-search-note">
+                            La recherche en langage naturel en cours utilise des critères (catégories, mois de toutes les années, habitats…) qu'un preset ne peut pas enregistrer : seuls les filtres classiques seront gardés.
+                        </p>
+                    )}
                     <div className="space-y-2">
                         {presets.length === 0 ? (
                             <p className="text-xs text-gray-500 dark:text-gray-400">Aucun preset sauvegardé.</p>

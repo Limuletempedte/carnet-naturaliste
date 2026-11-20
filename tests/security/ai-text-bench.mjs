@@ -262,7 +262,7 @@ try {
     });
     const searchReserve = rpcCalls.find(c => c.name === 'ai_reserve_call');
     assert.equal(searchReserve.body.p_feature, 'search');
-    assert.equal(searchReserve.body.p_consent_version, 'pr-a-fermee-jusqu-au-texte-de-la-pr-b');
+    assert.equal(searchReserve.body.p_consent_version, '2026-11-v1');
     assert(searchReserve.body.p_max_cost_usd > 0.04 && searchReserve.body.p_max_cost_usd < 0.05, String(searchReserve.body.p_max_cost_usd));
     assert.deepEqual(rpcCalls.find(c => c.name === 'ai_finalize_call').body, { p_id: 'usage-1', p_status: 'ok', p_input_tokens: 1000, p_output_tokens: 400, p_cost_usd: 0.006 });
     const searchSent = anthReqs.at(-1);
@@ -274,7 +274,7 @@ try {
     assert.match(searchSent.messages[0].content, /<phrase>".*rapaces vus en mai.*\\u003cimg/);
     assert.doesNotMatch(searchSent.messages[0].content, /<img/);
     assert.doesNotMatch(JSON.stringify(searchSent), /2026-11-20|44\.8|-0\.58|Buse variable/);
-    ok('recherche 200 : p_feature=search, accord provisoire impossible à enregistrer, coût max ≈ 0,042 $, max_tokens 2 500, seule la phrase envoyée (délimitée, « < » échappé), ni date, ni position, ni observation ; commune inventée retirée et signalée (dropped), rayon par défaut 10 km');
+    ok('recherche 200 : p_feature=search, accord en version 2026-11-v1, coût max ≈ 0,042 $, max_tokens 2 500, seule la phrase envoyée (délimitée, « < » échappé), ni date, ni position, ni observation ; commune inventée retirée et signalée (dropped), rayon par défaut 10 km');
 
     rpcCalls.length = 0; anthMode = 'not_json';
     const sj = await call({ body: searchBody });

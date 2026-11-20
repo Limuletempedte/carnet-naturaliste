@@ -15,6 +15,7 @@ import {
     type AiOverview,
     type AiTextFeature,
 } from '../services/aiAssistService';
+import { clearNaturalSearchCache } from '../services/naturalSearchCache';
 import { captureSessionContext, isSessionCurrent, type SessionContext } from '../services/sessionScope';
 import { SparklesIcon } from './icons';
 import { AiFeatureConsentText, consentCheckboxLabel } from './AiConsentCard';
@@ -124,6 +125,13 @@ const FEATURES: readonly FeatureInfo[] = [
         where: "Formulaire d'observation, en haut de la section Identification : « Remplir depuis une note ».",
         sent: "Le texte de la note tel que vous l'avez écrit (ou le commentaire repris comme note), lieux et noms compris. Jamais la date, la position GPS, la photo ni le reste de la fiche.",
     },
+    {
+        key: 'search',
+        title: 'Recherche',
+        purpose: "Traduit en filtres une phrase de recherche (« les rapaces vus en mai près de chez moi ») quand l'analyse gratuite ne la comprend pas entièrement. Les filtres sont appliqués sur l'appareil.",
+        where: "Liste des observations, sous le champ de recherche : « Interpréter avec l'IA ».",
+        sent: "La phrase telle que vous l'avez écrite (200 caractères au plus), lieux et noms compris. Jamais d'observation ni de position. Les phrases comprises sont gardées dans ce navigateur (50 au plus).",
+    },
 ];
 
 /** Libellé du bouton de retrait propre à chaque fonctionnalité texte. */
@@ -211,8 +219,9 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
         () => { setJustRequested(true); setConsentChecked(false); },
     );
 
+    // Retirer l'accord efface aussi les phrases de recherche gardées dans ce navigateur.
     const handleWithdraw = () => runAction(
-        context => withdrawAccess(context),
+        context => withdrawAccess(context).then(() => clearNaturalSearchCache(context)),
         () => { setConfirmWithdraw(false); setJustRequested(false); },
     );
 
@@ -222,7 +231,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
     );
 
     const handleWithdrawConsent = (feature: AiTextFeature) => runAction(
-        context => withdrawConsent(feature, context),
+        context => withdrawConsent(feature, context).then(() => { if (feature === 'search') clearNaturalSearchCache(context); }),
         () => undefined,
     );
 
@@ -261,7 +270,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
             {confirmWithdraw ? (
                 <div className="space-y-2">
                     <p className="text-sm text-gray-700 dark:text-gray-300">
-                        Votre demande ou votre accès sera supprimé, ainsi que vos accords aux autres fonctions (bilan du mois, note → fiche). Pour réutiliser l'assistant, il faudra refaire une demande, validée à nouveau à la main.
+                        Votre demande ou votre accès sera supprimé, ainsi que vos accords aux autres fonctions (bilan du mois, note → fiche, recherche) ; les phrases de recherche gardées dans ce navigateur sont effacées. Pour réutiliser l'assistant, il faudra refaire une demande, validée à nouveau à la main.
                     </p>
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => void handleWithdraw()} disabled={isWorking || isOffline} className={dangerButton}>

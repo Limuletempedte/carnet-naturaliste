@@ -44,8 +44,8 @@ export type AiFeature = 'identify' | AiTextFeature;
 
 /**
  * Version du texte de consentement de chaque fonctionnalité texte livrée
- * (`SummaryConsentText` pour `summary`, `NoteConsentText` pour `note`, dans
- * components/AiConsentCard.tsx). Chaque version déclarée ici doit rester
+ * (`SummaryConsentText` pour `summary`, `NoteConsentText` pour `note`,
+ * `SearchConsentText` pour `search`, dans components/AiConsentCard.tsx). Chaque version déclarée ici doit rester
  * ÉGALE à celle de `CONSENT_VERSIONS` dans supabase/functions/ai-text/logic.ts
  * (test dédié) : changer le texte impose de changer les deux, et chacun devra
  * redonner son accord. Une fonctionnalité déclarée ici a sa carte dans
@@ -54,6 +54,7 @@ export type AiFeature = 'identify' | AiTextFeature;
 export const AI_TEXT_CONSENT_VERSIONS: Readonly<Partial<Record<AiTextFeature, string>>> = {
     summary: '2026-11-v1',
     note: '2026-11-v1',
+    search: '2026-11-v1',
 };
 
 /** Côté maximal accepté par la fonction (`MAX_IMAGE_SIDE_PX`). */
@@ -158,6 +159,25 @@ const FEATURE_ERROR_MESSAGES: Partial<Record<AiTextFeature, Partial<Record<AiAss
         misconfigured: "L'assistant est momentanément indisponible. Votre note est gardée : réessayez plus tard.",
         internal_error: "Une erreur est survenue pendant l'analyse de la note. Cette tentative peut compter dans votre quota ; réessayez plus tard.",
         unknown: "Une erreur est survenue avec l'assistant. Votre note est gardée ; cette tentative peut compter dans votre quota. Réessayez plus tard.",
+    },
+    search: {
+        offline: "L'interprétation par l'IA n'est possible qu'en ligne. L'analyse gratuite et les phrases déjà comprises marchent hors ligne.",
+        cancelled: "Interprétation arrêtée : rien n'a été appliqué. Si la phrase était déjà partie, cette tentative peut compter dans votre quota.",
+        timeout: "L'interprétation a pris trop de temps : rien n'a été appliqué. Cette tentative peut compter dans votre quota ; réessayez plus tard.",
+        stale_session: "Interprétation arrêtée : le compte actif a changé. Rien n'a été appliqué.",
+        network: "Connexion interrompue pendant l'interprétation. Rien n'a été appliqué ; cette tentative peut compter dans votre quota. Réessayez quand le réseau est stable.",
+        consent_outdated: "Le texte d'accord de la recherche a changé : relisez-le et redonnez votre accord.",
+        busy: "Une phrase est déjà en cours d'interprétation. Patientez quelques instants.",
+        quota_exceeded: "Vous avez utilisé toutes vos utilisations IA de ce mois. Le compteur repart le 1er du mois. L'analyse gratuite reste disponible.",
+        upstream_unavailable: "Le service d'interprétation est momentanément indisponible. L'analyse gratuite reste disponible ; réessayez plus tard.",
+        model_refused: "L'assistant n'a pas pu interpréter cette phrase : rien n'a été appliqué. Cette tentative compte dans votre quota.",
+        invalid_output: "La réponse de l'assistant était inexploitable : rien n'a été appliqué. Cette tentative compte dans votre quota.",
+        payload_too_large: 'La phrase est trop longue : 200 caractères au plus.',
+        invalid_request: "La phrase n'a pas pu être envoyée (vide ou trop longue ?).",
+        feature_disabled: "La recherche avec l'IA est momentanément indisponible. L'analyse gratuite reste disponible ; réessayez plus tard.",
+        misconfigured: "L'assistant est momentanément indisponible. L'analyse gratuite reste disponible ; réessayez plus tard.",
+        internal_error: "Une erreur est survenue pendant l'interprétation. Cette tentative peut compter dans votre quota ; réessayez plus tard.",
+        unknown: "Une erreur est survenue avec l'assistant. Cette tentative peut compter dans votre quota ; réessayez plus tard.",
     },
 };
 

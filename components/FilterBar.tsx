@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Status } from '../types';
+import type { AppliedNaturalSearch } from '../hooks/useFilterControls';
+import type { CriterionRef, NearResolution } from '../utils/aiSearchFilters';
+import { NaturalSearchApplied } from './NaturalSearch';
 
 interface FilterBarProps {
     searchTerm: string;
@@ -11,7 +14,16 @@ interface FilterBarProps {
     availableYears: string[];
     isMobileView: boolean;
     searchId?: string;
+    /** Recherche en langage naturel appliquée : ses étiquettes restent visibles ici aussi. */
+    naturalSearch?: AppliedNaturalSearch | null;
+    onRemoveNaturalCriterion?: (ref: CriterionRef) => void;
+    onUpdateNaturalNear?: (near: NearResolution) => void;
+    onUndoNaturalSearch?: () => void;
+    onResetAllFilters?: () => void;
+    excludedNoLatinName?: number;
 }
+
+const noop = () => undefined;
 
 const FilterBar: React.FC<FilterBarProps> = ({
     searchTerm,
@@ -22,8 +34,15 @@ const FilterBar: React.FC<FilterBarProps> = ({
     onStatusChange,
     availableYears,
     isMobileView,
-    searchId = 'search-input-filter'
+    searchId = 'search-input-filter',
+    naturalSearch = null,
+    onRemoveNaturalCriterion = noop,
+    onUpdateNaturalNear = noop,
+    onUndoNaturalSearch = noop,
+    onResetAllFilters = noop,
+    excludedNoLatinName = 0,
 }) => {
+    const [announcement, setAnnouncement] = useState('');
     // Identifiants dérivés du searchId pour rester uniques si plusieurs FilterBar
     // coexistent (UIA-06 : labels Année/Statut sans association).
     const yearId = `${searchId}-year`;
@@ -71,6 +90,20 @@ const FilterBar: React.FC<FilterBarProps> = ({
                     </select>
                 </div>
             </div>
+            {/* Les filtres de la recherche en langage naturel s'appliquent ici aussi : jamais sans leurs étiquettes. */}
+            {naturalSearch && (
+                <NaturalSearchApplied
+                    naturalSearch={naturalSearch}
+                    onRemoveCriterion={onRemoveNaturalCriterion}
+                    onUpdateNear={onUpdateNaturalNear}
+                    onUndo={() => { onUndoNaturalSearch(); setAnnouncement('Recherche annulée : les filtres d’avant sont rétablis.'); }}
+                    onResetAll={() => { onResetAllFilters(); setAnnouncement('Tous les filtres sont réinitialisés.'); }}
+                    excludedNoLatinName={excludedNoLatinName}
+                    onAnnounce={setAnnouncement}
+                    compact={isMobileView}
+                />
+            )}
+            <p role="status" aria-live="polite" className="sr-only">{announcement}</p>
         </div>
     );
 };

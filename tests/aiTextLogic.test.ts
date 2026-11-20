@@ -120,9 +120,8 @@ describe('ai-text — constantes communes avec ai-identify', () => {
 describe('ai-text — fonctionnalités et consentements', () => {
     it('livre le bilan du mois et la note, chacun avec sa version de consentement', () => {
         expect(Object.keys(TEXT_FEATURES)).toEqual(['summary', 'note', 'search']);
-        // `search` : version provisoire de la PR A (côté fonction seulement),
-        // impossible à enregistrer (tests/aiTextSearch.test.ts).
-        expect(CONSENT_VERSIONS).toEqual({ summary: '2026-11-v1', note: '2026-11-v1', search: 'pr-a-fermee-jusqu-au-texte-de-la-pr-b' });
+        // `search` : vraie version depuis la PR B de la recherche (texte écrit).
+        expect(CONSENT_VERSIONS).toEqual({ summary: '2026-11-v1', note: '2026-11-v1', search: '2026-11-v1' });
         for (const name of Object.keys(TEXT_FEATURES)) {
             expect(ALL_TEXT_FEATURES as readonly string[]).toContain(name);
         }

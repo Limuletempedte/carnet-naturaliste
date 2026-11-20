@@ -176,6 +176,13 @@ const App: React.FC = () => {
         saveFilterPreset,
         applyFilterPreset,
         deleteFilterPreset,
+        naturalSearch,
+        applyNaturalSearch,
+        removeNaturalCriterion,
+        updateNaturalNear,
+        undoNaturalSearch,
+        resetAllFilters,
+        hasActiveFilters,
     } = useFilterControls({ onToast: pushToast });
 
     // Synchronisation manuelle de la file hors-ligne (centre de synchro) extraite
@@ -601,7 +608,7 @@ const App: React.FC = () => {
         }
     };
 
-    const { sortConfig, requestSort, sortedAndFilteredObservations, availableYears } = useObservationFilters(
+    const { sortConfig, requestSort, sortedAndFilteredObservations, availableYears, excludedNoLatinName } = useObservationFilters(
         observations,
         filters,
         additionalSorts
@@ -901,6 +908,7 @@ const App: React.FC = () => {
                 onSavePreset={saveFilterPreset}
                 onApplyPreset={applyFilterPreset}
                 onDeletePreset={deleteFilterPreset}
+                naturalSearchActive={naturalSearch?.plan.aiFilter != null}
             />
             <StatsExportDialog
                 isOpen={isStatsExportDialogOpen}
@@ -965,6 +973,16 @@ const App: React.FC = () => {
                             isMobileView={isMobileView}
                             isBulkDeleting={isBulkDeleting}
                             isImporting={isImporting}
+                            naturalSearch={naturalSearch}
+                            onApplyNaturalSearch={applyNaturalSearch}
+                            onRemoveNaturalCriterion={removeNaturalCriterion}
+                            onUpdateNaturalNear={updateNaturalNear}
+                            onUndoNaturalSearch={undoNaturalSearch}
+                            onResetAllFilters={resetAllFilters}
+                            hasActiveFilters={hasActiveFilters}
+                            excludedNoLatinName={excludedNoLatinName}
+                            isOffline={isOffline}
+                            onOpenAiAccess={openAiAccessDialog}
                         />
                     ) : view === View.MAP ? (
                         <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>
@@ -978,6 +996,12 @@ const App: React.FC = () => {
                                 availableYears={availableYears}
                                 isMobileView={isMobileView}
                                 searchId="search-input-map"
+                                naturalSearch={naturalSearch}
+                                onRemoveNaturalCriterion={removeNaturalCriterion}
+                                onUpdateNaturalNear={updateNaturalNear}
+                                onUndoNaturalSearch={undoNaturalSearch}
+                                onResetAllFilters={resetAllFilters}
+                                excludedNoLatinName={excludedNoLatinName}
                             />
 
                             <ObservationMap
@@ -1029,6 +1053,12 @@ const App: React.FC = () => {
                                 availableYears={availableYears}
                                 isMobileView={isMobileView}
                                 searchId="search-input-gallery"
+                                naturalSearch={naturalSearch}
+                                onRemoveNaturalCriterion={removeNaturalCriterion}
+                                onUpdateNaturalNear={updateNaturalNear}
+                                onUndoNaturalSearch={undoNaturalSearch}
+                                onResetAllFilters={resetAllFilters}
+                                excludedNoLatinName={excludedNoLatinName}
                             />
                             <ObservationGallery
                                 observations={sortedAndFilteredObservations}
