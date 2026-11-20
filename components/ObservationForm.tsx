@@ -25,6 +25,15 @@ import { AiAssistError, identifySpecies, readCachedAiCounter, rememberRemaining,
 import AiButton from './AiButton';
 import { suggestSpeciesAutocomplete, type SpeciesSuggestion } from '../services/speciesService';
 import { MapPinIcon, XMarkIcon } from './icons';
+import AiNoteAssist, { type NoteApplyReport, type NoteApplyRequest } from './AiNoteAssist';
+import {
+    appendToComment,
+    applyNoteFields,
+    findExactSpeciesMatch,
+    NOTE_FORM_KEYS,
+    NOTE_PROPOSAL_LABELS,
+    noteSpeciesQuery,
+} from '../utils/aiNoteMapping';
 
 const MapInput = lazy(() => import('./MapInput'));
 
@@ -52,6 +61,8 @@ const normalizeLatin = (value: string): string => value.trim().replace(/\s+/g, '
 const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, initialPosition, onToast, isOffline = false, onOpenAiAccess }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
     const [formData, setFormData] = useState<ObservationFormData>(() => createEmptyFormData(defaultTaxonomicGroup));
+    /** Date et heure de départ d'une nouvelle fiche (« valeurs par défaut » pour la note). */
+    const [formDefaults, setFormDefaults] = useState<Pick<ObservationFormData, 'date' | 'time'> | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showMap, setShowMap] = useState(false);
     const [showAdvancedLocation, setShowAdvancedLocation] = useState(false);
@@ -105,8 +116,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 status: initialData.status !== Status.NE,
                 weather: initialData.weather !== WeatherCondition.UNKNOWN
             });
+            setFormDefaults(null);
         } else {
-            setFormData(createEmptyFormData(defaultTaxonomicGroup));
+            const empty = createEmptyFormData(defaultTaxonomicGroup);
+            setFormData(empty);
+            setFormDefaults({ date: empty.date, time: empty.time });
             setFieldTouched({ latinName: false, taxonomicGroup: false, status: false, weather: false });
         }
     }, [defaultTaxonomicGroup, initialData]);
@@ -464,6 +478,112 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         void applyAiCandidate(candidate, false);
     };
 
+    // --- Note → fiche (IA) ---------------------------------------------------
+    // Le panneau propose, l'observateur coche, puis « Appliquer la sélection »
+    // arrive ici : l'espèce d'abord (même vérification du nom que pour la
+    // photo), puis les autres champs, marqués comme modifiés. Une seule
+    // action, annulable : l'état d'avant est gardé jusqu'à la suivante.
+    const formDataRef = useRef(formData);
+    useEffect(() => { formDataRef.current = formData; }, [formData]);
+    const noteUndoRef = useRef<{ form: ObservationFormData; touched: typeof fieldTouched } | null>(null);
+    const [noteLatinQuestion, setNoteLatinQuestion] = useState<{ typed: string; proposed: string; resolve: (replace: boolean) => void } | null>(null);
+
+    const askNoteLatinReplacement = (typed: string, proposed: string) => new Promise<boolean>(resolve => {
+        setNoteLatinQuestion({ typed, proposed, resolve });
+    });
+
+    const handleNoteApply = async (request: NoteApplyRequest): Promise<NoteApplyReport | null> => {
+        const { result, selection, signal } = request;
+        const warnings: string[] = [];
+        const appliedLabels: string[] = [];
+        let match: SpeciesSuggestion | undefined;
+        let replaceLatin = false;
+        const wantsSpecies = selection.has('species') && noteSpeciesQuery(result) !== null;
+
+        if (wantsSpecies) {
+            const lookup = noteSpeciesQuery(result)!;
+            const typedLatin = (formDataRef.current.latinName ?? '').trim();
+            // Un nom latin tapé à la main n'est remplacé qu'après confirmation ;
+            // « Annuler » n'applique rien du tout.
+            if (result.scientificName && fieldTouched.latinName && typedLatin
+                && normalizeLatin(typedLatin) !== normalizeLatin(result.scientificName)) {
+                replaceLatin = await askNoteLatinReplacement(typedLatin, result.scientificName);
+                if (signal.aborted || !replaceLatin) return null;
+            }
+            try {
+                const suggestions = await suggestSpeciesAutocomplete(lookup.query, 5, { signal });
+                match = findExactSpeciesMatch(suggestions, result);
+            } catch {
+                // Message fixe : l'erreur d'origine pourrait citer le nom cherché.
+                logger.warn('[aiAssist] note : vérification du nom impossible');
+            }
+            if (signal.aborted) return null;
+        }
+
+        // Tout est appliqué d'un coup, à partir de l'état le plus récent.
+        const before = formDataRef.current;
+        noteUndoRef.current = { form: before, touched: fieldTouched };
+        let speciesLatin: string | null = null;
+        if (wantsSpecies) {
+            if (match) {
+                const matched = match;
+                applySpeciesAutocompleteSuggestion(matched);
+                if (replaceLatin || !fieldTouched.latinName || !(before.latinName ?? '').trim()) speciesLatin = matched.latinName;
+                appliedLabels.push(`espèce (${matched.displayName})`);
+            } else {
+                const name = result.speciesName ?? result.scientificName ?? '';
+                if (result.scientificName && (replaceLatin || !fieldTouched.latinName || !(before.latinName ?? '').trim())) {
+                    speciesLatin = result.scientificName;
+                }
+                setFormData(prev => ({ ...prev, speciesName: name }));
+                appliedLabels.push('espèce');
+                warnings.push("Nom introuvable dans iNaturalist et GBIF : l'espèce a été remplie telle que proposée. Vérifiez-la avant d'enregistrer.");
+            }
+        }
+
+        const outcome = applyNoteFields(before, result, selection, {
+            referenceDate: request.referenceDate,
+            today: request.today,
+            keepNote: request.keepNote,
+            noteText: request.noteText,
+        });
+        const changes: Partial<ObservationFormData> = {};
+        for (const key of NOTE_FORM_KEYS) {
+            if (outcome.form[key] !== before[key]) (changes as Record<string, unknown>)[key] = outcome.form[key];
+        }
+        setFormData(prev => ({
+            ...prev,
+            ...changes,
+            ...(speciesLatin !== null ? { latinName: speciesLatin } : {}),
+        }));
+        // Marqués comme modifiés : la météo automatique ne les écrasera pas,
+        // l'enrichissement de l'espèce non plus pour le nom latin.
+        setFieldTouched(prev => ({
+            ...prev,
+            weather: prev.weather || outcome.weatherApplied,
+            latinName: prev.latinName || speciesLatin !== null,
+        }));
+        if (outcome.touchesAdvancedLocation) setShowAdvancedLocation(true);
+        if (outcome.touchesAdvancedDetails) setShowAdvancedDetails(true);
+
+        appliedLabels.push(...outcome.applied.map(key => NOTE_PROPOSAL_LABELS[key].toLocaleLowerCase('fr')));
+        if (changes.comment !== undefined && request.keepNote) appliedLabels.push('note gardée dans le commentaire');
+        warnings.push(...outcome.skipped.map(item => item.reason));
+        return { applied: appliedLabels, warnings };
+    };
+
+    const handleNoteUndo = () => {
+        const saved = noteUndoRef.current;
+        if (!saved) return;
+        noteUndoRef.current = null;
+        setFormData(saved.form);
+        setFieldTouched(saved.touched);
+    };
+
+    const handleKeepNoteOnly = (noteText: string) => {
+        setFormData(prev => ({ ...prev, comment: appendToComment(prev.comment, noteText) }));
+    };
+
     const aiNeedsAccess = aiState.phase === 'error'
         && (aiState.error.code === 'not_approved' || aiState.error.code === 'consent_outdated');
     const performSave = async (addAnother: boolean) => {
@@ -549,6 +669,19 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-8">
                         <FormSection title="Identification">
+                            <AiNoteAssist
+                                formData={formData}
+                                formDefaults={formDefaults}
+                                isEditing={!!initialData}
+                                session={formSession}
+                                isOffline={isOffline}
+                                remaining={aiRemaining}
+                                onRemainingChange={setAiRemaining}
+                                onApply={handleNoteApply}
+                                onUndo={handleNoteUndo}
+                                onKeepNoteOnly={handleKeepNoteOnly}
+                                onOpenAiAccess={onOpenAiAccess}
+                            />
                             <div className="lg:col-span-2">
                                 <label htmlFor="speciesName" className={labelClass}>Nom de l'espèce *</label>
                                 <div className="relative" ref={speciesInputWrapperRef}>
@@ -1053,6 +1186,23 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 }}
                 title="Remplacer le nom latin ?"
                 message={`Vous aviez saisi « ${(formData.latinName ?? '').trim()} ». Le remplacer par « ${pendingLatinReplacement?.scientificName ?? ''} » ?`}
+            />
+
+            <ConfirmationDialog
+                isOpen={noteLatinQuestion !== null}
+                onClose={() => {
+                    // « Confirmer » appelle onClose AVANT onConfirm : le « non »
+                    // est donc différé, et un « oui » qui suit l'emporte.
+                    const question = noteLatinQuestion;
+                    queueMicrotask(() => question?.resolve(false));
+                    setNoteLatinQuestion(null);
+                }}
+                onConfirm={() => {
+                    noteLatinQuestion?.resolve(true);
+                    setNoteLatinQuestion(null);
+                }}
+                title="Remplacer le nom latin ?"
+                message={`Vous aviez saisi « ${noteLatinQuestion?.typed ?? ''} ». Le remplacer par « ${noteLatinQuestion?.proposed ?? ''} », proposé par la note ? Sinon, rien n'est appliqué : décochez l'espèce pour garder votre nom.`}
             />
 
             {/* Sticky Save/Cancel Bar */}

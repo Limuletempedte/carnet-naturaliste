@@ -12,7 +12,8 @@
 - **Deuxième lot (note → fiche)** : **PR A** (partie serveur, invisible) fusionnée le 2026-11-20 (#130), voir « Écarts de mise en œuvre (PR A de la note) » ci-dessous.
   - **En production le 2026-11-20, note fermée** (`docs/ops/ASSISTANT-IA.md` §6.7) : `AI_DISABLED_FEATURES=note`, `ai-text` déployée (version 7), contrôles 401, 204 et 403 corrects, bilan vérifié, note vérifiée fermée (`503 feature_disabled`).
   - **Essai du 2026-11-20** sur `tests/security/fixtures/ai-text-trial-note.json` : Sonnet 5.5 319 champs justes sur 320, Haiku 5.5 318 sur 320 avec 4 restes de note qui commentent le travail du modèle. **Modèle retenu par le propriétaire : `claude-sonnet-5-5`** (environ 0,01 $ par note), sans réglage par fonctionnalité. Retouches tirées de l'essai : autres espèces **observées** (pas un arbre perchoir), aucun commentaire du modèle dans le reste de la note, « Non renseigné » écrit dans un texte libre traité comme une absence. Passage de contrôle après retouches : 319 sur 320, seul écart jugé acceptable (« jardin » proposé comme lieu).
-  - Suite : PR B (application et textes légaux), puis ouverture de la note (qui redéploie `ai-text` avec ces retouches).
+  - **PR B** (application et textes légaux) : PR ouverte le 2026-11-20, non fusionnée, voir « Écarts de mise en œuvre (PR B de la note) » ci-dessous. Consentement de la note en version `2026-11-v1` des deux côtés.
+  - Suite : fusion de la PR B, puis ouverture de la note (`docs/ops/ASSISTANT-IA.md` §6.7, « Ouvrir la note après la fusion de la PR B »), qui redéploie `ai-text` avec ces retouches.
 - **Écarts de mise en œuvre (PR A du bilan)** :
   - la migration finit par `notify pgrst, 'reload schema'`, et `ai_my_status` est remplacée par `create or replace` (droits conservés) ;
   - la migration de secours (`docs/ops/retour-arriere-ai-text-features.sql`) **garde** la contrainte élargie et la table `ai_consents` : remettre l'ancienne contrainte échouerait dès qu'une ligne `summary` existe ;
@@ -64,6 +65,19 @@
   - sans année, une date absolue peut être un 29 février : l'application choisit l'occurrence passée qui existe ;
   - ne jamais appliquer un champ nommé dans `dropped` ;
   - idée : journaliser dans `index.ts` le **nombre** de champs retirés (jamais leur contenu), pour voir en production un modèle qui dérive.
+- **Écarts de mise en œuvre (PR B de la note)** :
+  - deux composants : `components/AiNoteAssist.tsx` (bouton, zone de texte, accord, envoi, annulation) et `components/AiNotePanel.tsx` (relecture, affichage seul) ; l'application au formulaire reste dans `ObservationForm.tsx` (chemin de l'aide photo) et la logique pure dans `utils/aiNoteMapping.ts` ;
+  - le résultat est **relu une seconde fois** par l'application (`parseNoteResult`) : bornes, listes fermées de `types.ts`, caractères invisibles ; un champ illisible rejoint `dropped`, et un champ de `dropped` n'est jamais proposé ni appliqué ;
+  - **répartition** : mâles et femelles forment une seule proposition ; le reste du total devient « non identifiés » (affiché dans le panneau), car le formulaire exige mâles + femelles + non identifiés = total. Si la répartition ne tient pas avec le total gardé, elle n'est pas appliquée et la raison est dite ;
+  - **dates** : calculées par rapport à la date de la fiche **à l'ouverture du panneau**, jamais après la date du jour ; une date égale à la date actuelle (« aujourd'hui ») n'est pas proposée ;
+  - **pré-cochage** : pour une nouvelle fiche, la date et l'heure du jour comptent comme valeurs par défaut ; pour une fiche existante, jamais ; le nombre 1 compte comme valeur par défaut ;
+  - **nom latin tapé à la main** : refuser son remplacement n'applique **rien** (on décoche l'espèce pour garder son nom), plutôt qu'une application partielle ;
+  - **annulation** : « Annuler l'application » rend la fiche telle qu'elle était juste avant le clic (une modification faite après l'application est perdue elle aussi) et revient au panneau, pour réappliquer sans repayer ;
+  - **reste de la note** : masqué quand « Garder la note dans le commentaire » est coché (la note entière le contient), pour éviter tout doublon ;
+  - **météo** : la récupération automatique n'est relancée que par un **changement de lieu** (`handleLocationChange`, qui lit la date de la fiche), pas par un changement de date comme l'écrivait le plan ; marquer la météo comme modifiée la protège dans les deux cas ;
+  - **hors ligne** : le bouton est désactivé ; une zone déjà ouverte propose « Mettre la note dans le commentaire ». « Analyser le commentaire » s'appelle « Reprendre le commentaire de la fiche comme note » (fiche existante, commentaire non vide) ;
+  - **affichage sûr** : vérifié sans correction nécessaire. La fenêtre de la carte construit son contenu avec `textContent` (`components/ObservationMap.tsx`, `buildPopupContent`), l'export des statistiques échappe les noms (`escHtml`, `services/statsExportService.ts`), et l'icône de la carte n'écrit le groupe que pour un groupe connu. Les champs de la note sont affichés en texte React ;
+  - pas de journalisation du nombre de champs retirés : `index.ts` reste inchangé, comme décidé.
 - **Base** : `main` à `57bbbe5`. La phase 1 (`docs/plans/assistant-ia-phase1.md`) est en production : fonction `ai-identify`, tables `ai_access` et `ai_usage`, fonctions SQL `ai_reserve_call`, `ai_finalize_call` et `ai_my_status`.
 - **Ordre de livraison** : **bilan du mois (phase 3) → note → fiche (phase 2) → recherche (phase 4)**. La première livraison porte le socle commun ; le bilan est la fonctionnalité la moins risquée pour l'éprouver, puisqu'il ne remplit aucun champ et n'envoie que des chiffres.
 - **Exploitation** : `docs/ops/ASSISTANT-IA.md`, à compléter dans chaque PR A.

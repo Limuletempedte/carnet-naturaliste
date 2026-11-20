@@ -55,3 +55,39 @@ describe('AiConsentCard — bilan du mois', () => {
         expect((screen.getByRole('button', { name: 'Accepter' }) as HTMLButtonElement).disabled).toBe(true);
     });
 });
+
+describe('AiConsentCard — note → fiche', () => {
+    it('reprend tous les points du consentement de la note', () => {
+        render(<AiConsentCard feature="note" onAccept={vi.fn()} onCancel={vi.fn()} />);
+        const text = screen.getByTestId('ai-note-consent-text').textContent ?? '';
+        expect(text).toMatch(/Ce qui est envoyé/);
+        expect(text).toMatch(/Le texte de la note, tel que vous l'avez écrit/);
+        expect(text).toMatch(/y compris les lieux et les noms de personnes/);
+        expect(text).toMatch(/Ce qui n'est pas envoyé/);
+        expect(text).toMatch(/Ni la date ni l'heure de la fiche, ni coordonnées GPS/);
+        expect(text).toMatch(/ni le reste de la fiche/);
+        expect(text).toMatch(/Anthropic Ireland Ltd/);
+        expect(text).toMatch(/États-Unis/);
+        expect(text).toMatch(/clauses contractuelles types/);
+        expect(text).toMatch(/30 jours/);
+        expect(text).toMatch(/2 ans si un contrôle de sécurité/);
+        expect(text).toMatch(/ne servent pas à entraîner/);
+        expect(text).toMatch(/C'est une aide/);
+        expect(text).toMatch(/c'est vous qui choisissez/);
+        expect(text).toMatch(/1 utilisation sur les 20 du mois/);
+        expect(text).toMatch(/refus de l'assistant ou une réponse inexploitable compte aussi/);
+        expect(text).toMatch(/Retirer mon accord à la note/);
+    });
+
+    it('exige la case avant d’accepter', () => {
+        const onAccept = vi.fn();
+        render(<AiConsentCard feature="note" onAccept={onAccept} onCancel={vi.fn()} acceptLabel="Accepter et analyser" />);
+        const accept = screen.getByRole('button', { name: 'Accepter et analyser' }) as HTMLButtonElement;
+        expect(accept.disabled).toBe(true);
+        expect(screen.getByRole('checkbox', { name: /envoi du texte de mes notes/ })).toBeTruthy();
+        fireEvent.click(screen.getByRole('checkbox'));
+        fireEvent.click(accept);
+        expect(onAccept).toHaveBeenCalledTimes(1);
+    });
+});
+

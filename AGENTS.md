@@ -50,7 +50,7 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 
 ## Tests
 - Framework : Vitest + Testing Library React
-- Dernière validation du 20 novembre 2026 : 91 fichiers de tests (847 tests) couvrant composants, services et utils
+- Dernière validation du 20 novembre 2026 : 94 fichiers de tests (922 tests) couvrant composants, services et utils
 - Lancer `npm run test:run` pour valider les changements
 
 ## Deploiement et pieges a connaitre

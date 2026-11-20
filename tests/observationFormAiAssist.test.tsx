@@ -104,7 +104,7 @@ describe("ObservationForm — aide à l'identification", () => {
     it('désactive le bouton hors ligne', () => {
         renderForm({ isOffline: true });
         expect(aiButton()?.disabled).toBe(true);
-        expect(screen.getByText('Disponible en ligne uniquement.')).toBeTruthy();
+        expect(within(screen.getByTestId('ai-identification')).getByText('Disponible en ligne uniquement.')).toBeTruthy();
         fireEvent.click(aiButton()!);
         expect(mocks.identifySpecies).not.toHaveBeenCalled();
     });

@@ -34,13 +34,9 @@ export type TextFeatureName = (typeof ALL_TEXT_FEATURES)[number];
  */
 export const CONSENT_VERSIONS: Readonly<Partial<Record<TextFeatureName, string>>> = {
     summary: '2026-11-v1',
-    // PROVISOIRE, déclarée ici seulement : `readEnvelope` l'exige, mais
-    // l'application (AI_TEXT_CONSENT_VERSIONS) ne l'ajoutera qu'avec la PR B,
-    // sinon une carte de consentement apparaîtrait. La PR B DOIT la remplacer
-    // en écrivant le texte du consentement : un accord inséré à la main avant
-    // ce texte sera alors refusé (`consent_outdated`). Test dédié dans
-    // tests/aiAssistService.test.ts.
-    note: '2026-11-v0',
+    // Texte affiché : `NoteConsentText` (components/AiConsentCard.tsx). La
+    // version provisoire `2026-11-v0` de la PR A est refusée désormais.
+    note: '2026-11-v1',
 };
 
 // ---------------------------------------------------------------------------

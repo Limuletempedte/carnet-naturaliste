@@ -118,7 +118,7 @@ describe('ai-text — constantes communes avec ai-identify', () => {
 describe('ai-text — fonctionnalités et consentements', () => {
     it('livre le bilan du mois et la note, chacun avec sa version de consentement', () => {
         expect(Object.keys(TEXT_FEATURES)).toEqual(['summary', 'note']);
-        expect(CONSENT_VERSIONS).toEqual({ summary: '2026-11-v1', note: '2026-11-v0' });
+        expect(CONSENT_VERSIONS).toEqual({ summary: '2026-11-v1', note: '2026-11-v1' });
         for (const name of Object.keys(TEXT_FEATURES)) {
             expect(ALL_TEXT_FEATURES as readonly string[]).toContain(name);
         }

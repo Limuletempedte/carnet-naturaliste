@@ -825,19 +825,89 @@ tokens, loin du plafond de 3 000. Coût des deux passages : 0,40 $
 (`503 feature_disabled`). Les retouches ci-dessus partiront au prochain
 déploiement, au plus tard à l'ouverture de la note après la PR B.
 
+#### PR B : ce que voit la personne (application et textes légaux)
+
+- **Où** : formulaire d'observation, en haut de la section Identification,
+  bouton IA « Remplir depuis une note » (mention « 1 utilisation · N
+  restantes », désactivé hors ligne avec la raison). Il déplie une zone de
+  texte (1 000 caractères au plus, compteur, aide à la dictée, avertissement
+  sur les noms de personnes et les espèces sensibles). Sur une fiche existante
+  qui a un commentaire, « Reprendre le commentaire de la fiche comme note ».
+- **Accord** : au premier usage, la carte de consentement `note` apparaît à
+  l'endroit même (`NoteConsentText`, version **`2026-11-v1`**, la même des
+  deux côtés : `CONSENT_VERSIONS.note` dans `logic.ts`,
+  `AI_TEXT_CONSENT_VERSIONS.note` dans `services/aiAssistService.ts`). Elle
+  apparaît aussi dans « Assistant IA », avec « Retirer mon accord à la note ».
+  Un accord enregistré à la main sous la version provisoire `2026-11-v0` est
+  désormais refusé (`consent_outdated`) : la personne revoit la carte.
+- **Relecture** : chaque champ proposé montre la valeur actuelle et la valeur
+  proposée, avec une case. Une case n'est pré-cochée que si le champ est vide
+  (ou à sa valeur par défaut) et n'a pas bougé depuis l'ouverture du panneau.
+  La date est calculée par l'application, par rapport à la date de la fiche,
+  et écrite en toutes lettres. Les champs écartés par la fonction
+  (`dropped`) sont signalés, jamais proposés ; les autres espèces citées sont
+  listées pour information.
+- **Application** : « Appliquer la sélection » est une seule action,
+  annulable (« Annuler l'application »). L'espèce passe d'abord par la
+  vérification du nom de l'aide photo ; les autres champs sont marqués comme
+  modifiés (la météo automatique ne les écrase pas). « Garder la note dans le
+  commentaire » est coché par défaut, sans jamais de doublon.
+- **Ce qui ne part pas** : la date, l'heure, le GPS, la commune, la photo et
+  le reste de la fiche. La note n'est ni enregistrée dans le navigateur, ni
+  journalisée, ni envoyée à Sentry.
+
+#### Ouvrir la note après la fusion de la PR B (propriétaire, dans l'ordre)
+
+La PR B ne touche pas `index.ts` ; côté fonction, seule la version du
+consentement de la note change (`2026-11-v0` → `2026-11-v1`). Le
+redéploiement emporte aussi les retouches de l'essai du 20 novembre (déjà sur
+`main`, pas encore en production).
+
+1. **Vercel a déployé `main`** : sur le site en ligne, le bouton « Remplir
+   depuis une note » apparaît. Tant que la note est fermée, un essai répond
+   « Le remplissage depuis une note est momentanément indisponible », sans
+   rien compter.
+2. **Redéployer `ai-text` d'abord, note encore fermée** (depuis `main` à
+   jour) :
+
+   ```bash
+   npx supabase functions deploy ai-text --use-api
+   ```
+
+   Contrôles sans frais : les trois `curl` du §6.2, étape 5. Attendu :
+   **401**, **204**, **403**, et « Verify JWT » toujours activé.
+3. **Retirer `note` de la liste de coupure.** Si elle ne contient que `note` :
+
+   ```bash
+   npx supabase secrets unset AI_DISABLED_FEATURES --project-ref xowiezzqehadcfnbkijo
+   ```
+
+   Si elle contient autre chose, réécrire la liste **complète** sans `note`
+   (`secrets set` remplace la valeur). Puis redéployer `ai-text` (même
+   commande qu'à l'étape 2) pour qu'elle relise le réglage, et refaire les
+   trois contrôles **401**, **204**, **403**.
+4. **Une vraie note depuis le site en ligne** (une utilisation, environ
+   0,01 $) : « Remplir depuis une note », écrire par exemple « 2 mésanges
+   charbonnières hier matin dans le jardin, ensoleillé », donner l'accord sur
+   la carte, analyser, relire, appliquer, puis annuler l'application (rien
+   n'est enregistré tant que la fiche n'est pas sauvegardée).
+5. **Contrôles en base**, dans l'éditeur SQL : la ligne `ai_consents` de son
+   compte a `feature = 'note'` et `version = '2026-11-v1'` ; la dernière ligne
+   `ai_usage` a `feature = 'note'`, statut `ok`, modèle `claude-sonnet-5-5`
+   et un coût proche de 0,01 $. Contrôler aussi la dépense dans la Console
+   Anthropic.
+
 #### Couper et rouvrir la note
 
-- **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
-  Note seule coupée (le bilan continue) : `note` ; bilan et note :
-  `summary,note`. Puis redéployer `ai-text` et refaire le contrôle de
-  l'étape 5.
-- **Rouvrir, après la fusion de la PR B** : retirer `note` de la liste. Si
-  elle ne contient que `note` :
+- **Refermer** (sans rien défaire) : `AI_DISABLED_FEATURES=note` (ou
+  `summary,note` pour couper aussi le bilan), puis redéployer `ai-text` et
+  refaire le contrôle de l'étape 5 de la PR A (`503 feature_disabled`).
+  L'application affiche alors « momentanément indisponible », sans erreur
+  technique, et la note tapée reste dans la zone.
 
   ```bash
-  npx supabase secrets unset AI_DISABLED_FEATURES --project-ref xowiezzqehadcfnbkijo
+  npx supabase secrets set AI_DISABLED_FEATURES=note --project-ref xowiezzqehadcfnbkijo
   ```
 
-  Puis redéployer `ai-text`, refaire les trois contrôles sans frais, remplir
-  une fiche depuis une note sur le site en ligne, et contrôler la ligne
-  `ai_usage` (`feature = 'note'`) et la dépense dans la Console.
+- **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
+- **Rouvrir** : étapes 3 à 5 ci-dessus.

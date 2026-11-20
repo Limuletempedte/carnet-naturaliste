@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSessionIdentity } from '../services/sessionScope';
 
@@ -186,9 +186,9 @@ describe('AiAccessDialog', () => {
         renderDialog();
         const card = await screen.findByTestId('ai-feature-summary');
         expect(card.textContent).toMatch(/Ce qui n'est pas envoyé/);
-        const give = screen.getByRole('button', { name: 'Donner mon accord' }) as HTMLButtonElement;
+        const give = within(card).getByRole('button', { name: 'Donner mon accord' }) as HTMLButtonElement;
         expect(give.disabled).toBe(true);
-        fireEvent.click(screen.getByRole('checkbox'));
+        fireEvent.click(within(card).getByRole('checkbox'));
         fireEvent.click(give);
         await waitFor(() => expect(mocks.giveConsent).toHaveBeenCalledWith('summary', expect.objectContaining({ userId: 'user-1' })));
         expect(await screen.findByText('Accord donné')).toBeTruthy();
@@ -202,7 +202,43 @@ describe('AiAccessDialog', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Retirer mon accord au bilan' }));
         await waitFor(() => expect(mocks.withdrawConsent).toHaveBeenCalledWith('summary', expect.anything()));
         expect(mocks.withdrawAccess).not.toHaveBeenCalled();
-        expect(await screen.findByRole('button', { name: 'Donner mon accord' })).toBeTruthy();
+        await waitFor(() => expect(within(screen.getByTestId('ai-feature-summary')).getByRole('button', { name: 'Donner mon accord' })).toBeTruthy());
+    });
+
+    it('présente la note → fiche : où la trouver, ce qui est envoyé, accord à donner', async () => {
+        mocks.getAiOverview
+            .mockResolvedValueOnce(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }))
+            .mockResolvedValueOnce(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }, { consents: { note: '2026-11-v1' } }));
+        renderDialog();
+        const card = await screen.findByTestId('ai-feature-note');
+        expect(card.textContent).toMatch(/Remplir depuis une note/);
+        expect(card.textContent).toMatch(/tel que vous l'avez écrit/);
+        expect(card.textContent).toMatch(/Jamais la date, la position GPS/);
+        const give = within(card).getByRole('button', { name: 'Donner mon accord' }) as HTMLButtonElement;
+        expect(give.disabled).toBe(true);
+        fireEvent.click(within(card).getByRole('checkbox'));
+        fireEvent.click(give);
+        await waitFor(() => expect(mocks.giveConsent).toHaveBeenCalledWith('note', expect.objectContaining({ userId: 'user-1' })));
+        expect(await within(screen.getByTestId('ai-feature-note')).findByText('Accord donné')).toBeTruthy();
+    });
+
+    it('retire l’accord à la note seulement', async () => {
+        mocks.getAiOverview
+            .mockResolvedValueOnce(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }, { consents: { summary: '2026-11-v1', note: '2026-11-v1' } }))
+            .mockResolvedValueOnce(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }, { consents: { summary: '2026-11-v1' } }));
+        renderDialog();
+        fireEvent.click(await screen.findByRole('button', { name: 'Retirer mon accord à la note' }));
+        await waitFor(() => expect(mocks.withdrawConsent).toHaveBeenCalledWith('note', expect.anything()));
+        expect(mocks.withdrawConsent).toHaveBeenCalledTimes(1);
+        expect(mocks.withdrawAccess).not.toHaveBeenCalled();
+    });
+
+    it('signale un accord à la note donné sous la version provisoire', async () => {
+        mocks.getAiOverview.mockResolvedValue(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }, { consents: { note: '2026-11-v0' } }));
+        renderDialog();
+        const card = await screen.findByTestId('ai-feature-note');
+        expect(await within(card).findByText(/Le texte a changé/)).toBeTruthy();
+        expect(within(card).queryByText('Accord donné')).toBeNull();
     });
 
     it('signale un accord au bilan donné sous un ancien texte', async () => {

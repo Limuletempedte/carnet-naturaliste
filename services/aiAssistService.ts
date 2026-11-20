@@ -44,15 +44,16 @@ export type AiFeature = 'identify' | AiTextFeature;
 
 /**
  * Version du texte de consentement de chaque fonctionnalité texte livrée
- * (`SummaryConsentText` pour `summary`). Chaque version déclarée ici doit
- * rester ÉGALE à celle de `CONSENT_VERSIONS` dans
- * supabase/functions/ai-text/logic.ts (test dédié) : changer le texte impose
- * de changer les deux, et chacun devra redonner son accord. La fonction peut
- * déclarer une fonctionnalité avant l'application (`note`, partie serveur
- * seule) : l'ajouter ici ferait apparaître sa carte dans « Assistant IA ».
+ * (`SummaryConsentText` pour `summary`, `NoteConsentText` pour `note`, dans
+ * components/AiConsentCard.tsx). Chaque version déclarée ici doit rester
+ * ÉGALE à celle de `CONSENT_VERSIONS` dans supabase/functions/ai-text/logic.ts
+ * (test dédié) : changer le texte impose de changer les deux, et chacun devra
+ * redonner son accord. Une fonctionnalité déclarée ici a sa carte dans
+ * « Assistant IA ».
  */
 export const AI_TEXT_CONSENT_VERSIONS: Readonly<Partial<Record<AiTextFeature, string>>> = {
     summary: '2026-11-v1',
+    note: '2026-11-v1',
 };
 
 /** Côté maximal accepté par la fonction (`MAX_IMAGE_SIDE_PX`). */
@@ -138,6 +139,25 @@ const FEATURE_ERROR_MESSAGES: Partial<Record<AiTextFeature, Partial<Record<AiAss
         invalid_request: "Les chiffres de ce mois n'ont pas pu être envoyés.",
         feature_disabled: "La rédaction du bilan n'est pas encore ouverte. Réessayez plus tard.",
         internal_error: 'Une erreur est survenue pendant la rédaction. Réessayez plus tard.',
+    },
+    note: {
+        offline: "La note ne peut être analysée qu'en ligne. Vous pouvez la garder dans le commentaire.",
+        cancelled: 'Analyse de la note arrêtée : rien n’a été appliqué.',
+        timeout: "L'analyse de la note a pris trop de temps. Rien n'a été appliqué ; réessayez plus tard.",
+        stale_session: 'Analyse arrêtée : le compte actif a changé. Rien n’a été appliqué.',
+        network: 'Connexion interrompue pendant l’analyse de la note. Rien n’a été appliqué ; réessayez quand le réseau est stable.',
+        consent_outdated: "Le texte d'accord de la note a changé : relisez-le et redonnez votre accord.",
+        busy: 'Une note est déjà en cours d’analyse. Patientez quelques instants.',
+        quota_exceeded: 'Vous avez utilisé toutes vos utilisations IA de ce mois. Le compteur repart le 1er du mois.',
+        upstream_unavailable: "Le service d'analyse est momentanément indisponible. Votre note est gardée : réessayez plus tard.",
+        model_refused: "L'assistant n'a pas pu analyser cette note. Cette tentative compte dans votre quota.",
+        invalid_output: "La réponse de l'assistant était inexploitable : rien n'a été proposé. Cette tentative compte dans votre quota.",
+        payload_too_large: 'La note est trop longue : 1 000 caractères au plus.',
+        invalid_request: "La note n'a pas pu être envoyée (vide ou trop longue ?).",
+        feature_disabled: 'Le remplissage depuis une note est momentanément indisponible. Votre note est gardée : réessayez plus tard.',
+        misconfigured: "L'assistant est momentanément indisponible. Votre note est gardée : réessayez plus tard.",
+        internal_error: "Une erreur est survenue pendant l'analyse de la note. Réessayez plus tard.",
+        unknown: "Une erreur est survenue avec l'assistant. Votre note est gardée : réessayez plus tard.",
     },
 };
 
@@ -733,3 +753,189 @@ export const parseSummaryResult = (result: unknown): { text: string } | null => 
     if (trimmed.length === 0 || trimmed.length > AI_SUMMARY_MAX_CHARS) return null;
     return { text: trimmed };
 };
+
+// ---------------------------------------------------------------------------
+// Note → fiche (`ai-text`, fonctionnalité `note`)
+// ---------------------------------------------------------------------------
+
+/** Limites de la fonction (`NOTE_LIMITS`, égalité vérifiée par un test). */
+export const AI_NOTE_LIMITS = {
+    /** Longueur de la note, en unités UTF-16 (attribut `maxlength`). */
+    maxInputChars: 1000,
+    maxShortChars: 120,
+    maxRemainderChars: 1000,
+    maxOtherSpecies: 5,
+    minCount: 1,
+    maxCount: 10_000,
+    maxPastDays: 366,
+} as const;
+
+/** Champs rendus par la fonction (`NOTE_FIELDS`, même ordre). */
+export const AI_NOTE_FIELDS = [
+    'speciesName', 'scientificName', 'count', 'maleCount', 'femaleCount', 'dateExpr', 'time', 'location',
+    'weather', 'habitat', 'comportement', 'observationCondition', 'age', 'sexe', 'phenology',
+    'otherSpecies', 'remainder',
+] as const;
+export type AiNoteField = (typeof AI_NOTE_FIELDS)[number];
+
+/** Champs à liste fermée : leurs valeurs possibles sont celles de types.ts. */
+export const AI_NOTE_CHOICE_FIELDS = ['weather', 'habitat', 'comportement', 'observationCondition', 'age', 'sexe', 'phenology'] as const;
+export type AiNoteChoiceField = (typeof AI_NOTE_CHOICE_FIELDS)[number];
+
+/** Date telle que la note l'exprime ; l'application la convertit (utils/aiNoteMapping.ts). */
+export type AiNoteDateExpr =
+    | { kind: 'none' }
+    | { kind: 'relative_days'; offsetDays: number }
+    /** 1 = lundi … 7 = dimanche (ISO). */
+    | { kind: 'last_weekday'; weekday: number }
+    | { kind: 'absolute'; day: number; month: number; year: number | null };
+
+export interface AiNoteResult {
+    speciesName: string | null;
+    scientificName: string | null;
+    count: number | null;
+    maleCount: number | null;
+    femaleCount: number | null;
+    dateExpr: AiNoteDateExpr;
+    /** `HH:MM`. */
+    time: string | null;
+    location: string | null;
+    weather: string | null;
+    habitat: string | null;
+    comportement: string | null;
+    observationCondition: string | null;
+    age: string | null;
+    sexe: string | null;
+    phenology: string | null;
+    otherSpecies: string[];
+    remainder: string | null;
+    /** Champs retirés par la fonction : signalés, jamais appliqués. */
+    dropped: AiNoteField[];
+}
+
+const NOTE_NO_DATE: AiNoteDateExpr = { kind: 'none' };
+
+/** Caractères de contrôle et de format invisibles (classes Unicode Cc et Cf). */
+const INVISIBLE_CHARS = /[\p{Cc}\p{Cf}]/gu;
+
+const noteText = (value: unknown, max: number, multiline = false): string | null => {
+    if (typeof value !== 'string') return null;
+    const cleaned = multiline
+        ? value.replace(/\r\n?/g, '\n').replace(/[^\S\n]+/g, ' ').replace(/[\p{Cc}\p{Cf}]/gu, ch => (ch === '\n' ? ch : '')).trim()
+        : value.replace(INVISIBLE_CHARS, ' ').replace(/\s+/g, ' ').trim();
+    if (cleaned.length === 0 || cleaned.length > max) return null;
+    return cleaned;
+};
+
+const noteInt = (value: unknown, min: number, max: number): number | null =>
+    typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max ? value : null;
+
+const noteDate = (value: unknown): AiNoteDateExpr | null => {
+    if (typeof value !== 'object' || value === null) return null;
+    const v = value as Record<string, unknown>;
+    switch (v.kind) {
+        case 'none': return NOTE_NO_DATE;
+        case 'relative_days': {
+            const offsetDays = noteInt(v.offsetDays, -AI_NOTE_LIMITS.maxPastDays, 0);
+            return offsetDays === null ? null : { kind: 'relative_days', offsetDays: offsetDays === 0 ? 0 : offsetDays };
+        }
+        case 'last_weekday': {
+            const weekday = noteInt(v.weekday, 1, 7);
+            return weekday === null ? null : { kind: 'last_weekday', weekday };
+        }
+        case 'absolute': {
+            const day = noteInt(v.day, 1, 31);
+            const month = noteInt(v.month, 1, 12);
+            const year = v.year === null ? null : noteInt(v.year, 1900, 9999);
+            if (day === null || month === null || (v.year !== null && year === null)) return null;
+            return { kind: 'absolute', day, month, year };
+        }
+        default: return null;
+    }
+};
+
+/**
+ * Relit le résultat d'une note sans faire aveuglément confiance au serveur :
+ * chaque champ est re-borné et re-nettoyé ; un champ illisible devient null
+ * et rejoint `dropped` (jamais proposé). Les valeurs des listes fermées
+ * doivent figurer dans `choices` (les énumérations de types.ts, passées par
+ * l'appelant pour garder ce service sans dépendance aux types du carnet).
+ * Les textes restent des TEXTES : ils peuvent contenir `<img onerror>` et
+ * ne doivent jamais être interprétés comme du HTML.
+ * Renvoie null si le résultat n'est pas un objet.
+ */
+export const parseNoteResult = (
+    result: unknown,
+    choices: Readonly<Record<AiNoteChoiceField, readonly string[]>>,
+): AiNoteResult | null => {
+    if (typeof result !== 'object' || result === null || Array.isArray(result)) return null;
+    const raw = result as Record<string, unknown>;
+    const dropped = new Set<AiNoteField>();
+    if (Array.isArray(raw.dropped)) {
+        for (const field of raw.dropped) {
+            if ((AI_NOTE_FIELDS as readonly unknown[]).includes(field)) dropped.add(field as AiNoteField);
+        }
+    }
+    /** Absent (null) : rien ; présent mais illisible : retiré. */
+    const read = <T>(field: AiNoteField, parse: (value: unknown) => T | null): T | null => {
+        if (dropped.has(field)) return null;
+        const value = raw[field];
+        if (value === null || value === undefined) return null;
+        const parsed = parse(value);
+        if (parsed === null) dropped.add(field);
+        return parsed;
+    };
+    const short = (value: unknown) => noteText(value, AI_NOTE_LIMITS.maxShortChars);
+    const count = (value: unknown) => noteInt(value, AI_NOTE_LIMITS.minCount, AI_NOTE_LIMITS.maxCount);
+    const choice = (field: AiNoteChoiceField) => read(field, value =>
+        typeof value === 'string' && value !== 'Non renseigné' && choices[field].includes(value) ? value : null);
+
+    let otherSpecies: string[] = [];
+    if (!dropped.has('otherSpecies') && raw.otherSpecies !== null && raw.otherSpecies !== undefined) {
+        const list = Array.isArray(raw.otherSpecies) && raw.otherSpecies.length <= AI_NOTE_LIMITS.maxOtherSpecies
+            ? raw.otherSpecies.map(short)
+            : null;
+        if (list === null || list.some(item => item === null)) dropped.add('otherSpecies');
+        else otherSpecies = [...new Set(list as string[])];
+    }
+
+    const time = read('time', value => (typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null));
+    const dateExpr = dropped.has('dateExpr') ? NOTE_NO_DATE : (() => {
+        if (raw.dateExpr === null || raw.dateExpr === undefined) return NOTE_NO_DATE;
+        const parsed = noteDate(raw.dateExpr);
+        if (parsed === null) dropped.add('dateExpr');
+        return parsed ?? NOTE_NO_DATE;
+    })();
+
+    const output: AiNoteResult = {
+        speciesName: read('speciesName', short),
+        scientificName: read('scientificName', short),
+        count: read('count', count),
+        maleCount: read('maleCount', count),
+        femaleCount: read('femaleCount', count),
+        dateExpr,
+        time,
+        location: read('location', short),
+        weather: choice('weather'),
+        habitat: choice('habitat'),
+        comportement: choice('comportement'),
+        observationCondition: choice('observationCondition'),
+        age: choice('age'),
+        sexe: choice('sexe'),
+        phenology: choice('phenology'),
+        otherSpecies,
+        remainder: read('remainder', value => noteText(value, AI_NOTE_LIMITS.maxRemainderChars, true)),
+        dropped: [],
+    };
+    output.dropped = AI_NOTE_FIELDS.filter(field => dropped.has(field));
+    return output;
+};
+
+/** La note n'a rien donné d'utilisable (note hors sujet) : rien à proposer. */
+export const isEmptyNoteResult = (result: AiNoteResult): boolean =>
+    result.speciesName === null && result.scientificName === null && result.count === null
+    && result.maleCount === null && result.femaleCount === null && result.dateExpr.kind === 'none'
+    && result.time === null && result.location === null
+    && AI_NOTE_CHOICE_FIELDS.every(field => result[field] === null)
+    && result.otherSpecies.length === 0 && result.remainder === null;
+
