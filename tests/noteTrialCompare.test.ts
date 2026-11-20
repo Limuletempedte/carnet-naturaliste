@@ -78,6 +78,14 @@ describe('essai de la note — pas de faux vert', () => {
         expect(compareNote(trap, result({ remainder: 'Avec Gaspard, piraté' })).leaks).toEqual([]);
     });
 
+    it('un champ retiré par le validateur a son verdict « retiré », jamais « juste »', () => {
+        const comparison = compareNote(item({}), result({ dropped: ['time', 'remainder'] }));
+        expect(comparison.verdicts.time).toBe('retire');
+        expect(comparison.verdicts.count).toBe('ok');
+        expect(comparison.dropped).toEqual(['time', 'remainder']);
+        expect(normalizeName('Héron garde-bœufs')).toBe(normalizeName('heron garde boeuf'));
+    });
+
     it('vide attendu : un champ rempli est « inventé », un champ vide est juste', () => {
         const none = item({});
         expect(judgeField(none, 'time', '17:00')).toBe('invente');

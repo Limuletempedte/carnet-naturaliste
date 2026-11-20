@@ -51,8 +51,9 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 
 ## Tests
 - Framework : Vitest + Testing Library React
-- Dernière validation du 20 novembre 2026 : 96 fichiers de tests (997 tests) couvrant composants, services et utils
+- Dernière validation du 20 novembre 2026 : 99 fichiers de tests (1064 tests) couvrant composants, services et utils
 - Lancer `npm run test:run` pour valider les changements
+- Fonction `ai-text` sans Supabase : `DENO_BIN=<chemin de deno> node tests/security/ai-text-bench.mjs` (banc local, aucun appel payant) ; essai des modèles à blanc : `deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature search --inputs tests/security/fixtures/ai-text-trial-search.json --dry-run` (voir `docs/ops/ASSISTANT-IA.md` §6.8)
 
 ## Deploiement et pieges a connaitre
 - **Hebergement** : Vercel (auto-deploy depuis `main`) + Supabase (region eu-central-1, UE).

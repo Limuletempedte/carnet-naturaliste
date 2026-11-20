@@ -14,8 +14,8 @@ texte `ai-text`.
 | Retour arrière SQL du lot texte | `docs/ops/retour-arriere-ai-text-features.sql` (hors `migrations/`, voir §6.6) |
 | Fonctions Edge | `supabase/functions/ai-identify/` (photo) et `supabase/functions/ai-text/` (texte) : `index.ts` (appel) et `logic.ts` (règles) |
 | Réglage `verify_jwt` | `supabase/config.toml`, sections `[functions.ai-identify]` et `[functions.ai-text]` |
-| Application | `services/aiAssistService.ts`, `components/AiAccessDialog.tsx` (point central « Assistant IA » : accès, compteur, consentements), `components/AiButton.tsx` (bouton IA commun), `components/AiConsentCard.tsx` (accord au premier usage), `components/AiIdentificationPanel.tsx`, bouton dans `components/ObservationForm.tsx`, entrée du menu du compte ; bilan du mois : `utils/monthlySummaryStats.ts` (chiffres), `components/MonthlySummaryCard.tsx` (onglet Stats), `services/monthlySummaryCache.ts` (bilans gardés dans le navigateur, purge des expirés) |
-| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiTextLogic.test.ts`, `tests/aiTextNote.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx`, `tests/AiButton.test.tsx`, `tests/AiConsentCard.test.tsx`, `tests/MonthlySummaryCard.test.tsx`, `tests/monthlySummaryStats.test.ts`, `tests/monthlySummaryCache.test.ts`, `tests/aiColorContrast.test.ts` (lancés par `npm run check`) |
+| Application | `services/aiAssistService.ts`, `components/AiAccessDialog.tsx` (point central « Assistant IA » : accès, compteur, consentements), `components/AiButton.tsx` (bouton IA commun), `components/AiConsentCard.tsx` (accord au premier usage), `components/AiIdentificationPanel.tsx`, bouton dans `components/ObservationForm.tsx`, entrée du menu du compte ; bilan du mois : `utils/monthlySummaryStats.ts` (chiffres), `components/MonthlySummaryCard.tsx` (onglet Stats), `services/monthlySummaryCache.ts` (bilans gardés dans le navigateur, purge des expirés) ; recherche : `utils/taxonCategories.ts` (dictionnaire des catégories, pas encore utilisé par l'interface) |
+| Tests unitaires | `tests/aiIdentifyLogic.test.ts`, `tests/aiTextLogic.test.ts`, `tests/aiTextNote.test.ts`, `tests/aiTextSearch.test.ts`, `tests/taxonCategories.test.ts`, `tests/noteTrialCompare.test.ts`, `tests/searchTrialCompare.test.ts`, `tests/aiAssistService.test.ts`, `tests/AiAccessDialog.test.tsx`, `tests/AiIdentificationPanel.test.tsx`, `tests/observationFormAiAssist.test.tsx`, `tests/AiButton.test.tsx`, `tests/AiConsentCard.test.tsx`, `tests/MonthlySummaryCard.test.tsx`, `tests/monthlySummaryStats.test.ts`, `tests/monthlySummaryCache.test.ts`, `tests/aiColorContrast.test.ts` (lancés par `npm run check`) |
 | Tests de sécurité locaux | `tests/security/ai-access-rls.mjs` (Supabase local) et `tests/security/ai-text-bench.mjs` (`ai-text` seule, sans Supabase) |
 
 En bref : une personne **demande** l'accès (ligne `pending` dans `ai_access`),
@@ -359,8 +359,9 @@ supprime à la fin.
 
 Une seule fonction pour les trois fonctionnalités texte, choisie par le champ
 `feature` du corps : `summary` (bilan du mois, en production), `note` (note →
-fiche, en production depuis le 2026-11-20, voir §6.7) et plus tard `search`. `ai-identify` n'est **pas** modifiée : un défaut côté texte ne
-peut pas casser la photo.
+fiche, en production depuis le 2026-11-20, voir §6.7) et `search` (recherche
+en langage naturel, partie serveur livrée, voir §6.8). `ai-identify` n'est
+**pas** modifiée : un défaut côté texte ne peut pas casser la photo.
 
 ### 6.1 Ce que change la migration `20261106220000_ai_text_features.sql`
 
@@ -550,8 +551,8 @@ Coût des deux essais : 0,18 $.
 sont corrects (401, 204, 403). `summary` est resté dans `AI_DISABLED_FEATURES`
 jusqu'à la fusion de la PR B, puis a été ouvert le même jour (§6.4).
 
-L'essai de la note se fait avec le même outil (`--feature note`, voir §6.7) ;
-celui de la recherche (`--feature search`) viendra avec elle, chacun avec son
+L'essai de la note se fait avec le même outil (`--feature note`, voir §6.7),
+celui de la recherche aussi (`--feature search`, voir §6.8), chacun avec son
 jeu d'entrées dans `tests/security/fixtures/`.
 
 ### 6.4 Après la PR B
@@ -572,16 +573,17 @@ dépense dans la Console.
   statut `ok`, `claude-sonnet-5-5`, 1 316 tokens d'entrée et 332 de sortie,
   **0,0060 $** (conforme à l'essai du §6.3).
 
-Pour refermer le bilan sans rien défaire (puis redéployer, §6.6) :
+Pour refermer le bilan sans rien défaire (puis redéployer, §6.6), tant que
+la recherche n'est pas ouverte (§6.8, avant sa PR B) :
 
 ```bash
-npx supabase secrets set AI_DISABLED_FEATURES=summary --project-ref xowiezzqehadcfnbkijo
+npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowiezzqehadcfnbkijo
 ```
 
 > ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire toujours la
-> liste **complète** de ce qui doit rester coupé : tant que la note est fermée
-> (§6.7, avant sa PR B), refermer le bilan s'écrit
-> `AI_DISABLED_FEATURES=summary,note`, sinon la note se rouvre.
+> liste **complète** de ce qui doit rester coupé : `summary` seul rouvrirait
+> la recherche. Une fois la recherche ouverte (après sa PR B), refermer le
+> bilan seul s'écrira `AI_DISABLED_FEATURES=summary`.
 
 ### 6.5 Comment `ai-text` décide
 
@@ -595,19 +597,21 @@ la charge utile ne contient que le mois (`YYYY-MM`), des totaux, la
 répartition par groupe, au plus 15 espèces les plus observées et 30 espèces
 nouvelles (« + N autres »), et la comparaison avec l'an passé. Pour la note,
 `{ "feature": "note", "payload": { "text": "…" } }` : le texte seulement
-(§6.7). Tout autre champ (date, lieu, GPS, commentaire, observateurs…) est
-ignoré et n'atteint jamais Claude.
+(§6.7). Pour la recherche, `{ "feature": "search", "payload": { "text": "…" } }` :
+la phrase seulement (§6.8). Tout autre champ (date, lieu, GPS, commentaire,
+observateurs, observations…) est ignoré et n'atteint jamais Claude.
 
 Codes : ceux du §4 (sauf `invalid_image`), plus **`feature_disabled`
 (503)** : fonctionnalité coupée par `AI_DISABLED_FEATURES`. Une fonctionnalité
-pas encore livrée (`search` aujourd'hui) répond `invalid_request` (400).
+inconnue répond `invalid_request` (400).
 
 Réponse du bilan refusée (`invalid_output`, comptée car facturée) si le texte
 dépasse 1 200 caractères ou cite un nombre absent des chiffres fournis.
 Réponse de la note : un champ fautif est **retiré** et nommé dans `dropped`,
 le reste est rendu ; `invalid_output` seulement si la réponse est
 inexploitable : pas un objet JSON, ou **tous** les champs retirés (§6.7).
-Une note hors sujet (tout vide, rien de retiré) reste un succès.
+Une note hors sujet (tout vide, rien de retiré) reste un succès. La
+recherche suit la même règle (§6.8).
 
 **Journaux** : id de la ligne d'usage, fonctionnalité, statut, modèle,
 tokens, coût, type d'erreur. Jamais l'utilisateur, la note, la phrase, les
@@ -937,15 +941,220 @@ langage naturel (phase 4).
 
 #### Couper et rouvrir la note
 
-- **Refermer** (sans rien défaire) : `AI_DISABLED_FEATURES=note` (ou
-  `summary,note` pour couper aussi le bilan), puis redéployer `ai-text` et
-  refaire le contrôle de l'étape 5 de la PR A (`503 feature_disabled`).
-  L'application affiche alors « momentanément indisponible », sans erreur
-  technique, et la note tapée reste dans la zone.
+- **Refermer** (sans rien défaire) : tant que la recherche n'est pas ouverte
+  (§6.8, avant sa PR B), `AI_DISABLED_FEATURES=note,search` (ou
+  `summary,note,search` pour couper aussi le bilan) ; ensuite, `note` seul.
+  Puis redéployer `ai-text` et refaire le contrôle de l'étape 5 de la PR A
+  (`503 feature_disabled`). L'application affiche alors « momentanément
+  indisponible », sans erreur technique, et la note tapée reste dans la zone.
 
   ```bash
-  npx supabase secrets set AI_DISABLED_FEATURES=note --project-ref xowiezzqehadcfnbkijo
+  npx supabase secrets set AI_DISABLED_FEATURES=note,search --project-ref xowiezzqehadcfnbkijo
+  ```
+
+- **Toujours écrire la liste complète** : `secrets set` remplace la valeur ;
+  `note` seul rouvrirait la recherche.
+- **Rouvrir** : étapes 3 à 5 ci-dessus.
+
+### 6.8 Lot « recherche en langage naturel » (phase 4)
+
+**PR A (partie serveur, invisible)** : la fonctionnalité `search` est ajoutée
+à `ai-text` (`logic.ts`). Aucune migration (`search` est déjà accepté par
+`ai_usage.feature` et `ai_consents`), `ai-identify` et `index.ts` inchangés,
+même modèle (`AI_TEXT_MODEL`), même quota et même budget. Le consentement de
+la recherche est en version **provisoire**, déclarée côté fonction seulement :
+l'application n'affiche aucune carte, et rien n'est visible pour les
+utilisateurs. Cette version (`pr-a-fermee-jusqu-au-texte-de-la-pr-b`) est
+**plus longue que les 32 caractères** permis par `ai_consents.version` :
+aucun accord ne peut l'atteindre, donc la fonction répond `consent_outdated`
+à tous, même si la liste de coupure oublie `search` par erreur. C'est un
+second verrou ; la coupure (`AI_DISABLED_FEATURES=search`) reste la règle. Le champ de recherche, l'analyse locale
+gratuite, les étiquettes « J'ai compris » et les textes légaux viendront avec
+la PR B.
+
+**Ce qui est envoyé à Claude** : la phrase tapée dans la recherche
+seulement, 200 caractères au plus (refus au-delà, jamais de troncature),
+mise sur une ligne et nettoyée (caractères de contrôle, de format et
+« ignorables » qui n'affichent rien retirés, comme pour la note et le
+bilan ; seul le sélecteur émoji U+FE0F est gardé, une fois, pour que
+« ❤️ » ou « 1️⃣ » restent intacts), délimitée comme une donnée. Jamais la date du jour, la position, ni
+aucune observation : les filtres seront appliqués par l'application, sur
+l'appareil.
+
+**Ce qui revient** (`result`), un champ absent valant null (liste vide pour
+une liste) :
+
+- `period` : `kind` parmi `this_month`, `last_month`, `this_year`,
+  `last_year`, `last_n_days` (avec `days`, aujourd'hui compris, 1 à 3 660),
+  `month` (avec `month`, 1 à 12) ou `season` (avec `season` : `spring`,
+  `summer`, `autumn`, `winter`) ; pour un mois ou une saison, `yearScope` :
+  `all` (toutes les années), `this_year`, `last_year` ou `most_recent`
+  (« en mai dernier »). La période reste **relative** : l'application la
+  convertira au moment d'appliquer le filtre ;
+- `years` : les années écrites (1900 à l'année en cours, 60 au plus :
+  « de 1980 à 2024 » en compte 45) ;
+- `groups` (groupes de l'application), `categories` (clés du dictionnaire
+  `utils/taxonCategories.ts`), `statuses` (codes UICN), `habitats` : listes
+  fermées, plusieurs valeurs possibles ;
+- `genera` : genres latins, en dernier recours (20 au plus) ;
+- `department` et `commune` : tels qu'écrits ;
+- `near` : `current_position` (« près de chez moi ») ou `place` avec
+  `placeName` (tel qu'écrit), et `radiusKm` ramené entre 0,1 et 100 km
+  (10 km quand la phrase n'en donne pas) ;
+- `text` : ce qui reste à chercher dans les noms (nom d'espèce, mot-clé) ;
+- `dropped` : les champs retirés par la validation.
+
+**Validation de la réponse** : listes fermées, bornes de tous les nombres,
+genres au format « Genre » (ou « Genre espèce »), textes nettoyés et bornés.
+`text`, `department`, `commune` et `placeName` doivent être faits **des mots
+de la phrase**, à une faute de frappe ou un pluriel près (« œ » vaut « oe »),
+sans ajouter de caractère de balisage (`< > " \` &`) absent de la phrase.
+Les apostrophes et les traits d'union sont des séparateurs, et une forme
+collée vaut ses mots (« Rouge-gorge » pour « rougegorge », « Saint-Martin-
+d'Hères » pour « Saint Martin d Hères ») ; la tolérance d'une lettre ne peut
+jamais avaler un mot entier (« Gironde (33) » pour « en Gironde » est
+retiré). Un commentaire du modèle, une réponse à une question, une
+traduction, une balise ou un lieu déduit (« en Gironde » ajouté à
+« Bordeaux ») sont retirés. Limite connue : « Valence » passe pour
+« Talence » (une lettre d'écart), et une abréviation (« St ») ne passe pas.
+Les genres sont bornés à 60 caractères. Jamais de date future : une année à
+venir est retirée ; une année écrite l'emporte sur une période relative
+(« cette année », « mai dernier »), qui est retirée ; un mois d'une année
+écrite encore à venir retire la période et les années ; un mois à venir de
+l'année en cours (« en décembre cette année », le 20 novembre) retire la
+période, avec un jour de marge pour les fuseaux. Les saisons ne sont pas
+contrôlées ici : leur définition appartient à l'application (PR B). Comme pour la
+note, un champ fautif est **retiré et nommé dans `dropped`**, et la réponse
+n'est rejetée en bloc (`invalid_output`, une utilisation comptée) que si elle
+n'est pas un objet JSON ou si tous ses champs sont retirés. Pour une phrase
+hors sujet ou une question posée à l'assistant, la **consigne** demande au
+modèle de tout laisser vide ; le code ne peut pas le garantir (une réponse
+vide est un succès, une réponse remplie se lit comme une autre) : c'est
+l'essai qui vérifie que le modèle s'y tient (phrases 08 et 09 du jeu).
+
+**Coût** : 0,043 $ réservés par phrase avec Sonnet (majorant calculé sur la
+taille du prompt : consignes et liste des catégories ≈ 5 Ko, schéma ≈ 3 Ko),
+remplacés par le coût réel après l'appel, à mesurer à l'essai.
+`max_tokens` : 2 500.
+
+#### Mise en production de la PR A (propriétaire, dans l'ordre)
+
+1. **Fermer la recherche avant de déployer.** Aujourd'hui
+   `AI_DISABLED_FEATURES` est absent (bilan et note ouverts) ; la version en
+   service accepte déjà le nom `search` dans cette liste, donc ce réglage ne
+   la dérange pas :
+
+   ```bash
+   npx supabase secrets set AI_DISABLED_FEATURES=search --project-ref xowiezzqehadcfnbkijo
+   ```
+
+   Pourquoi d'abord : c'est la règle pour toute fonctionnalité pas encore
+   livrée dans l'application. La version provisoire de l'accord, impossible à
+   enregistrer, ferme déjà la recherche ; la coupure le rend explicite et
+   gratuit à vérifier (étape 5).
+
+   > ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire
+   > toujours la liste **complète** de ce qui doit rester coupé : ici
+   > `search` seul, pour que le bilan et la note restent ouverts.
+
+2. **Déployer** depuis `main` à jour (après la fusion de la PR A) :
+
+   ```bash
+   npx supabase functions deploy ai-text --use-api
+   ```
+
+3. **Contrôles sans frais** : les trois commandes `curl` du §6.2, étape 5.
+   Attendu : **401**, **204**, **403**, et « Verify JWT » toujours activé
+   (*Edge Functions → ai-text → Details*).
+
+4. **Le bilan ET la note marchent toujours** : depuis le site en ligne,
+   rédiger un bilan (une utilisation, environ 0,006 $), puis analyser une
+   note (« Remplir depuis une note », une utilisation, environ 0,01 $, sans
+   enregistrer la fiche). Contrôler les deux dernières lignes `ai_usage` :
+   `feature = 'summary'` et `feature = 'note'`, statut `ok`.
+
+5. **La recherche est bien fermée** (gratuit : la coupure est vérifiée avant
+   toute réservation). Sur le site en ligne, connecté avec son compte, ouvrir
+   la console du navigateur (F12, onglet *Console*) et coller cette ligne,
+   qui affiche seulement le code HTTP et le code d'erreur, jamais le jeton :
+
+   ```js
+   (async () => { const k = Object.keys(localStorage).find(c => /^sb-.+-auth-token$/.test(c)); const t = JSON.parse(localStorage.getItem(k)).access_token; const r = await fetch('https://xowiezzqehadcfnbkijo.supabase.co/functions/v1/ai-text', { method: 'POST', headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, body: JSON.stringify({ feature: 'search', payload: { text: 'essai' } }) }); console.log(r.status, (await r.json()).error); })();
+   ```
+
+   Attendu : **`503 feature_disabled`**. `400 invalid_request` : l'ancienne
+   version tourne encore (redéployer). `403 consent_outdated` : la coupure
+   n'est **pas** en place (la recherche reste refusée à tous grâce à la
+   version provisoire, sans frais) : refaire l'étape 1 sur le bon projet,
+   puis redéployer.
+
+#### Essai et choix du modèle (avant la PR B)
+
+Même outil et mêmes règles qu'au §6.3 (clé de l'espace d'**essai**, jamais
+celle de la production). Le jeu
+`tests/security/fixtures/ai-text-trial-search.json` contient 22 phrases
+inventées, chacune avec ses filtres attendus, dont des pièges : consigne
+cachée, phrase hors sujet, question posée à l'assistant, plusieurs groupes,
+périodes relatives (ce mois-ci, le mois dernier, l'an dernier, les 15
+derniers jours, aujourd'hui, l'hiver dernier, cet été) et années écrites,
+« près de chez moi », lieu nommé fictif avec rayon, département en toutes
+lettres et en chiffres, commune fictive, statuts (« espèces menacées »,
+« quasi menacées »), catégories (« rapaces », « canards », « limicoles »),
+genre latin écrit, genres en dernier recours (« sittelles et grimpereaux »),
+nom d'espèce précis (doit rester dans `text`), fautes de frappe, phrase en
+anglais, 200 caractères, année à venir, balise HTML.
+
+Essai à blanc (aucun appel, aucune clé) :
+
+```bash
+deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature search --inputs tests/security/fixtures/ai-text-trial-search.json --dry-run
+```
+
+Essai réel (coût maximum annoncé : 0,99 $ pour les deux modèles, sous le
+plafond `--max-usd` de 1 $ ; ajouter `--models claude-sonnet-5-5` pour un
+seul modèle). Même fichier de clé d'essai qu'au §6.3 :
+
+```bash
+deno run --no-config --env-file="$HOME/.config/carnet-naturaliste/essai.env" --allow-env --allow-net=api.anthropic.com --allow-read --allow-write tests/security/ai-text-trial.mjs --feature search --inputs tests/security/fixtures/ai-text-trial-search.json --out "$HOME/essai-ai-text-search"
+```
+
+Le rapport compare chaque réponse aux filtres attendus, sur les 11 champs :
+**justes**, **inventés** (filtre rempli alors que la phrase ne le demande
+pas : le défaut le plus grave), **manqués**, **faux**, **retirés** (champ
+écarté par la validation : le modèle s'était trompé, même si la sortie
+validée le montre vide ; jamais compté juste, pour départager les modèles
+sur ce qu'ils inventent), et **fuites** (consigne cachée ou balise
+retrouvée dans la réponse). Le rapport de la note compte désormais les
+champs retirés de la même façon. La comparaison est **stricte** dès le départ : les listes doivent
+être des ensembles **égaux** (un statut en trop est faux, jamais une simple
+inclusion), les textes égaux après normalisation (casse, accents, pluriel,
+article en tête), la période et la proximité égales champ par champ (rayon
+attendu 10 km quand la phrase n'en donne pas). Quelques attendus admettent
+plusieurs réponses, écrites `{ "oneOf": [...] }` (« papillons » : de jour,
+ou de jour et de nuit). Règles : `tests/security/searchTrialCompare.ts`,
+testées par `tests/searchTrialCompare.test.ts`. La phrase 19 (« les oiseaux
+que je verrai en 2031 ») admet deux réponses : tout vide (ce n'est pas une
+recherche d'observations passées) ou le seul groupe « Oiseaux ». Si le
+modèle y écrit l'année 2031, elle est retirée et comptée « retirée ».
+
+#### Couper et rouvrir la recherche
+
+- **Refermer** (sans rien défaire) : `AI_DISABLED_FEATURES=search`, puis
+  redéployer `ai-text` et refaire le contrôle de l'étape 5
+  (`503 feature_disabled`). Pour couper aussi le bilan et la note :
+  `summary,note,search`.
+
+  ```bash
+  npx supabase secrets set AI_DISABLED_FEATURES=search --project-ref xowiezzqehadcfnbkijo
   ```
 
 - **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
-- **Rouvrir** : étapes 3 à 5 ci-dessus.
+- **Rouvrir** : seulement après la fusion de la PR B, qui remplacera la
+  version provisoire du consentement des deux côtés par une version
+  enregistrable. Comme pour
+  la note (§6.7, « Ouvrir la note après la fusion de la PR B ») :
+  **redéployer `ai-text` d'abord**, recherche encore fermée, puis retirer
+  `search` de la liste (`secrets unset AI_DISABLED_FEATURES` si elle ne
+  contient que `search`), redéployer, et refaire les contrôles 401, 204,
+  403. Dans l'autre ordre, la version en service attendrait encore l'accord
+  provisoire et l'application tournerait en boucle sur la carte d'accord.

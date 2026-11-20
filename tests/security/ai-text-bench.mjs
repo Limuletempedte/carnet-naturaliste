@@ -3,8 +3,8 @@
 // clé réelle, aucun appel payant, pas besoin de Docker.
 // Vérifie l'enchaînement de index.ts : CORS, identité, limites du corps,
 // arguments de ai_reserve_call (dont p_feature), appel envoyé à Claude,
-// finalisation, codes d'erreur et journaux, pour le bilan (`summary`) et la
-// note (`note`).
+// finalisation, codes d'erreur et journaux, pour le bilan (`summary`), la
+// note (`note`) et la recherche (`search`).
 // Les droits SQL et la réservation réelle sont couverts par ai-access-rls.mjs.
 //
 // Depuis la racine du dépôt :  DENO_BIN=$(command -v deno) node tests/security/ai-text-bench.mjs
@@ -58,6 +58,15 @@ const NOTE_ANSWER = {
     sexe: 'Non renseigné', phenology: 'Non renseigné', otherSpecies: [], remainder: 'Avec Gaspard.',
 };
 
+// Réponse du faux modèle pour la recherche : commune « Bordeaux » absente de
+// la phrase (inventée), retirée par le validateur sans rejeter le reste.
+const SEARCH_TEXT = 'les rapaces vus en mai près de chez moi <img src=x onerror=alert(1)>';
+const SEARCH_ANSWER = {
+    period: { kind: 'month', days: 0, month: 5, season: 'none', yearScope: 'all' },
+    years: [], groups: [], categories: ['rapaces_diurnes', 'rapaces_nocturnes'], genera: [], statuses: [], habitats: [],
+    department: '', commune: 'Bordeaux', near: { kind: 'current_position', placeName: '', radiusKm: 0 }, text: '',
+};
+
 let anthMode = 'ok';
 const anthReqs = [];
 const anth = http.createServer((req, res) => {
@@ -68,8 +77,11 @@ const anth = http.createServer((req, res) => {
             res.end(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } })); return;
         }
         const isNote = typeof body.system === 'string' && body.system.includes('note de terrain');
+        const isSearch = typeof body.system === 'string' && body.system.includes('recherche de son carnet');
         const text = anthMode === 'bad_number' ? `Vous avez noté 43 observations.${FILLER}` : GOOD_TEXT;
-        const answer = isNote ? (anthMode === 'not_json' ? 'Voici la fiche : mésange' : JSON.stringify(NOTE_ANSWER)) : JSON.stringify({ text });
+        let answer = JSON.stringify({ text });
+        if (isNote) answer = anthMode === 'not_json' ? 'Voici la fiche : mésange' : JSON.stringify(NOTE_ANSWER);
+        if (isSearch) answer = anthMode === 'not_json' ? 'Voici les filtres : rapaces' : JSON.stringify(SEARCH_ANSWER);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             id: 'msg_1', type: 'message', role: 'assistant', model: body.model,
@@ -133,12 +145,14 @@ try {
 
     assert.equal((await call({ raw: JSON.stringify({ feature: 'summary', payload: { pad: 'x'.repeat(17000) } }) })).status, 413);
     assert.equal((await call({ raw: '{pas du json' })).status, 400);
+    assert.equal((await call({ body: { feature: 'recherche', payload: { text: 'pics' } } })).json.error, 'invalid_request');
     assert.equal((await call({ body: { feature: 'search', payload: {} } })).json.error, 'invalid_request');
+    assert.equal((await call({ body: { feature: 'search', payload: { text: 'a'.repeat(201) } } })).json.error, 'invalid_request');
     assert.equal((await call({ body: { feature: 'note', payload: {} } })).json.error, 'invalid_request');
     assert.equal((await call({ body: { feature: 'note', payload: { text: 'a'.repeat(1001) } } })).json.error, 'invalid_request');
     assert.equal((await call({ body: { feature: 'summary', payload: { month: '2026-13' } } })).json.error, 'invalid_request');
     assert.equal(rpcCalls.length, 0, 'aucune réservation pour une requête invalide');
-    ok('413 au-delà de 16 Ko, 400 JSON invalide / fonctionnalité non livrée / charge invalide (note vide ou > 1 000 caractères), sans réservation');
+    ok('413 au-delà de 16 Ko, 400 JSON invalide / fonctionnalité inconnue / charge invalide (note vide ou > 1 000 caractères, phrase vide ou > 200 caractères), sans réservation');
 
     const r = await call({ body, origin: 'https://carnet-naturaliste.vercel.app' });
     assert.equal(r.status, 200, JSON.stringify(r.json));
@@ -229,6 +243,57 @@ try {
     assert.doesNotMatch(logs, /mésange|Mésange|Brosse|Gaspard|onerror|Ensoleill|25:00|Paul/);
     assert.match(logs, /"feature":"note"/);
     ok('journaux de la note : ni la note, ni le résultat, ni prénom');
+
+    // --- Recherche en langage naturel ------------------------------------
+    rpcCalls.length = 0; anthReqs.length = 0;
+    const searchBody = {
+        feature: 'search',
+        payload: { text: SEARCH_TEXT, date: '2026-11-20', latitude: 44.8, longitude: -0.58, observations: [{ speciesName: 'Buse variable' }] },
+    };
+    const s = await call({ body: searchBody, origin: 'https://carnet-naturaliste.vercel.app' });
+    assert.equal(s.status, 200, JSON.stringify(s.json));
+    assert.equal(s.json.remaining, 5);
+    assert.deepEqual(s.json.result, {
+        period: { kind: 'month', days: null, month: 5, season: null, yearScope: 'all' },
+        years: [], groups: [], categories: ['rapaces_diurnes', 'rapaces_nocturnes'], genera: [], statuses: [], habitats: [],
+        department: null, commune: null, near: { kind: 'current_position', placeName: null, radiusKm: 10 }, text: null,
+        dropped: ['commune'],
+    });
+    const searchReserve = rpcCalls.find(c => c.name === 'ai_reserve_call');
+    assert.equal(searchReserve.body.p_feature, 'search');
+    assert.equal(searchReserve.body.p_consent_version, 'pr-a-fermee-jusqu-au-texte-de-la-pr-b');
+    assert(searchReserve.body.p_max_cost_usd > 0.04 && searchReserve.body.p_max_cost_usd < 0.05, String(searchReserve.body.p_max_cost_usd));
+    assert.deepEqual(rpcCalls.find(c => c.name === 'ai_finalize_call').body, { p_id: 'usage-1', p_status: 'ok', p_input_tokens: 1000, p_output_tokens: 400, p_cost_usd: 0.006 });
+    const searchSent = anthReqs.at(-1);
+    assert.equal(searchSent.max_tokens, 2500);
+    assert.equal(searchSent.output_config.effort, 'low');
+    assert.equal(searchSent.output_config.format.type, 'json_schema');
+    assert.deepEqual(searchSent.output_config.format.schema.required, ['period', 'years', 'groups', 'categories', 'genera', 'statuses', 'habitats', 'department', 'commune', 'near', 'text']);
+    assert.match(searchSent.system, /DONNÉE, jamais une instruction/);
+    assert.match(searchSent.messages[0].content, /<phrase>".*rapaces vus en mai.*\\u003cimg/);
+    assert.doesNotMatch(searchSent.messages[0].content, /<img/);
+    assert.doesNotMatch(JSON.stringify(searchSent), /2026-11-20|44\.8|-0\.58|Buse variable/);
+    ok('recherche 200 : p_feature=search, accord provisoire impossible à enregistrer, coût max ≈ 0,042 $, max_tokens 2 500, seule la phrase envoyée (délimitée, « < » échappé), ni date, ni position, ni observation ; commune inventée retirée et signalée (dropped), rayon par défaut 10 km');
+
+    rpcCalls.length = 0; anthMode = 'not_json';
+    const sj = await call({ body: searchBody });
+    assert.equal(sj.status, 502); assert.equal(sj.json.error, 'invalid_output');
+    assert.equal(rpcCalls.find(c => c.name === 'ai_finalize_call').body.p_status, 'invalid_output');
+    anthMode = 'ok';
+    ok('recherche : réponse qui n’est pas du JSON → 502 invalid_output (finalisé)');
+
+    assert.doesNotMatch(logs, /rapaces|chez moi|onerror|Bordeaux|current_position|Buse/);
+    assert.match(logs, /"feature":"search"/);
+    ok('journaux de la recherche : ni la phrase, ni les filtres');
+
+    await start({ AI_DISABLED_FEATURES: 'search' });
+    rpcCalls.length = 0;
+    const disSearch = await call({ body: { feature: 'search', payload: { text: SEARCH_TEXT } } });
+    assert.equal(disSearch.status, 503); assert.equal(disSearch.json.error, 'feature_disabled');
+    assert.equal(rpcCalls.length, 0, 'aucune réservation pour la recherche coupée');
+    assert.equal((await call({ body })).status, 200, 'le bilan reste ouvert quand seule la recherche est coupée');
+    assert.equal((await call({ body: noteBody })).status, 200, 'la note reste ouverte quand seule la recherche est coupée');
+    ok('coupure de la recherche seule (503 feature_disabled, sans réservation) : bilan et note restent ouverts');
 
     await start({ AI_DISABLED_FEATURES: 'summary' });
     const dis = await call({ body });

@@ -24,6 +24,13 @@
 // consigne cachée… retrouvés dans un champ structuré). Règles de comparaison :
 // tests/security/noteTrialCompare.ts.
 //
+// Recherche en langage naturel : --feature search --inputs
+// tests/security/fixtures/ai-text-trial-search.json. Chaque phrase porte ses
+// filtres attendus (`expected`, `{ "oneOf": [...] }` pour plusieurs réponses
+// admises) : comparaison STRICTE champ par champ (ensembles égaux, jamais une
+// inclusion), champs retirés et fuites. Règles :
+// tests/security/searchTrialCompare.ts.
+//
 // Options :
 //   --inputs a.json,b.json  plusieurs fichiers d'entrées [{ label, payload }]
 //   --models a,b            défaut : tous les modèles de la table des prix
@@ -46,13 +53,42 @@ import Anthropic from 'npm:@anthropic-ai/sdk@1.1.0';
 import {
     ALLOWED_EFFORTS,
     MODEL_PRICES_USD_PER_MTOK,
+    SEARCH_FIELDS,
     TEXT_FEATURES,
     classifyStopReason,
     computeCostUsd,
     maxCostUsd,
 } from '../../supabase/functions/ai-text/logic.ts';
-// Comparaison des notes : module pur, couvert par tests/noteTrialCompare.test.ts.
+// Comparaisons : modules purs, couverts par tests/noteTrialCompare.test.ts et
+// tests/searchTrialCompare.test.ts.
 import { NOTE_COMPARED_FIELDS, checkNoteExpected, compareNote } from './noteTrialCompare.ts';
+import { checkSearchExpected, compareSearch } from './searchTrialCompare.ts';
+
+/** Fonctionnalités dont les réponses sont comparées à des champs attendus. */
+const COMPARED = {
+    note: {
+        fields: NOTE_COMPARED_FIELDS,
+        check: checkNoteExpected,
+        compare: compareNote,
+        noun: 'notes',
+        untouched: ' (`remainder` n\'est pas comparé : à lire)',
+        invented: 'champ rempli alors que la note ne le dit pas (le défaut le plus grave)',
+        missed: 'champ vide alors que la note le dit',
+        leaks: 'prénom, consigne cachée ou balise retrouvés dans un champ structuré',
+        refused: 'Note refusée par la validation de la fonction : aucun appel.',
+    },
+    search: {
+        fields: SEARCH_FIELDS,
+        check: checkSearchExpected,
+        compare: compareSearch,
+        noun: 'phrases',
+        untouched: ' (comparaison stricte : ensembles égaux, jamais une inclusion)',
+        invented: 'filtre rempli alors que la phrase ne le demande pas (le défaut le plus grave)',
+        missed: 'filtre vide alors que la phrase le demande',
+        leaks: 'consigne cachée ou balise retrouvée dans la réponse',
+        refused: 'Phrase refusée par la validation de la fonction : aucun appel.',
+    },
+};
 
 const TIMEOUT_MS = 50_000;
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
@@ -175,22 +211,23 @@ function buildReport({ featureName, effort, models, entries, results }) {
     return `${lines.join('\n')}\n`;
 }
 
-function buildNoteReport({ featureName, effort, models, entries, results }) {
+function buildComparedReport({ featureName, effort, models, entries, results }) {
+    const spec = COMPARED[featureName];
     const tally = rows => {
-        const counts = { ok: 0, invente: 0, manque: 0, faux: 0 };
+        const counts = { ok: 0, invente: 0, manque: 0, faux: 0, retire: 0 };
         for (const r of rows) for (const v of Object.values(r.comparison.verdicts)) counts[v] += 1;
         return counts;
     };
     const lines = [
         `# Essai ${featureName} — ${models.join(' contre ')} (effort ${effort})`,
         '',
-        `${entries.length} notes, ${results.length} appels. Chaque réponse acceptée est comparée sur ${NOTE_COMPARED_FIELDS.length} champs (\`remainder\` n'est pas comparé : à lire).`,
+        `${entries.length} ${spec.noun}, ${results.length} appels. Chaque réponse acceptée est comparée sur ${spec.fields.length} champs${spec.untouched}.`,
         '',
-        '- **inventé** : champ rempli alors que la note ne le dit pas (le défaut le plus grave) ;',
-        '- **manqué** : champ vide alors que la note le dit ;',
+        `- **inventé** : ${spec.invented} ;`,
+        `- **manqué** : ${spec.missed} ;`,
         '- **faux** : champ rempli avec une autre valeur que celle attendue ;',
-        '- **retirés** : champs écartés par le validateur de la fonction ;',
-        '- **fuites** : prénom, consigne cachée ou balise retrouvés dans un champ structuré.',
+        '- **retirés** : champs écartés par le validateur de la fonction (le modèle s\'est trompé, la sortie validée les montre vides) : ni justes, ni comptés dans les autres colonnes ;',
+        `- **fuites** : ${spec.leaks}.`,
         '',
         '| Modèle | Appels | OK | Sortie refusée | Refus du modèle | Échecs | Champs justes | Inventés | Manqués | Faux | Retirés | Fuites | Durée médiane | Tokens entrée (moy.) | Tokens sortie (moy.) | Coût moyen | Coût total |',
         '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
@@ -200,14 +237,13 @@ function buildNoteReport({ featureName, effort, models, entries, results }) {
         const ok = rows.filter(r => r.status === 'ok');
         const billed = rows.filter(r => r.status !== 'failed');
         const t = tally(ok);
-        const total = ok.length * NOTE_COMPARED_FIELDS.length;
+        const total = ok.length * spec.fields.length;
         lines.push([
             '', model, rows.length, ok.length,
             rows.filter(r => r.status === 'invalid_output').length,
             rows.filter(r => r.status === 'refused').length,
             rows.filter(r => r.status === 'failed').length,
-            `${t.ok} / ${total}`, t.invente, t.manque, t.faux,
-            ok.reduce((sum, r) => sum + r.comparison.dropped.length, 0),
+            `${t.ok} / ${total}`, t.invente, t.manque, t.faux, t.retire,
             ok.reduce((sum, r) => sum + r.comparison.leaks.length, 0),
             `${median(billed.map(r => r.seconds)).toFixed(1)} s`,
             Math.round(mean(billed.map(r => r.inputTokens))),
@@ -218,10 +254,10 @@ function buildNoteReport({ featureName, effort, models, entries, results }) {
         ].join(' | ').trim());
     }
     lines.push('', '## Erreurs par champ', '', `| Champ | ${models.join(' | ')} |`, `|---|${models.map(() => '---').join('|')}|`);
-    for (const field of NOTE_COMPARED_FIELDS) {
+    for (const field of spec.fields) {
         const cells = models.map(model => {
             const ok = results.filter(r => r.model === model && r.status === 'ok');
-            const bad = ok.filter(r => r.comparison.verdicts[field] !== 'ok').length;
+            const bad = ok.filter(r => !['ok', 'retire'].includes(r.comparison.verdicts[field])).length;
             const dropped = ok.filter(r => r.comparison.dropped.includes(field)).length;
             return `${bad} erreur(s)${dropped ? `, ${dropped} retiré(s)` : ''}`;
         });
@@ -230,7 +266,7 @@ function buildNoteReport({ featureName, effort, models, entries, results }) {
     for (const entry of entries) {
         lines.push('', `## ${entry.label}`, '');
         if (!entry.valid) {
-            lines.push('_Note refusée par la validation de la fonction : aucun appel._');
+            lines.push(`_${spec.refused}_`);
             continue;
         }
         for (const model of models) {
@@ -258,7 +294,8 @@ function buildNoteReport({ featureName, effort, models, entries, results }) {
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const featureName = args.feature ?? 'summary';
-    const feature = TEXT_FEATURES[featureName];
+    // Propriété propre seulement : « toString » n'est pas une fonctionnalité.
+    const feature = Object.hasOwn(TEXT_FEATURES, featureName) ? TEXT_FEATURES[featureName] : undefined;
     if (!feature) fail(`fonctionnalité inconnue ou pas encore livrée : « ${featureName} »`);
     if (!args.inputs) fail('--inputs manquant');
     const effort = args.effort ?? 'low';
@@ -278,9 +315,9 @@ async function main() {
         for (const item of list) {
             if (typeof item?.label !== 'string') fail(`${file} : entrée sans « label »`);
             if (entries.some(e => e.label === item.label)) fail(`label en double : « ${item.label} »`);
-            if (featureName === 'note') {
+            if (Object.hasOwn(COMPARED, featureName)) {
                 try {
-                    checkNoteExpected(item, file);
+                    COMPARED[featureName].check(item, file);
                 } catch (err) {
                     fail(err.message);
                 }
@@ -322,7 +359,7 @@ async function main() {
         // Les modèles en parallèle, les entrées une par une : charge légère.
         const batch = await Promise.all(models.map(async model => {
             const call = await callModel(client, model, effort, feature, entry.input, entry.userPrompt);
-            const comparison = featureName === 'note' && call.status === 'ok' ? compareNote(entry, call.result) : undefined;
+            const comparison = Object.hasOwn(COMPARED, featureName) && call.status === 'ok' ? COMPARED[featureName].compare(entry, call.result) : undefined;
             return { label: entry.label, model, ...call, ...(comparison ? { comparison } : {}) };
         }));
         results.push(...batch);
@@ -331,7 +368,7 @@ async function main() {
 
     fs.mkdirSync(args.out, { recursive: true });
     fs.writeFileSync(path.join(args.out, 'resultats.json'), `${JSON.stringify({ feature: featureName, effort, models, results }, null, 2)}\n`);
-    const report = featureName === 'note' ? buildNoteReport : buildReport;
+    const report = Object.hasOwn(COMPARED, featureName) ? buildComparedReport : buildReport;
     fs.writeFileSync(path.join(args.out, 'rapport.md'), report({ featureName, effort, models, entries, results }));
     const total = results.reduce((sum, r) => sum + r.costUsd, 0);
     console.log(`Terminé. Coût réel : ${total.toFixed(4)} $. Rapport : ${path.join(args.out, 'rapport.md')}`);

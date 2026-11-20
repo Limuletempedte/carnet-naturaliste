@@ -336,10 +336,32 @@ describe('accès', () => {
 });
 
 describe('fonctionnalités texte : constantes recopiées de la fonction ai-text', () => {
-    it('chaque version déclarée par l’application est celle de la fonction, et réciproquement', () => {
-        // Égalité stricte des deux tables : une fonctionnalité livrée a son
-        // texte de consentement des deux côtés, avec la même version.
-        expect(AI_TEXT_CONSENT_VERSIONS).toEqual(TEXT_CONSENT_VERSIONS);
+    it('chaque version déclarée par l’application est celle de la fonction', () => {
+        // La fonction peut déclarer une fonctionnalité avant l'application
+        // (PR A de la recherche : serveur seul, aucune carte de consentement
+        // affichée) ; l'inverse est interdit, et une version déclarée des deux
+        // côtés doit être identique.
+        for (const [feature, version] of Object.entries(AI_TEXT_CONSENT_VERSIONS)) {
+            expect(TEXT_CONSENT_VERSIONS[feature as keyof typeof TEXT_CONSENT_VERSIONS], feature).toBe(version);
+        }
+        expect(AI_TEXT_CONSENT_VERSIONS.summary).toBe(TEXT_CONSENT_VERSIONS.summary);
+        expect(AI_TEXT_CONSENT_VERSIONS.note).toBe(TEXT_CONSENT_VERSIONS.note);
+        // Seule la recherche peut manquer côté application (PR A).
+        const serverOnly = Object.keys(TEXT_CONSENT_VERSIONS).filter(feature => !(feature in AI_TEXT_CONSENT_VERSIONS));
+        expect(serverOnly.filter(feature => feature !== 'search')).toEqual([]);
+    });
+
+    it('la recherche n’a pas encore de consentement côté application, et sa version serveur est provisoire', () => {
+        // PR A : version provisoire côté fonction, plus longue que les 32
+        // caractères de `ai_consents.version` : aucun accord ne l'atteint.
+        // PR B : déclarer la recherche ici impose de la remplacer des deux
+        // côtés par une version enregistrable (texte du consentement écrit).
+        if (AI_TEXT_CONSENT_VERSIONS.search === undefined) {
+            expect(TEXT_CONSENT_VERSIONS.search?.length).toBeGreaterThan(32);
+        } else {
+            expect(AI_TEXT_CONSENT_VERSIONS.search.length).toBeGreaterThan(0);
+            expect(AI_TEXT_CONSENT_VERSIONS.search.length).toBeLessThanOrEqual(32);
+        }
     });
 
     it('la version provisoire de la note (PR A) n’est plus acceptée', () => {
