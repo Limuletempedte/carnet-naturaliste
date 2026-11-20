@@ -23,7 +23,10 @@
 </head>
 
 <body class="bg-nature-beige text-nature-dark font-sans antialiased selection:bg-nature-green selection:text-white">
-  <a href="#main-content" class="sr-only" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" onfocus="this.style.position='fixed';this.style.left='1rem';this.style.top='1rem';this.style.width='auto';this.style.height='auto';this.style.overflow='visible';this.style.zIndex='9999';this.style.padding='0.5rem 1rem';this.style.background='white';this.style.borderRadius='0.5rem';this.style.boxShadow='0 4px 20px rgba(0,0,0,0.15)';this.style.color='#1C1C1E';this.style.fontWeight='600';" onblur="this.style.position='absolute';this.style.left='-9999px';this.style.width='1px';this.style.height='1px';this.style.overflow='hidden';">Aller au contenu principal</a>
+  <!-- Lien d'evitement : cache hors ecran, il apparait au focus clavier grace a
+       la regle .skip-link de index.css. Aucun gestionnaire onfocus/onblur ici :
+       la CSP de production (script-src sans 'unsafe-inline') les bloquerait. -->
+  <a href="#main-content" class="skip-link">Aller au contenu principal</a>
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

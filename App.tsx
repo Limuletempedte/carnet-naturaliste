@@ -916,6 +916,9 @@ const App: React.FC = () => {
             </div>
             <main
                 id="main-content"
+                // Cible du lien « Aller au contenu principal » (index.html) :
+                // tabIndex -1 lui permet de recevoir le focus sans entrer dans l'ordre de Tab.
+                tabIndex={-1}
                 className={`container mx-auto p-4 md:p-8 max-w-7xl ${isMobileView ? 'px-2' : ''}`}
                 style={isMobileView ? { paddingTop: '6rem' } : undefined}
             >
