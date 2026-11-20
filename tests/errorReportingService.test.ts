@@ -43,6 +43,38 @@ describe('errorReportingService — sans DSN', () => {
     });
 });
 
+describe('errorReportingService — traces réseau', () => {
+    it("réduit l'URL des traces fetch et xhr à l'origine (ni nom d'espèce, ni coordonnées)", async () => {
+        const { service } = await load();
+        const inat = service.scrubBreadcrumb({ category: 'fetch', data: { method: 'GET', url: 'https://api.inaturalist.org/v1/taxa/autocomplete?q=m%C3%A9sange', status_code: 200 } });
+        expect(inat?.data).toEqual({ method: 'GET', url: 'https://api.inaturalist.org', status_code: 200 });
+        const wiki = service.scrubBreadcrumb({ category: 'xhr', data: { url: 'https://fr.wikipedia.org/api/rest_v1/page/summary/Parus%20major' } });
+        expect(wiki?.data?.url).toBe('https://fr.wikipedia.org');
+        const console = { category: 'console', message: 'APP_ERROR' };
+        expect(service.scrubBreadcrumb(console)).toBe(console);
+    });
+
+    it("retire la valeur des attributs aria-label, alt et title des traces d'interface", async () => {
+        const { service } = await load();
+        const click = service.scrubBreadcrumb({
+            category: 'ui.click',
+            message: 'div.panel > button.choose[aria-label="Choisir Rougegorge familier"] > img[alt="Erithacus rubecula"][title=\'Parus major\']',
+        });
+        expect(click?.message).toBe('div.panel > button.choose[aria-label] > img[alt][title]');
+        expect(click?.message).not.toMatch(/Rougegorge|Erithacus|Parus/);
+        const input = service.scrubBreadcrumb({ category: 'ui.input', message: 'input#speciesName' });
+        expect(input?.message).toBe('input#speciesName');
+    });
+
+    it('branche le filtre sur Sentry.init', async () => {
+        vi.stubEnv('VITE_SENTRY_DSN', FAKE_DSN);
+        const { sentry, service } = await load();
+        service.initErrorReporting();
+        const before = sentry.init.mock.calls[0][0]?.beforeBreadcrumb as unknown as (b: { category: string; data: { url: string } }) => { data: { url: string } };
+        expect(before({ category: 'fetch', data: { url: 'https://nominatim.openstreetmap.org/reverse?lat=45.1&lon=1.2' } }).data.url).toBe('https://nominatim.openstreetmap.org');
+    });
+});
+
 describe('errorReportingService — avec DSN', () => {
     beforeEach(() => {
         vi.stubEnv('VITE_SENTRY_DSN', FAKE_DSN);

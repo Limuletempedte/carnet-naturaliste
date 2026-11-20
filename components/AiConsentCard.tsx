@@ -12,7 +12,7 @@ const CONTACT_EMAIL = 'carnetnaturaliste.app@gmail.com';
  * chacun devra alors redonner son accord.
  */
 export const SummaryConsentText: React.FC = () => (
-    <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300" data-testid="ai-summary-consent-text">
+    <div className="space-y-3 text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300" data-testid="ai-summary-consent-text">
         <p>
             L'assistant rédige un court texte à partir des chiffres de votre mois, calculés par l'application.
             Il est fourni par <strong>Anthropic</strong> (modèle Claude).
@@ -51,6 +51,52 @@ export const SummaryConsentText: React.FC = () => (
     </div>
 );
 
+/**
+ * Texte du consentement « Note → fiche », version `2026-11-v1`
+ * (`AI_TEXT_CONSENT_VERSIONS.note`, services/aiAssistService.ts).
+ * Toute modification de fond impose de changer cette version ET
+ * `CONSENT_VERSIONS.note` dans supabase/functions/ai-text/logic.ts :
+ * chacun devra alors redonner son accord.
+ */
+export const NoteConsentText: React.FC = () => (
+    <div className="space-y-3 text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300" data-testid="ai-note-consent-text">
+        <p>
+            L'assistant lit une note que vous tapez ou dictez, et propose de remplir des champs de la fiche (espèce, nombre, date, heure, lieu-dit, météo…).
+            Il est fourni par <strong>Anthropic</strong> (modèle Claude).
+        </p>
+        <div>
+            <p className="font-semibold text-nature-dark dark:text-white">Ce qui est envoyé</p>
+            <ul className="list-disc pl-5 space-y-1">
+                <li><strong>Le texte de la note, tel que vous l'avez écrit</strong> (1 000 caractères au plus), y compris les lieux et les noms de personnes qu'il contient.</li>
+                <li>Si vous reprenez le commentaire d'une fiche comme note, c'est ce commentaire qui est envoyé.</li>
+            </ul>
+        </div>
+        <div>
+            <p className="font-semibold text-nature-dark dark:text-white">Ce qui n'est pas envoyé</p>
+            <p>Ni la date ni l'heure de la fiche, ni coordonnées GPS, ni commune, ni photo, ni le reste de la fiche, ni votre adresse e-mail.</p>
+        </div>
+        <div>
+            <p className="font-semibold text-nature-dark dark:text-white">Destinataire, transfert et conservation</p>
+            <ul className="list-disc pl-5 space-y-1">
+                <li>Destinataire : Anthropic, via Anthropic Ireland Ltd pour l'Espace économique européen.</li>
+                <li>Transfert hors de l'UE : les données sont stockées aux <strong>États-Unis</strong> et peuvent être traitées hors de l'UE, dans le cadre des clauses contractuelles types de l'UE.</li>
+                <li>Chez Anthropic : effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Par défaut, ces données ne servent pas à entraîner les modèles.</li>
+                <li>Dans le Carnet : rien de la note n'est enregistré sans votre choix. Les champs que vous cochez sont écrits dans la fiche ; la note entière, ou ce qu'elle dit d'autre, ne va dans le commentaire que si vous cochez la case correspondante (« Garder la note dans le commentaire » est cochée d'avance, vous pouvez la décocher). Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la note ni la réponse.</li>
+            </ul>
+        </div>
+        <div>
+            <p className="font-semibold text-nature-dark dark:text-white">À savoir</p>
+            <ul className="list-disc pl-5 space-y-1">
+                <li><strong>Une note déjà envoyée ne peut pas être rappelée.</strong> Évitez d'y écrire le nom d'une personne ou la localisation précise d'une espèce sensible.</li>
+                <li>C'est une aide : l'assistant peut se tromper. Vous relisez chaque champ proposé et c'est vous qui choisissez ce qui est appliqué ; rien n'est rempli sans votre clic.</li>
+                <li>Chaque analyse compte pour 1 utilisation sur les 20 du mois, partagées avec les autres fonctions de l'assistant. Un refus de l'assistant ou une réponse inexploitable compte aussi.</li>
+                <li>Vous pouvez retirer votre accord à tout moment dans « Assistant IA » (menu du compte), bouton « Retirer mon accord à la note ».</li>
+                <li>Contact : {CONTACT_EMAIL}</li>
+            </ul>
+        </div>
+    </div>
+);
+
 const FEATURE_LABELS: Record<AiTextFeature, string> = {
     summary: 'Bilan du mois',
     note: 'Note → fiche',
@@ -59,10 +105,12 @@ const FEATURE_LABELS: Record<AiTextFeature, string> = {
 
 const CONSENT_TEXTS: Partial<Record<AiTextFeature, React.FC>> = {
     summary: SummaryConsentText,
+    note: NoteConsentText,
 };
 
 const CHECKBOX_LABELS: Partial<Record<AiTextFeature, string>> = {
     summary: "J'ai lu ces informations et j'accepte l'envoi des chiffres de mes bilans à Anthropic lorsque je demande une rédaction.",
+    note: "J'ai lu ces informations et j'accepte l'envoi du texte de mes notes à Anthropic lorsque je demande une analyse.",
 };
 
 export const consentCheckboxLabel = (feature: AiTextFeature): string => CHECKBOX_LABELS[feature] ?? '';
@@ -111,9 +159,14 @@ const AiConsentCard: React.FC<AiConsentCardProps> = ({
     const [checked, setChecked] = useState(false);
     const titleId = useId();
     const sectionRef = useRef<HTMLElement | null>(null);
+    const acceptRef = useRef<HTMLButtonElement | null>(null);
     useEffect(() => {
         if (autoFocus) sectionRef.current?.focus();
     }, [autoFocus]);
+    // Échec de l'enregistrement : le focus revient sur « Accepter », à côté du message.
+    useEffect(() => {
+        if (error) acceptRef.current?.focus();
+    }, [error]);
     return (
         <section
             ref={sectionRef}
@@ -151,6 +204,7 @@ const AiConsentCard: React.FC<AiConsentCardProps> = ({
             {isOffline && <p className="text-sm text-amber-700 dark:text-amber-300">Disponible en ligne uniquement.</p>}
             <div className="flex flex-wrap items-center gap-2">
                 <button
+                    ref={acceptRef}
                     type="button"
                     onClick={() => void onAccept()}
                     disabled={!checked || isWorking || isOffline}

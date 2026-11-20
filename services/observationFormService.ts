@@ -38,6 +38,8 @@ export const validateObservationForm = (formData: ObservationFormData): Record<s
     ) {
         errors.countBreakdown = 'La somme mâle + femelle + non identifié doit être égale au total.';
     }
+    // Contrainte `observations_comment_max_length_check` de la base.
+    if ((formData.comment ?? '').length > 5000) errors.comment = 'Le commentaire ne doit pas dépasser 5 000 caractères.';
     if (formData.gps.lat !== null && (formData.gps.lat < -90 || formData.gps.lat > 90)) errors.lat = 'La latitude doit être entre -90 et 90.';
     if (formData.gps.lon !== null && (formData.gps.lon < -180 || formData.gps.lon > 180)) errors.lon = 'La longitude doit être entre -180 et 180.';
 

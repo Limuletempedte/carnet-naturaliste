@@ -25,6 +25,17 @@ import { AiAssistError, identifySpecies, readCachedAiCounter, rememberRemaining,
 import AiButton from './AiButton';
 import { suggestSpeciesAutocomplete, type SpeciesSuggestion } from '../services/speciesService';
 import { MapPinIcon, XMarkIcon } from './icons';
+import AiNoteAssist, { type NoteApplyReport, type NoteApplyRequest } from './AiNoteAssist';
+import {
+    appendToComment,
+    applyNoteFields,
+    COMMENT_TOO_LONG_WARNING,
+    findExactSpeciesMatch,
+    NOTE_FORM_KEYS,
+    NOTE_PROPOSAL_FIELDS,
+    NOTE_PROPOSAL_LABELS,
+    noteSpeciesQuery,
+} from '../utils/aiNoteMapping';
 
 const MapInput = lazy(() => import('./MapInput'));
 
@@ -52,6 +63,24 @@ const normalizeLatin = (value: string): string => value.trim().replace(/\s+/g, '
 const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, initialData, initialPosition, onToast, isOffline = false, onOpenAiAccess }) => {
     const defaultTaxonomicGroup = TaxonomicGroup.BIRD;
     const [formData, setFormData] = useState<ObservationFormData>(() => createEmptyFormData(defaultTaxonomicGroup));
+    /** Date et heure de départ d'une nouvelle fiche (« valeurs par défaut » pour la note). */
+    const [formDefaults, setFormDefaults] = useState<Pick<ObservationFormData, 'date' | 'time'> | null>(null);
+    /**
+     * Numéro de la saisie en cours : il change à chaque nouvelle fiche
+     * (« Enregistrer et ajouter une autre », autre observation éditée). Il
+     * remonte l'assistant de note (note, résultat, application en cours) et
+     * invalide l'annulation : rien d'une fiche ne peut toucher la suivante.
+     */
+    const [noteSession, setNoteSession] = useState(0);
+    const noteSessionRef = useRef(0);
+    /** Une application de note est en cours (vérification du nom) : pas d'enregistrement. */
+    const [noteApplying, setNoteApplying] = useState(false);
+    const startNewNoteSession = () => {
+        noteSessionRef.current += 1;
+        setNoteSession(noteSessionRef.current);
+        noteUndoRef.current = null;
+        setNoteApplying(false);
+    };
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [showMap, setShowMap] = useState(false);
     const [showAdvancedLocation, setShowAdvancedLocation] = useState(false);
@@ -96,6 +125,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     });
 
     useEffect(() => {
+        startNewNoteSession();
         if (initialData) {
             setFormData(mapObservationToFormData(initialData));
             setPhotoFile(null);
@@ -105,8 +135,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 status: initialData.status !== Status.NE,
                 weather: initialData.weather !== WeatherCondition.UNKNOWN
             });
+            setFormDefaults(null);
         } else {
-            setFormData(createEmptyFormData(defaultTaxonomicGroup));
+            const empty = createEmptyFormData(defaultTaxonomicGroup);
+            setFormData(empty);
+            setFormDefaults({ date: empty.date, time: empty.time });
             setFieldTouched({ latinName: false, taxonomicGroup: false, status: false, weather: false });
         }
     }, [defaultTaxonomicGroup, initialData]);
@@ -341,6 +374,7 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
     // on conserve le contexte de terrain (lieu, GPS, altitude, date/heure, observateurs,
     // groupe, protocole) et on vide ce qui est propre à l'individu observé.
     const resetForNextEntry = () => {
+        startNewNoteSession();
         blobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
         blobUrlsRef.current.clear();
         setPhotoFile(null);
@@ -464,12 +498,206 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
         void applyAiCandidate(candidate, false);
     };
 
+    // --- Note → fiche (IA) ---------------------------------------------------
+    // Le panneau propose, l'observateur coche, puis « Appliquer la sélection »
+    // arrive ici : l'espèce d'abord (même vérification du nom que pour la
+    // photo), puis les autres champs, marqués comme modifiés. Une seule
+    // action, annulable : l'état d'avant est gardé jusqu'à la suivante.
+    const formDataRef = useRef(formData);
+    /** État « saisi à la main » à jour, relu APRÈS les attentes (pas celui de la fermeture). */
+    const fieldTouchedRef = useRef(fieldTouched);
+    useEffect(() => { fieldTouchedRef.current = fieldTouched; }, [fieldTouched]);
+    /**
+     * État d'avant la dernière application (`form`, `touched`) et état juste
+     * après (`after`, relevé au rendu qui suit) : l'annulation ne remet que
+     * ce que l'application a écrit et que la personne n'a pas modifié depuis.
+     */
+    const noteUndoRef = useRef<{ form: ObservationFormData; touched: typeof fieldTouched; after: ObservationFormData | null } | null>(null);
+    useEffect(() => {
+        formDataRef.current = formData;
+        // Le premier rendu qui suit l'application est le sien : tous ses
+        // `setFormData` sont regroupés et passent avant toute saisie.
+        if (noteUndoRef.current && noteUndoRef.current.after === null) noteUndoRef.current.after = formData;
+    }, [formData]);
+    const [noteLatinQuestion, setNoteLatinQuestion] = useState<{ typed: string; proposed: string; resolve: (replace: boolean) => void } | null>(null);
+
+    const askNoteLatinReplacement = (typed: string, proposed: string) => new Promise<boolean>(resolve => {
+        setNoteLatinQuestion({ typed, proposed, resolve });
+    });
+
+    const handleNoteApply = async (request: NoteApplyRequest): Promise<NoteApplyReport | null> => {
+        const { result, signal } = request;
+        const session = noteSessionRef.current;
+        /** La fiche n'a pas changé (réinitialisée, autre observation) depuis le clic. */
+        const sameEntry = () => !signal.aborted && noteSessionRef.current === session;
+        const atClick = formDataRef.current;
+        const warnings: string[] = [];
+        const appliedLabels: string[] = [];
+        let match: SpeciesSuggestion | undefined;
+        let verified = false;
+        /** Nom latin que l'espèce appliquée apportera ('' : aucun connu). */
+        let speciesLatin = '';
+        let selection = request.selection;
+        const wantsSpecies = () => selection.has('species') && noteSpeciesQuery(result) !== null;
+
+        if (wantsSpecies()) {
+            const lookup = noteSpeciesQuery(result)!;
+            // Hors ligne, le nom ne peut pas être vérifié : on le dit, sans
+            // prétendre qu'il est introuvable.
+            if (!isOffline && navigator.onLine) {
+                try {
+                    const suggestions = await suggestSpeciesAutocomplete(lookup.query, 5, { signal });
+                    match = findExactSpeciesMatch(suggestions, result);
+                    verified = true;
+                } catch {
+                    // Message fixe : l'erreur d'origine pourrait citer le nom cherché.
+                    logger.warn('[aiAssist] note : vérification du nom impossible');
+                }
+                if (!sameEntry()) return null;
+                if (!navigator.onLine) verified = false;
+            }
+        }
+
+        // Pendant la vérification du nom, la personne a pu modifier un champ
+        // coché : sa saisie l'emporte, le champ n'est pas appliqué.
+        const latest = formDataRef.current;
+        const changedMeanwhile = [...selection].filter(key =>
+            NOTE_PROPOSAL_FIELDS[key].some(field => !Object.is(latest[field], atClick[field])));
+        if (changedMeanwhile.length > 0) {
+            selection = new Set([...selection].filter(key => !changedMeanwhile.includes(key)));
+            warnings.push(`Modifié pendant la vérification du nom, donc gardé tel quel : ${changedMeanwhile.map(key => NOTE_PROPOSAL_LABELS[key].toLocaleLowerCase('fr')).join(', ')}.`);
+        }
+
+        if (wantsSpecies()) {
+            speciesLatin = match?.latinName ?? result.scientificName ?? '';
+            // Le nom latin doit aller avec la nouvelle espèce. Un nom latin tapé
+            // à la main qui en diffère n'est remplacé (ou vidé) qu'après
+            // confirmation ; « Annuler » n'applique rien du tout.
+            const currentLatin = (formDataRef.current.latinName ?? '').trim();
+            if (fieldTouchedRef.current.latinName && currentLatin && normalizeLatin(currentLatin) !== normalizeLatin(speciesLatin)) {
+                const replace = await askNoteLatinReplacement(currentLatin, speciesLatin);
+                if (!sameEntry() || !replace) return null;
+            }
+        }
+
+        // Tout est appliqué d'un coup, à partir de l'état le plus récent.
+        const before = formDataRef.current;
+        const touchedBefore = fieldTouchedRef.current;
+        noteUndoRef.current = { form: before, touched: touchedBefore, after: null };
+        try {
+            if (wantsSpecies()) {
+                if (match) {
+                    applySpeciesAutocompleteSuggestion(match);
+                    appliedLabels.push(`espèce (${match.displayName})`);
+                } else {
+                    const name = result.speciesName ?? result.scientificName ?? '';
+                    setFormData(prev => ({ ...prev, speciesName: name }));
+                    appliedLabels.push('espèce');
+                    warnings.push(verified
+                        ? "Nom introuvable dans iNaturalist et GBIF : l'espèce a été remplie telle que proposée. Vérifiez-la avant d'enregistrer."
+                        : "Le nom de l'espèce n'a pas pu être vérifié (hors ligne ou service injoignable) : il a été rempli tel que proposé. Vérifiez-le avant d'enregistrer.");
+                }
+            }
+
+            const outcome = applyNoteFields(before, result, selection, {
+                referenceDate: request.referenceDate,
+                today: request.today,
+                keepNote: request.keepNote,
+                noteText: request.noteText,
+            });
+            const changes: Partial<ObservationFormData> = {};
+            for (const key of NOTE_FORM_KEYS) {
+                if (outcome.form[key] !== before[key]) (changes as Record<string, unknown>)[key] = outcome.form[key];
+            }
+            const speciesWanted = wantsSpecies();
+            setFormData(prev => ({
+                ...prev,
+                ...changes,
+                ...(speciesWanted ? { latinName: speciesLatin } : {}),
+            }));
+            // La météo est marquée comme modifiée : la météo automatique ne
+            // l'écrasera pas. Le nom latin, lui, n'est PAS marqué comme saisi à
+            // la main (comme pour l'aide photo) : choisir ensuite une autre
+            // espèce dans l'autocomplétion le met à jour.
+            setFieldTouched(prev => ({ ...prev, weather: prev.weather || outcome.weatherApplied }));
+            if (outcome.touchesAdvancedLocation) setShowAdvancedLocation(true);
+            if (outcome.touchesAdvancedDetails) setShowAdvancedDetails(true);
+
+            appliedLabels.push(...outcome.applied.map(key => NOTE_PROPOSAL_LABELS[key].toLocaleLowerCase('fr')));
+            if (outcome.noteKept) appliedLabels.push('note gardée dans le commentaire');
+            warnings.push(...outcome.skipped.map(item => item.reason), ...outcome.warnings);
+            return { applied: appliedLabels, warnings };
+        } catch (error) {
+            // Une seule action : en cas d'échec, la fiche revient à l'état d'avant.
+            noteUndoRef.current = null;
+            setFormData(before);
+            setFieldTouched(touchedBefore);
+            throw error;
+        }
+    };
+
+    const handleNoteUndo = () => {
+        const saved = noteUndoRef.current;
+        noteUndoRef.current = null;
+        if (!saved?.after) return;
+        const { form: before, after } = saved;
+        const current = formDataRef.current;
+        const touched = fieldTouchedRef.current;
+        const next: ObservationFormData = { ...current };
+        const restored = new Set<keyof ObservationFormData>();
+        for (const key of Object.keys(after) as (keyof ObservationFormData)[]) {
+            // Non touché par l'application, ou modifié depuis par la personne : on garde.
+            if (Object.is(after[key], before[key]) || !Object.is(current[key], after[key])) continue;
+            (next as unknown as Record<string, unknown>)[key] = before[key];
+            restored.add(key);
+        }
+        // L'enrichissement de l'espèce appliquée (statut, groupe, image, une
+        // seconde plus tard) fait partie de l'application tant que l'espèce
+        // est encore celle de la note et que la personne n'a pas choisi ces
+        // champs elle-même.
+        const speciesApplied = after.speciesName !== before.speciesName || after.latinName !== before.latinName;
+        // Nom latin laissé vide par l'application : l'enrichissement a pu le
+        // compléter, tant que la personne ne l'a pas tapé elle-même.
+        const latinKept = current.latinName === after.latinName
+            || (!(after.latinName ?? '').trim() && !touched.latinName);
+        const speciesKept = current.speciesName === after.speciesName && latinKept;
+        if (speciesApplied && speciesKept) {
+            if (!touched.status) next.status = before.status;
+            if (!touched.taxonomicGroup) next.taxonomicGroup = before.taxonomicGroup;
+            next.wikipediaImage = before.wikipediaImage;
+            for (const key of ['speciesName', 'latinName'] as const) {
+                next[key] = before[key];
+                restored.add(key);
+            }
+        }
+        setFormData(next);
+        setFieldTouched(prev => ({
+            ...prev,
+            ...(restored.has('weather') ? { weather: saved.touched.weather } : {}),
+            ...(restored.has('latinName') ? { latinName: saved.touched.latinName } : {}),
+        }));
+    };
+
+    const handleKeepNoteOnly = (noteText: string) => {
+        const added = appendToComment(formDataRef.current.comment, noteText);
+        if (added.tooLong) {
+            onToast('warning', COMMENT_TOO_LONG_WARNING);
+            return false;
+        }
+        setFormData(prev => ({ ...prev, comment: appendToComment(prev.comment, noteText).comment }));
+        return true;
+    };
+
     const aiNeedsAccess = aiState.phase === 'error'
         && (aiState.error.code === 'not_approved' || aiState.error.code === 'consent_outdated');
     const performSave = async (addAnother: boolean) => {
         if (!formSession || !isSessionCurrent(formSession)) return;
         const context = formSession;
         if (isUploading) return;
+        if (noteApplying) {
+            onToast('info', "Une note est en cours d'application : attendez la fin, ou annulez-la, avant d'enregistrer.");
+            return;
+        }
         const validationErrors = validate();
         if (Object.keys(validationErrors).length > 0) {
             onToast('warning', 'Veuillez corriger les champs en rouge avant d\'enregistrer.');
@@ -549,6 +777,21 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 space-y-8">
                         <FormSection title="Identification">
+                            <AiNoteAssist
+                                key={noteSession}
+                                onApplyingChange={setNoteApplying}
+                                formData={formData}
+                                formDefaults={formDefaults}
+                                isEditing={!!initialData}
+                                session={formSession}
+                                isOffline={isOffline}
+                                remaining={aiRemaining}
+                                onRemainingChange={setAiRemaining}
+                                onApply={handleNoteApply}
+                                onUndo={handleNoteUndo}
+                                onKeepNoteOnly={handleKeepNoteOnly}
+                                onOpenAiAccess={onOpenAiAccess}
+                            />
                             <div className="lg:col-span-2">
                                 <label htmlFor="speciesName" className={labelClass}>Nom de l'espèce *</label>
                                 <div className="relative" ref={speciesInputWrapperRef}>
@@ -941,7 +1184,8 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                         <FormSection title="Média et Notes">
                             <div className="md:col-span-3">
                                 <label htmlFor="comment" className={labelClass}>Commentaire</label>
-                                <textarea id="comment" name="comment" value={formData.comment} onChange={handleChange} rows={4} className={inputClass}></textarea>
+                                <textarea id="comment" name="comment" value={formData.comment} onChange={handleChange} rows={4} className={inputClass} aria-invalid={!!errors.comment} aria-describedby={errors.comment ? 'comment-error' : undefined}></textarea>
+                                {errors.comment && <p id="comment-error" role="alert" className={errorClass}>{errors.comment}</p>}
                             </div>
                             <div>
                                 <label htmlFor="photo" className={labelClass}>Photo (perso)</label>
@@ -1033,11 +1277,11 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 <div ref={bottomButtonsRef} className={`flex flex-wrap justify-end gap-2 sm:gap-3 pt-6 border-t border-gray-100 dark:border-white/5 ${showStickyBar ? 'invisible' : ''}`}>
                     <button type="button" onClick={onCancel} className={secondaryButtonClass}>Annuler</button>
                     {!initialData && (
-                        <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo} className={addAnotherButtonClass} aria-label={isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'} title="Enregistrer et ajouter une autre">
+                        <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo || noteApplying} className={addAnotherButtonClass} aria-label={isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'} title="Enregistrer et ajouter une autre">
                             {addAnotherLabel}
                         </button>
                     )}
-                    <button type="submit" disabled={isUploading || isFetchingInfo} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <button type="submit" disabled={isUploading || isFetchingInfo || noteApplying} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>
                         {isUploading ? 'Envoi...' : isFetchingInfo ? 'Recherche du statut...' : 'Sauvegarder'}
                     </button>
                 </div>
@@ -1055,17 +1299,36 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
                 message={`Vous aviez saisi « ${(formData.latinName ?? '').trim()} ». Le remplacer par « ${pendingLatinReplacement?.scientificName ?? ''} » ?`}
             />
 
+            <ConfirmationDialog
+                isOpen={noteLatinQuestion !== null}
+                onClose={() => {
+                    // « Confirmer » appelle onClose AVANT onConfirm : le « non »
+                    // est donc différé, et un « oui » qui suit l'emporte.
+                    const question = noteLatinQuestion;
+                    queueMicrotask(() => question?.resolve(false));
+                    setNoteLatinQuestion(null);
+                }}
+                onConfirm={() => {
+                    noteLatinQuestion?.resolve(true);
+                    setNoteLatinQuestion(null);
+                }}
+                title="Remplacer le nom latin ?"
+                message={noteLatinQuestion?.proposed
+                    ? `Vous aviez saisi « ${noteLatinQuestion.typed} ». Le remplacer par « ${noteLatinQuestion.proposed} », le nom latin de l'espèce de la note ? Sinon, rien n'est appliqué : décochez l'espèce pour garder votre nom.`
+                    : `Vous aviez saisi « ${noteLatinQuestion?.typed ?? ''} », qui ne correspond pas à l'espèce de la note. Le vider ? Sinon, rien n'est appliqué : décochez l'espèce pour garder votre nom.`}
+            />
+
             {/* Sticky Save/Cancel Bar */}
             {
                 showStickyBar && (
                     <div className="fixed bottom-0 left-0 right-0 z-40 px-3 sm:px-4 py-2 sm:py-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-white/80 dark:bg-nature-dark-surface/80 backdrop-blur-md border-t border-gray-200/50 dark:border-white/10 shadow-[0_-4px_20px_rgba(0,0,0,0.1)] flex flex-wrap justify-end gap-2 sm:gap-3">
                         <button type="button" onClick={onCancel} className={secondaryButtonClass}>Annuler</button>
                         {!initialData && (
-                            <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo} className={addAnotherButtonClass} aria-label={isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'} title="Enregistrer et ajouter une autre">
+                            <button type="button" onClick={() => void performSave(true)} disabled={isUploading || isFetchingInfo || noteApplying} className={addAnotherButtonClass} aria-label={isUploading ? 'Envoi...' : 'Enregistrer et ajouter une autre'} title="Enregistrer et ajouter une autre">
                                 {addAnotherLabel}
                             </button>
                         )}
-                        <button type="button" onClick={() => bottomButtonsRef.current?.closest('form')?.requestSubmit()} disabled={isUploading || isFetchingInfo} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <button type="button" onClick={() => bottomButtonsRef.current?.closest('form')?.requestSubmit()} disabled={isUploading || isFetchingInfo || noteApplying} className={`${primaryButtonClass} ${isUploading || isFetchingInfo ? 'opacity-50 cursor-not-allowed' : ''}`}>
                             {isUploading ? 'Envoi...' : isFetchingInfo ? 'Recherche du statut...' : 'Sauvegarder'}
                         </button>
                     </div>

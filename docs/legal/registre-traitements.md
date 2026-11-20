@@ -1,7 +1,7 @@
 # Registre des traitements de donnees personnelles (RGPD Art. 30)
 
 **Responsable de traitement** : Eliot SERIVE (editeur particulier, service non commercial) — contact : carnetnaturaliste.app@gmail.com
-**Date de mise a jour** : 2026-11-13
+**Date de mise a jour** : 2026-11-20
 
 ---
 
@@ -47,8 +47,8 @@
 | Base legale | Interet legitime (amelioration UX) |
 | Donnees collectees | Termes de recherche (nom d'espece partiel) |
 | Duree de conservation | Aucune — requetes non persistees cote serveur |
-| Destinataires | iNaturalist (California Academy of Sciences), GBIF |
-| Transfert hors UE | Oui — serveurs iNaturalist (US), GBIF (Danemark/global) |
+| Destinataires | iNaturalist (California Academy of Sciences), GBIF ; Wikipédia (Wikimedia Foundation) pour la fiche de l'espèce (nom de l'espèce) |
+| Transfert hors UE | Oui — serveurs iNaturalist (US), GBIF (Danemark/global), Wikimedia (US) |
 | Mesures | User-Agent identifiant l'application. Aucune donnee personnelle transmise. |
 
 ## Traitement 5 : Donnees meteorologiques
@@ -57,7 +57,7 @@
 |---|---|
 | Finalite | Pre-remplir les conditions meteo d'une observation |
 | Base legale | Interet legitime (amelioration UX) |
-| Donnees collectees | Coordonnees GPS (transmises a l'API) |
+| Donnees collectees | Coordonnees GPS et date de l'observation (meteo), coordonnees seules (altitude), transmises a l'API sans identite |
 | Duree de conservation | Aucune — reponse consommee en memoire |
 | Destinataires | Open-Meteo (open-source, serveurs EU) |
 | Transfert hors UE | Non (serveurs en Europe) |
@@ -117,12 +117,12 @@ texte dans `ai_consents`.
 | Champ | Valeur |
 |---|---|
 | Base légale | **Consentement** (art. 6.1.a), par fonctionnalité : case obligatoire, texte versionné, retrait à tout moment dans la fenêtre « Assistant IA ». **Intérêt légitime** (art. 6.1.f) pour le journal d'usage : contrôle des coûts et des abus. |
-| Données conservées par le Carnet | `ai_access` (statut de la demande, quota, version du consentement photo, dates, note) ; `ai_consents` (une ligne par fonctionnalité texte : fonctionnalité, version du texte accepté, `given_at` posé par le serveur comme preuve, art. 7.1) ; `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut). Ni photo, ni chiffres, ni hypothèses, ni texte produit. |
+| Données conservées par le Carnet | `ai_access` (statut de la demande, quota, version du consentement photo, dates, note) ; `ai_consents` (une ligne par fonctionnalité texte : fonctionnalité, version du texte accepté, `given_at` posé par le serveur comme preuve, art. 7.1) ; `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut). Ni photo, ni chiffres, ni note, ni hypothèses, ni texte produit. |
 | Données conservées dans le navigateur | Bilans du mois rédigés (texte, date, empreinte des chiffres), par personne, **24 mois au plus après leur rédaction** : un bilan expiré n'est jamais relu, et il est retiré à chaque ouverture de l'application pour **tous** les comptes du navigateur (y compris un compte supprimé depuis un autre appareil) ; 24 mois différents au plus. Dernier compteur d'utilisations connu (affichage hors ligne), retiré dès que l'accès n'est plus approuvé et à l'ouverture suivant la fin du mois. Jamais envoyés au serveur. Effacés de l'appareil où le compte est supprimé ; sur les autres appareils, à leur expiration ou quand la personne efface les données du site. |
 | Destinataires | Anthropic (modèle Claude), via **Anthropic Ireland Ltd** pour l'EEE, sous-traitant ; DPA intégré aux Commercial Terms, droit irlandais. Supabase (fonctions `ai-identify` et `ai-text`, tables, UE). |
 | Transfert hors UE | **Oui** — données stockées aux États-Unis, pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`). Transfert encadré par les clauses contractuelles types de l'UE (modules 2 et 3) du DPA. |
 | Conservation | Chez Anthropic : entrées et sorties effacées sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement sur les données de l'API par défaut. Dans le Carnet : `ai_access` et `ai_consents` jusqu'au retrait de l'accord (retirer l'accès supprime aussi les lignes `ai_consents`) ou à la suppression du compte ; `ai_usage` 3 mois (purge à chaque nouvelle réservation). |
-| Mesures | Accès sur demande validée à la main ; quota et budget plafonnés ; clé API uniquement côté serveur ; droits et RLS empêchant de s'approuver soi-même, de modifier un consentement (suppression puis insertion seulement) ou d'en créer un pour autrui ; journaux sans utilisateur, photo, prompt, chiffres, hypothèses ni texte produit ; une donnée envoyée ne peut pas être rappelée (dit dans chaque consentement). |
+| Mesures | Accès sur demande validée à la main ; quota et budget plafonnés ; clé API uniquement côté serveur ; droits et RLS empêchant de s'approuver soi-même, de modifier un consentement (suppression puis insertion seulement) ou d'en créer un pour autrui ; journaux sans utilisateur, photo, prompt, chiffres, note, hypothèses ni texte produit (côté serveur comme dans les journaux et Sentry de l'application) ; une donnée envoyée ne peut pas être rappelée (dit dans chaque consentement). |
 | AIPD | Non nécessaire : petite échelle, pas de données sensibles recherchées, l'utilisateur décide de chaque envoi et de ce qu'il garde. |
 
 ### 9.1 Aide à l'identification (photo, `ai-identify`)
@@ -143,6 +143,17 @@ texte dans `ai_consents`.
 | Données envoyées à Anthropic | Mois (`AAAA-MM`), totaux (observations, espèces, jours d'activité), répartition par groupe, noms des 15 espèces les plus observées avec leur effectif, jusqu'à 30 espèces nouvelles (« + N autres »), mêmes totaux pour le même mois de l'année précédente. Les noms d'espèces liés à un compte restent des données personnelles. **Jamais** : lieu, commune, GPS, commentaire, observateur, date précise, photo, email. |
 | Données conservées | Le texte rédigé reste **dans le navigateur** (24 mois au plus après sa rédaction, voir socle), jamais sur le serveur. |
 | Mesures propres | Le serveur ne transmet que les champs validés (les autres sont ignorés) ; texte refusé s'il cite un nombre absent des chiffres fournis ; affichage en texte brut (ni HTML, ni markdown, ni lien). |
+
+### 9.3 Note → fiche (texte, `ai-text`, fonctionnalité `note`)
+
+| Champ | Valeur |
+|---|---|
+| Finalité | Proposer, à la demande de l'utilisateur, de remplir des champs de la fiche d'observation (espèce, effectifs, date, heure, lieu-dit, listes fermées) à partir d'une note libre tapée ou dictée au clavier. L'utilisateur relit chaque champ et coche ce qu'il applique ; l'application est annulable ; aucune décision automatisée. |
+| Consentement | Ligne `ai_consents` (`feature = 'note'`, version `CONSENT_VERSIONS.note` d'`ai-text`, `2026-11-v1`), donnée par une carte affichée au premier usage ou dans « Assistant IA » ; retrait par « Retirer mon accord à la note ». La version provisoire `2026-11-v0` (partie serveur seule, sans texte affiché) est refusée. |
+| Données envoyées à Anthropic | Le **texte de la note tel qu'il est écrit**, 1 000 caractères au plus (refus au-delà, jamais de troncature), nettoyé des caractères invisibles : il peut contenir des lieux, des noms d'espèces et des noms de personnes, ce que dit le consentement. Si la personne reprend le commentaire d'une fiche comme note, c'est ce commentaire. **Jamais** : date ou heure de la fiche, GPS, commune, observateurs, photo, reste de la fiche, email. |
+| Données conservées | Aucune par le Carnet sans le choix de la personne : la note reste dans l'état de la page (jamais dans le stockage du navigateur ni sur le serveur) le temps de la relecture. Les champs cochés sont écrits dans la fiche ; la note entière (« Garder la note dans le commentaire », cochée d'avance, décochée d'avance quand la note reprend le commentaire) ou son reste (jamais pré-coché) ne rejoignent le commentaire que si la case correspondante est cochée, puis suivent le Traitement 2. Le commentaire reste borné à 5 000 caractères : au-delà, rien n'y est ajouté. |
+| Autres destinataires | Le nom d'espèce proposé est vérifié par la recherche d'espèce (iNaturalist puis GBIF, Traitement 4) et sa fiche cherchée sur Wikipédia, comme un nom tapé à la main. Si la vérification échoue, le nom tel que proposé (120 caractères au plus, relu par la personne avant de cocher) est cherché de la même façon. |
+| Mesures propres | Avertissement sous la zone de texte (éviter les noms de personnes et la localisation précise d'espèces sensibles) ; champs rendus bornés et vérifiés deux fois (fonction, puis application), un champ fautif est écarté et jamais proposé ; affichage en texte React brut (une balise écrite dans la note s'affiche telle quelle) ; la note et la réponse ne sont ni journalisées ni envoyées à Sentry ; les traces réseau gardées par Sentry sont réduites à l'adresse du site appelé, sans le nom cherché. |
 
 > Exploitation : [`docs/ops/ASSISTANT-IA.md`](../ops/ASSISTANT-IA.md). Plan : [`docs/plans/assistant-ia-phase1.md`](../plans/assistant-ia-phase1.md) (sources des faits vérifiés le 2026-11-05).
 

@@ -1,7 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureSessionContext, setSessionIdentity } from '../services/sessionScope';
 import { CONSENT_VERSION, ERROR_HTTP_STATUS } from '../supabase/functions/ai-identify/logic';
-import { CONSENT_VERSIONS as TEXT_CONSENT_VERSIONS, ERROR_HTTP_STATUS as TEXT_ERROR_HTTP_STATUS, SUMMARY_LIMITS } from '../supabase/functions/ai-text/logic';
+import {
+    CONSENT_VERSIONS as TEXT_CONSENT_VERSIONS,
+    ERROR_HTTP_STATUS as TEXT_ERROR_HTTP_STATUS,
+    NOTE_CHOICES,
+    NOTE_FIELDS,
+    NOTE_LIMITS,
+    parseNoteOutput,
+    SUMMARY_LIMITS,
+} from '../supabase/functions/ai-text/logic';
+import { AI_NOTE_CHOICES } from '../utils/aiNoteMapping';
 
 const mocks = vi.hoisted(() => ({
     getSession: vi.fn(),
@@ -27,6 +36,10 @@ vi.mock('../utils/imageUtils', () => ({ compressImage: mocks.compress }));
 vi.mock('../utils/logger', () => ({ logger: { warn: mocks.warn, error: mocks.error, info: vi.fn(), debug: vi.fn() } }));
 
 import {
+    AI_NOTE_FIELDS,
+    AI_NOTE_LIMITS,
+    isEmptyNoteResult,
+    parseNoteResult,
     AI_CONSENT_VERSION,
     AI_SUMMARY_MAX_CHARS,
     AI_TEXT_CONSENT_VERSIONS,
@@ -323,27 +336,16 @@ describe('accès', () => {
 });
 
 describe('fonctionnalités texte : constantes recopiées de la fonction ai-text', () => {
-    it('chaque version déclarée par l’application est celle de la fonction', () => {
-        // La fonction peut déclarer une fonctionnalité avant l'application
-        // (PR A de la note : serveur seul, aucune carte de consentement
-        // affichée) ; l'inverse est interdit, et une version déclarée des deux
-        // côtés doit être identique.
-        for (const [feature, version] of Object.entries(AI_TEXT_CONSENT_VERSIONS)) {
-            expect(TEXT_CONSENT_VERSIONS[feature as keyof typeof TEXT_CONSENT_VERSIONS], feature).toBe(version);
-        }
-        expect(AI_TEXT_CONSENT_VERSIONS.summary).toBe(TEXT_CONSENT_VERSIONS.summary);
+    it('chaque version déclarée par l’application est celle de la fonction, et réciproquement', () => {
+        // Égalité stricte des deux tables : une fonctionnalité livrée a son
+        // texte de consentement des deux côtés, avec la même version.
+        expect(AI_TEXT_CONSENT_VERSIONS).toEqual(TEXT_CONSENT_VERSIONS);
     });
 
-    it('la note n’a pas encore de consentement côté application, et sa version serveur est provisoire', () => {
-        // PR A : version provisoire côté fonction, aucune carte visible.
-        // PR B : déclarer la note ici impose de remplacer la version
-        // provisoire des deux côtés (un accord donné avant le texte du
-        // consentement sera refusé).
-        if (AI_TEXT_CONSENT_VERSIONS.note === undefined) {
-            expect(TEXT_CONSENT_VERSIONS.note).toBe('2026-11-v0');
-        } else {
-            expect(AI_TEXT_CONSENT_VERSIONS.note).not.toBe('2026-11-v0');
-        }
+    it('la version provisoire de la note (PR A) n’est plus acceptée', () => {
+        expect(AI_TEXT_CONSENT_VERSIONS.note).toBeDefined();
+        expect(AI_TEXT_CONSENT_VERSIONS.note).not.toBe('2026-11-v0');
+        expect(TEXT_CONSENT_VERSIONS.note).toBe(AI_TEXT_CONSENT_VERSIONS.note);
     });
 
     it('plafond du texte du bilan identique', () => {
@@ -387,7 +389,7 @@ describe('consentements par fonctionnalité', () => {
     });
 
     it('refuse une fonctionnalité sans texte de consentement livré', async () => {
-        await expect(giveConsent('note')).rejects.toMatchObject({ code: 'invalid_request' });
+        await expect(giveConsent('search')).rejects.toMatchObject({ code: 'invalid_request' });
         expect(calls).toEqual([]);
     });
 
@@ -557,3 +559,151 @@ describe('parseSummaryResult', () => {
         expect(parseSummaryResult(null)).toBeNull();
     });
 });
+
+describe('note → fiche : service', () => {
+    const notePayload = { text: '3 mésanges charbonnières hier au bord de l’étang' };
+
+    it('reprend les limites, les champs et les listes fermées de la fonction', () => {
+        for (const key of Object.keys(AI_NOTE_LIMITS) as (keyof typeof AI_NOTE_LIMITS)[]) {
+            expect(AI_NOTE_LIMITS[key], key).toBe(NOTE_LIMITS[key]);
+        }
+        expect([...AI_NOTE_FIELDS]).toEqual([...NOTE_FIELDS]);
+        for (const [field, values] of Object.entries(NOTE_CHOICES)) {
+            expect([...AI_NOTE_CHOICES[field as keyof typeof AI_NOTE_CHOICES]], field).toEqual([...values]);
+        }
+    });
+
+    it('ne fait aucun appel réseau hors ligne, avec un message propre à la note', async () => {
+        setOnline(false);
+        const fetchMock = vi.fn();
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+        const error = await callAiText('note', notePayload).catch(e => e);
+        expect(error).toMatchObject({ code: 'offline', feature: 'note' });
+        expect(error.message).toMatch(/qu'en ligne/);
+        expect(error.message).toMatch(/commentaire/);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('traduit chaque code du serveur ai-text avec un message propre à la note', async () => {
+        const codes = (Object.keys(TEXT_ERROR_HTTP_STATUS) as AiAssistErrorCode[])
+            .filter(code => code !== 'method_not_allowed' as AiAssistErrorCode);
+        for (const code of codes) {
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(TEXT_ERROR_HTTP_STATUS[code as keyof typeof TEXT_ERROR_HTTP_STATUS], { error: code })) as unknown as typeof fetch;
+            const error = await callAiText('note', notePayload).catch(e => e);
+            expect(error).toBeInstanceOf(AiAssistError);
+            expect(error.code).toBe(code);
+            expect(error.message).toBe(aiAssistErrorMessage(code, 'note'));
+            expect(error.message, code).not.toMatch(/photo|bilan|rédaction/i);
+        }
+        expect(aiAssistErrorMessage('invalid_output', 'note')).toMatch(/compte dans votre quota/);
+        expect(aiAssistErrorMessage('model_refused', 'note')).toMatch(/compte dans votre quota/);
+        expect(aiAssistErrorMessage('feature_disabled', 'note')).toMatch(/momentanément indisponible/);
+        expect(aiAssistErrorMessage('feature_disabled', 'note')).not.toMatch(/503|feature_disabled/);
+        expect(aiAssistErrorMessage('payload_too_large', 'note')).toMatch(/1 000 caractères/);
+    });
+
+    it('ne journalise ni la note ni la réponse', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(500, { error: 'internal_error' })) as unknown as typeof fetch;
+        await callAiText('note', notePayload).catch(() => undefined);
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { remaining: 3 })) as unknown as typeof fetch;
+        await callAiText('note', notePayload).catch(() => undefined);
+        const logged = JSON.stringify([...mocks.warn.mock.calls, ...mocks.error.mock.calls]);
+        expect(logged).not.toMatch(/mésange|étang/);
+    });
+
+    it('donne puis retire l’accord à la note, par suppression puis insertion', async () => {
+        const calls: unknown[][] = [];
+        const builder = () => {
+            const chain = {
+                eq: (...args: unknown[]) => { calls.push(['eq', ...args]); return chain; },
+                then: (resolve: (value: { error: null }) => unknown) => Promise.resolve({ error: null }).then(resolve),
+            };
+            return chain;
+        };
+        mocks.from.mockImplementation((table: string) => ({
+            delete: () => { calls.push(['delete', table]); return builder(); },
+            insert: (row: unknown) => { calls.push(['insert', table, row]); return Promise.resolve({ error: null }); },
+        }));
+        await giveConsent('note');
+        await withdrawConsent('note');
+        expect(calls).toEqual([
+            ['delete', 'ai_consents'], ['eq', 'user_id', 'user-1'], ['eq', 'feature', 'note'],
+            ['insert', 'ai_consents', { user_id: 'user-1', feature: 'note', version: '2026-11-v1' }],
+            ['delete', 'ai_consents'], ['eq', 'user_id', 'user-1'], ['eq', 'feature', 'note'],
+        ]);
+    });
+});
+
+describe('parseNoteResult', () => {
+    const fromServer = (raw: Record<string, unknown>) => {
+        const output = parseNoteOutput(JSON.stringify(raw), { text: 'x' }, new Date('2026-11-20T10:00:00Z'));
+        if (!output) throw new Error('réponse refusée par la fonction');
+        return output;
+    };
+    const full = {
+        speciesName: 'mésange charbonnière', scientificName: 'Parus major', count: 3, maleCount: 2, femaleCount: 1,
+        dateExpr: { kind: 'last_weekday', offsetDays: 0, weekday: 2, day: 0, month: 0, year: 0 },
+        time: '8h30', location: 'étang de la Brosse', weather: 'Ensoleillé', habitat: 'Eau douce',
+        comportement: 'Non renseigné', observationCondition: 'Vu posé', age: 'Adulte', sexe: 'Non renseigné', phenology: 'Non renseigné',
+        otherSpecies: ['héron cendré'], remainder: 'Nourrissage au sol.',
+    };
+
+    it('relit fidèlement une réponse de la fonction', () => {
+        const parsed = parseNoteResult(fromServer(full), AI_NOTE_CHOICES);
+        expect(parsed).toEqual({
+            speciesName: 'mésange charbonnière', scientificName: 'Parus major', count: 3, maleCount: 2, femaleCount: 1,
+            dateExpr: { kind: 'last_weekday', weekday: 2 }, time: '08:30', location: 'étang de la Brosse',
+            weather: 'Ensoleillé', habitat: 'Eau douce', comportement: null, observationCondition: 'Vu posé', age: 'Adulte',
+            sexe: null, phenology: null, otherSpecies: ['héron cendré'], remainder: 'Nourrissage au sol.', dropped: [],
+        });
+    });
+
+    it('garde une balise écrite dans la note comme du texte (bornée, pas neutralisée)', () => {
+        const parsed = parseNoteResult({ ...fromServer(full), location: '<img src=x onerror=alert(1)>' }, AI_NOTE_CHOICES);
+        expect(parsed?.location).toBe('<img src=x onerror=alert(1)>');
+    });
+
+    it('retire un champ illisible et le signale dans dropped, sans rejeter le reste', () => {
+        const parsed = parseNoteResult({
+            ...fromServer(full),
+            count: 0, weather: 'Tempête de neige', time: '25:00', location: 'x'.repeat(121),
+            dateExpr: { kind: 'relative_days', offsetDays: 3 }, otherSpecies: ['a', 'b', 'c', 'd', 'e', 'f'],
+            dropped: ['habitat', 'inconnu'],
+        }, AI_NOTE_CHOICES)!;
+        expect(parsed.count).toBeNull();
+        expect(parsed.weather).toBeNull();
+        expect(parsed.habitat).toBeNull();
+        expect(parsed.dateExpr).toEqual({ kind: 'none' });
+        expect(parsed.otherSpecies).toEqual([]);
+        expect(parsed.dropped).toEqual(['count', 'dateExpr', 'time', 'location', 'weather', 'habitat', 'otherSpecies']);
+        expect(parsed.speciesName).toBe('mésange charbonnière');
+    });
+
+    it('un champ nommé dans dropped reste vide même si une valeur l’accompagne', () => {
+        const parsed = parseNoteResult({ ...fromServer(full), dropped: ['speciesName', 'maleCount'] }, AI_NOTE_CHOICES)!;
+        expect(parsed.speciesName).toBeNull();
+        expect(parsed.maleCount).toBeNull();
+        expect(parsed.femaleCount).toBe(1);
+    });
+
+    it('retire les caractères invisibles et garde les retours à la ligne du reste de la note', () => {
+        const parsed = parseNoteResult({ ...fromServer(full), speciesName: 'mésange\u202E charbonnière', remainder: 'Ligne 1\u200B\nLigne 2' }, AI_NOTE_CHOICES)!;
+        expect(parsed.speciesName).toBe('mésange charbonnière');
+        expect(parsed.remainder).toBe('Ligne 1\nLigne 2');
+    });
+
+    it('refuse ce qui n’est pas un objet, et reconnaît une note hors sujet', () => {
+        expect(parseNoteResult(null, AI_NOTE_CHOICES)).toBeNull();
+        expect(parseNoteResult('texte', AI_NOTE_CHOICES)).toBeNull();
+        expect(parseNoteResult([], AI_NOTE_CHOICES)).toBeNull();
+        const offTopic = parseNoteResult(fromServer({
+            ...full, speciesName: '', scientificName: '', count: 0, maleCount: 0, femaleCount: 0,
+            dateExpr: { kind: 'none', offsetDays: 0, weekday: 0, day: 0, month: 0, year: 0 }, time: '', location: '',
+            weather: 'Non renseigné', habitat: 'Non renseigné', observationCondition: 'Non renseigné', age: 'Non renseigné',
+            otherSpecies: [], remainder: '',
+        }), AI_NOTE_CHOICES)!;
+        expect(isEmptyNoteResult(offTopic)).toBe(true);
+        expect(isEmptyNoteResult(parseNoteResult(fromServer(full), AI_NOTE_CHOICES)!)).toBe(false);
+    });
+});
+

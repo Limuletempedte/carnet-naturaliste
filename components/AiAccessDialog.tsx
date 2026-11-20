@@ -40,7 +40,7 @@ type ViewState =
  * `CONSENT_VERSION` dans supabase/functions/ai-identify/logic.ts.
  */
 export const AiConsentText: React.FC = () => (
-    <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300" data-testid="ai-consent-text">
+    <div className="space-y-3 text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300" data-testid="ai-consent-text">
         <p>
             L'assistant propose jusqu'à 3 hypothèses d'espèce à partir de la photo d'une observation.
             Il est fourni par <strong>Anthropic</strong> (modèle Claude).
@@ -117,7 +117,21 @@ const FEATURES: readonly FeatureInfo[] = [
         where: 'Onglet Stats, carte « Bilan du mois ».',
         sent: "Le mois, les totaux, la répartition par groupe et les noms d'espèces avec leurs effectifs. Jamais de lieu, de commentaire ni de date précise.",
     },
+    {
+        key: 'note',
+        title: 'Note → fiche',
+        purpose: "Lit une note tapée ou dictée et propose de remplir des champs de la fiche. Vous relisez et choisissez ce qui est appliqué.",
+        where: "Formulaire d'observation, en haut de la section Identification : « Remplir depuis une note ».",
+        sent: "Le texte de la note tel que vous l'avez écrit (ou le commentaire repris comme note), lieux et noms compris. Jamais la date, la position GPS, la photo ni le reste de la fiche.",
+    },
 ];
+
+/** Libellé du bouton de retrait propre à chaque fonctionnalité texte. */
+const WITHDRAW_LABELS: Record<AiTextFeature, string> = {
+    summary: 'Retirer mon accord au bilan',
+    note: 'Retirer mon accord à la note',
+    search: 'Retirer mon accord à la recherche',
+};
 
 const USAGE_LABELS: Record<string, [string, string]> = {
     identify: ['analyse photo', 'analyses photo'],
@@ -247,7 +261,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
             {confirmWithdraw ? (
                 <div className="space-y-2">
                     <p className="text-sm text-gray-700 dark:text-gray-300">
-                        Votre demande ou votre accès sera supprimé, ainsi que vos accords aux autres fonctions (bilan du mois). Pour réutiliser l'assistant, il faudra refaire une demande, validée à nouveau à la main.
+                        Votre demande ou votre accès sera supprimé, ainsi que vos accords aux autres fonctions (bilan du mois, note → fiche). Pour réutiliser l'assistant, il faudra refaire une demande, validée à nouveau à la main.
                     </p>
                     <div className="flex flex-wrap gap-2">
                         <button type="button" onClick={() => void handleWithdraw()} disabled={isWorking || isOffline} className={dangerButton}>
@@ -265,7 +279,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
     );
 
     const emailLine = (
-        <p className="text-sm text-gray-700 dark:text-gray-300">
+        <p className="text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300">
             Les demandes sont validées à la main. Prévenez le propriétaire par e-mail à <strong>{CONTACT_EMAIL}</strong> en indiquant l'adresse de votre compte.
         </p>
     );
@@ -308,7 +322,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
                         disabled={isWorking || isOffline}
                         className={smallDangerButton}
                     >
-                        Retirer mon accord au bilan
+                        {WITHDRAW_LABELS[feature]}
                     </button>
                 </div>
             );
@@ -413,7 +427,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
                         {status.note && (
                             <p className="text-sm text-gray-700 dark:text-gray-300">Message : {status.note}</p>
                         )}
-                        <p className="text-sm text-gray-700 dark:text-gray-300">Pour toute question : {CONTACT_EMAIL}</p>
+                        <p className="text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300">Pour toute question : {CONTACT_EMAIL}</p>
                         {withdrawBlock}
                     </div>
                 );
