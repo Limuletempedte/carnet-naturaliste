@@ -40,7 +40,7 @@ type ViewState =
  * `CONSENT_VERSION` dans supabase/functions/ai-identify/logic.ts.
  */
 export const AiConsentText: React.FC = () => (
-    <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300" data-testid="ai-consent-text">
+    <div className="space-y-3 text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300" data-testid="ai-consent-text">
         <p>
             L'assistant propose jusqu'à 3 hypothèses d'espèce à partir de la photo d'une observation.
             Il est fourni par <strong>Anthropic</strong> (modèle Claude).
@@ -279,7 +279,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
     );
 
     const emailLine = (
-        <p className="text-sm text-gray-700 dark:text-gray-300">
+        <p className="text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300">
             Les demandes sont validées à la main. Prévenez le propriétaire par e-mail à <strong>{CONTACT_EMAIL}</strong> en indiquant l'adresse de votre compte.
         </p>
     );
@@ -427,7 +427,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
                         {status.note && (
                             <p className="text-sm text-gray-700 dark:text-gray-300">Message : {status.note}</p>
                         )}
-                        <p className="text-sm text-gray-700 dark:text-gray-300">Pour toute question : {CONTACT_EMAIL}</p>
+                        <p className="text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300">Pour toute question : {CONTACT_EMAIL}</p>
                         {withdrawBlock}
                     </div>
                 );

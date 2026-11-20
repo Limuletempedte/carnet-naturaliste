@@ -12,7 +12,7 @@ const CONTACT_EMAIL = 'carnetnaturaliste.app@gmail.com';
  * chacun devra alors redonner son accord.
  */
 export const SummaryConsentText: React.FC = () => (
-    <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300" data-testid="ai-summary-consent-text">
+    <div className="space-y-3 text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300" data-testid="ai-summary-consent-text">
         <p>
             L'assistant rédige un court texte à partir des chiffres de votre mois, calculés par l'application.
             Il est fourni par <strong>Anthropic</strong> (modèle Claude).
@@ -59,7 +59,7 @@ export const SummaryConsentText: React.FC = () => (
  * chacun devra alors redonner son accord.
  */
 export const NoteConsentText: React.FC = () => (
-    <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300" data-testid="ai-note-consent-text">
+    <div className="space-y-3 text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-gray-300" data-testid="ai-note-consent-text">
         <p>
             L'assistant lit une note que vous tapez ou dictez, et propose de remplir des champs de la fiche (espèce, nombre, date, heure, lieu-dit, météo…).
             Il est fourni par <strong>Anthropic</strong> (modèle Claude).
