@@ -481,6 +481,22 @@ describe('ObservationForm — note → fiche : relecture et application', () => 
         expect(field('time').value).toBe('09:45');
     });
 
+    it('« Annuler l’application » retire aussi ce que l’enrichissement de l’espèce a ajouté', async () => {
+        mocks.fetchSpeciesInfo.mockResolvedValue({ latinName: 'Circus aeruginosus', redListStatus: 'NT', taxonomicGroup: 'Oiseaux', description: 'Rapace.' });
+        mocks.callAiText.mockResolvedValue({ result: serverResult({ speciesName: 'busard des roseaux' }), remaining: 11 });
+        renderForm(null);
+        openAndType();
+        fireEvent.click(analyzeButton());
+        const panel = await screen.findByTestId('ai-note-panel');
+        fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
+        await screen.findByTestId('ai-note-applied');
+        await waitFor(() => expect((field('status') as unknown as HTMLSelectElement).value).toBe('NT'), { timeout: 3000 });
+        fireEvent.click(screen.getByRole('button', { name: "Annuler l'application" }));
+        expect(field('speciesName').value).toBe('');
+        expect(field('latinName').value).toBe('');
+        expect((field('status') as unknown as HTMLSelectElement).value).toBe('NE');
+    });
+
     it('« Annuler » pendant la vérification du nom : rien n’est appliqué, même si la réponse arrive', async () => {
         const lookup = deferred<unknown[]>();
         mocks.suggestSpeciesAutocomplete.mockImplementation((query: string) => (query === 'mésange charbonnière' ? lookup.promise : Promise.resolve([])));

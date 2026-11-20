@@ -611,6 +611,25 @@ const ObservationForm: React.FC<ObservationFormProps> = ({ onSave, onCancel, ini
             (next as unknown as Record<string, unknown>)[key] = before[key];
             restored.add(key);
         }
+        // L'enrichissement de l'espèce appliquée (statut, groupe, image, une
+        // seconde plus tard) fait partie de l'application tant que l'espèce
+        // est encore celle de la note et que la personne n'a pas choisi ces
+        // champs elle-même.
+        const speciesApplied = after.speciesName !== before.speciesName || after.latinName !== before.latinName;
+        // Nom latin laissé vide par l'application : l'enrichissement a pu le
+        // compléter, tant que la personne ne l'a pas tapé elle-même.
+        const latinKept = current.latinName === after.latinName
+            || (!(after.latinName ?? '').trim() && !fieldTouched.latinName);
+        const speciesKept = current.speciesName === after.speciesName && latinKept;
+        if (speciesApplied && speciesKept) {
+            if (!fieldTouched.status) next.status = before.status;
+            if (!fieldTouched.taxonomicGroup) next.taxonomicGroup = before.taxonomicGroup;
+            next.wikipediaImage = before.wikipediaImage;
+            for (const key of ['speciesName', 'latinName'] as const) {
+                next[key] = before[key];
+                restored.add(key);
+            }
+        }
         setFormData(next);
         setFieldTouched(prev => ({
             ...prev,
