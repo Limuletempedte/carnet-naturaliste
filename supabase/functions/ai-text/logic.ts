@@ -977,9 +977,10 @@ export const NOTE_FEATURE: TextFeature<NoteInput, NoteOutput> = {
 // sorties structurées, voir la note) : les bornes sont vérifiées ici.
 //
 // Les textes rendus (`text`, `department`, `commune`, `near.placeName`)
-// doivent être faits des mots de la phrase, à une faute de frappe près, sans
-// aucun caractère de code (`< > = { } ;` et accent grave) : un commentaire ou
-// une réponse du modèle, un lieu ajouté ou du code recopié est retiré.
+// doivent être faits des mots de la phrase, à une faute de frappe près, et
+// des seuls lettres, chiffres, espaces, apostrophes, traits d'union et
+// points : un commentaire ou une réponse du modèle, un lieu ajouté ou du code
+// recopié (même en sosies Unicode) est retiré.
 
 export const SEARCH_LIMITS = {
     /** En unités UTF-16, comptées AVANT nettoyage (attribut `maxlength`). */
@@ -1229,11 +1230,15 @@ function typoAllowance(word: string): number {
  */
 const MARKUP_CHARS_RE = /[<>"`&]/g;
 /**
- * Caractères de code (balise, attribut, bloc, instruction) : un texte rendu
- * qui en contient est retiré, même s'ils viennent de la phrase (essai du
- * 2026-11-20 : un modèle a recopié « img src=x onerror=alert(1) » dans text).
+ * Caractères PERMIS dans un texte rendu (texte libre, département, commune,
+ * lieu) : lettres, marques, chiffres, espaces, apostrophes, traits d'union,
+ * points. Tout le reste, y compris le code (`< > = { } ; :`, accent grave…)
+ * et ses sosies Unicode (« ＜ », « ； »…), fait retirer le champ, même s'il
+ * vient de la phrase (essai du 2026-11-20 : un modèle a recopié
+ * « img src=x onerror=alert(1) » dans text ; relecture sécurité : une liste
+ * de caractères interdits se contournait par des sosies).
  */
-const CODE_CHARS_RE = /[<>={};`]/;
+const RENDERED_TEXT_RE = /^[\p{L}\p{M}\p{N} '’.-]+$/u;
 
 /** Le mot est-il l'un des candidats, à `allowance` lettres près ? */
 function matchesWord(word: string, candidates: readonly string[], allowance: number): boolean {
@@ -1379,7 +1384,7 @@ export function parseSearchOutput(text: string, input: SearchInput, now: Date = 
         if (typeof value !== 'string') return drop(field);
         const cleaned = cleanInlineText(value);
         if (cleaned.length === 0 || isUnknownMarker(cleaned)) return null;
-        if (cleaned.length > max || CODE_CHARS_RE.test(cleaned) || !wordsFromPhrase(cleaned, input.text)) return drop(field);
+        if (cleaned.length > max || !RENDERED_TEXT_RE.test(cleaned) || !wordsFromPhrase(cleaned, input.text)) return drop(field);
         return cleaned;
     };
 

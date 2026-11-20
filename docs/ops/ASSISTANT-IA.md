@@ -1182,9 +1182,13 @@ copie jetable avec les trois ajouts de consigne, Haiku seul) :
   catégorie (l'exemple cite la phrase 10) ; une catégorie ne s'applique que
   si la phrase nomme l'ensemble lui-même ;
 - consigne : tout ce qui ressemble à une balise ou à du code est ignoré ;
-- validation : un texte rendu (`text`, département, commune, lieu) qui
-  contient un caractère de code (`<`, `>`, `=`, `{`, `}`, `;`, accent grave)
-  est retiré et signalé, même si ces caractères viennent de la phrase.
+- validation : un texte rendu (`text`, département, commune, lieu) ne peut
+  contenir que des lettres, chiffres, espaces, apostrophes, traits d'union et
+  points ; sinon il est retiré et signalé, même si les caractères viennent de
+  la phrase. Une liste de caractères de code interdits (`<`, `>`, `=`, `{`,
+  `}`, `;`, accent grave) se contournait par des sosies Unicode (« ＜ »,
+  « ； ») : la relecture sécurité a fait préférer cette liste de caractères
+  permis.
 
 La consigne citant mot pour mot la phrase 10, le jeu ne prouve plus rien sur
 ce point : **6 phrases nouvelles** y sont ajoutées (23 à 28), que la consigne
@@ -1222,6 +1226,18 @@ utilisé.
    `AI_TEXT_MODEL` ne change pas : le bilan et la note restent sur
    `claude-sonnet-5-5`. Ne pas poser `AI_TEXT_MODEL_SUMMARY` ni
    `AI_TEXT_MODEL_NOTE`.
+
+   Vérifier ensuite le **nom** et la **valeur**, car une faute passerait
+   inaperçue : un nom mal écrit (`AI_TEXT_MODEL_SERACH`) laisserait la
+   recherche sur Sonnet sans rien dire, et une valeur fautive ne se verrait
+   qu'à l'ouverture (`misconfigured`, sans frais), la coupure répondant
+   avant. `npx supabase secrets list --project-ref xowiezzqehadcfnbkijo` doit
+   montrer le nom `AI_TEXT_MODEL_SEARCH` exactement, avec la même empreinte
+   que celle de cette commande :
+
+   ```bash
+   printf %s claude-haiku-5-5 | sha256sum
+   ```
 3. **Redéployer** depuis `main` à jour (après la fusion de ce lot) :
 
    ```bash
@@ -1237,6 +1253,15 @@ utilisé.
    (plus haut), attendu **`503 feature_disabled`**. Quand la recherche sera
    ouverte (après sa PR B), sa première ligne `ai_usage` devra avoir
    `model = 'claude-haiku-5-5'` et un coût proche de 0,0006 $.
+7. **Le prix de Haiku compte désormais pour le budget.** La table des prix
+   de `logic.ts` (0,10 $ et 0,50 $ par million de tokens en entrée et en
+   sortie, pour des prompts de moins de 100 000 tokens) sert au coût réservé
+   et au coût réel ; les coûts de l'essai sont calculés avec elle et ne la
+   prouvent donc pas. Contrôle sans risque : dans la Console Anthropic, la
+   dépense de l'espace d'essai le 2026-11-20 doit être proche des 0,2533 $
+   calculés pour les deux passages (dont 0,0246 $ pour Haiku). Un écart net
+   veut dire que la table est fausse : la corriger avant d'ouvrir la
+   recherche.
 
 **Retour arrière** : `npx supabase secrets unset AI_TEXT_MODEL_SEARCH
 --project-ref xowiezzqehadcfnbkijo`, puis redéployer : la recherche revient

@@ -468,14 +468,15 @@ describe('ai-text — recherche : lecture de la réponse', () => {
             // Les mots viennent de la phrase, pas les chevrons : retiré.
             expect(parse({ text: 'martin-pêcheur"><a>Pessac</a><!--' }, { text: 'martin-pêcheur à Pessac' }).dropped).toEqual(['text']);
             expect(parse({ commune: 'Pessac & Talence' }, { text: 'pics à Pessac et Talence' }).dropped).toEqual(['commune']);
-            // « & » et « " » présents dans la phrase : gardés tels quels (texte brut).
-            expect(parse({ text: 'pics & sittelles' }, { text: 'pics & sittelles' }).text).toBe('pics & sittelles');
+            // Même présents dans la phrase, « & » et « " » ne passent pas : seuls
+            // lettres, chiffres, espaces, apostrophes, traits d'union et points.
+            expect(parse({ text: 'pics & sittelles' }, { text: 'pics & sittelles' }).dropped).toEqual(['text']);
             // Les apostrophes ne sont pas des balises.
             expect(parse({ commune: "Saint-Martin-d'Hères" }, { text: 'hérons à Saint-Martin-d’Hères' }).commune).toBe("Saint-Martin-d'Hères");
             expect(wordsFromPhrase("l'étang", 'au bord de l étang')).toBe(true);
         });
 
-        it('caractères de code (< > = { } ; `) : retirés même s’ils viennent de la phrase', () => {
+        it('caractères de code et sosies : retirés même s’ils viennent de la phrase', () => {
             // Essai du 2026-11-20 : Haiku a recopié le contenu d'une balise dans text.
             const phrase = { text: 'martin-pêcheur aujourd’hui <img src=x onerror=alert(1)>' };
             expect(parse({ text: 'martin-pêcheur img src=x onerror=alert(1)' }, phrase).dropped).toEqual(['text']);
@@ -488,6 +489,21 @@ describe('ai-text — recherche : lecture de la réponse', () => {
             ] as const) {
                 expect(parse({ [field]: value }, { text }).dropped, value).toEqual([field]);
             }
+            // Sosies Unicode (pleine chasse, petites formes, point-virgule grec)
+            // et autres signes : refusés, qu'ils viennent ou non de la phrase.
+            const plain = { text: 'martin-pêcheur img src x onerror alert 1 pic noir javascript' };
+            for (const value of [
+                'martin-pêcheur ＜img src＝x onerror＝alert(1)＞',
+                'martin-pêcheur ﹤img src﹦x﹥',
+                'pic noir\u037e',
+                'javascript:alert(1)',
+                'pic noir (1)',
+                'pic noir 🐦',
+            ]) {
+                expect(parse({ text: value }, plain).dropped, value).toEqual(['text']);
+            }
+            // Ce qui reste permis : apostrophes, traits d'union, points, chiffres.
+            expect(parse({ commune: "St. Martin-d'Hères 2" }, { text: "à St. Martin-d'Hères 2" }).commune).toBe("St. Martin-d'Hères 2");
             const placePhrase = { text: 'pics près de Bois=Ormes' };
             expect(parse(near({ kind: 'place', placeName: 'Bois=Ormes', radiusKm: 0 }), placePhrase)).toMatchObject({ near: null, dropped: ['near'] });
         });
