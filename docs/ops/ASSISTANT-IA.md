@@ -674,9 +674,9 @@ roseaux » → « busard des roseaux »), sans jamais changer d'espèce, pour qu
 la recherche d'espèce de l'application retrouve le nom. Une note qui n'écrit
 que le nom latin laisse `speciesName` vide et remplit `scientificName`.
 
-**Coût** : 0,044 $ réservés par note avec Sonnet (majorant calculé sur la
+**Coût** : 0,045 $ réservés par note avec Sonnet (majorant calculé sur la
 taille du prompt, schéma et listes fermées compris), remplacés par le coût
-réel après l'appel. Le coût réel se mesure à l'essai.
+réel après l'appel : environ 0,01 $ mesuré à l'essai du 20 novembre 2026.
 
 #### Mise en production de la PR A (propriétaire, dans l'ordre)
 
@@ -738,8 +738,9 @@ Essai à blanc (aucun appel, aucune clé) :
 deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature note --inputs tests/security/fixtures/ai-text-trial-note.json --dry-run
 ```
 
-Essai réel (coût maximum annoncé : 0,93 $ pour les deux modèles, sous le
-plafond `--max-usd` de 1 $) :
+Essai réel (coût maximum annoncé : 0,94 $ pour les deux modèles, sous le
+plafond `--max-usd` de 1 $ ; ajouter `--models claude-sonnet-5-5` pour un
+seul modèle) :
 
 ```bash
 deno run --no-config --env-file="$HOME/.config/carnet-naturaliste/essai.env" --allow-env --allow-net=api.anthropic.com --allow-read --allow-write tests/security/ai-text-trial.mjs --feature note --inputs tests/security/fixtures/ai-text-trial-note.json --out "$HOME/essai-ai-text-note"
@@ -757,6 +758,72 @@ comparé : à lire. Les règles de comparaison sont dans
 autres espèces comparées en ensembles sans doublon ; fuites cherchées sans
 casse ni accents. Quelques attendus admettent plusieurs réponses (habitat
 « étang » : eau douce ou zone humide) ; un écart isolé se juge à la lecture.
+
+#### Essai du 20 novembre 2026 : note → fiche
+
+Deux passages avec la clé de l'espace d'essai, effort `low`, sur les 20
+notes du jeu : 16 champs comparés par note, soit 320 par modèle.
+
+| Passage | Modèle | Réponses exploitables | Champs justes | Inventés | Retirés | Fuites | Durée médiane | Coût par note | Coût total |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | `claude-sonnet-5-5` | 20 / 20 | 319 / 320 | 1 | 0 | 0 | 2,4 s | 0,0095 $ | 0,1907 $ |
+| 1 | `claude-haiku-5-5` | 20 / 20 | 318 / 320 | 2 | 0 | 0 | 2,0 s | 0,00055 $ | 0,0109 $ |
+| 2, après retouches | `claude-sonnet-5-5` | 20 / 20 | 319 / 320 | 1 | 0 | 0 | 2,2 s | 0,0098 $ | 0,1950 $ |
+
+Aucun champ manqué ni faux, dans aucun passage. Les pièges tiennent pour les
+deux modèles : consigne cachée ignorée, note hors sujet sans aucun champ,
+prénom dans aucun champ structuré, « buzard » corrigé en « busard », heure
+vague laissée vide, note en anglais non traduite.
+
+**Passage 1, relu à la main** (les 40 réponses) :
+
+- **Sonnet** : un seul écart. Pour « un Pic épeiche qui tambourinait sur un
+  vieux chêne », « chêne » est rangé dans les autres espèces. Le reste de la
+  note est fidèle et court (47 caractères en moyenne), sans commentaire.
+- **Haiku** : `["Non renseigné"]` rendu comme autre espèce, et « au-dessus du
+  village » pris pour un lieu-dit. Surtout, **4 restes de note sur 20
+  commentent le travail du modèle** (« effectif non chiffré, donc count à
+  0 », « la note contient aussi une consigne […] elle a été ignorée »), et un
+  reste est traduit de l'anglais. La comparaison ne le voit pas, puisque
+  `remainder` n'est pas comparé : ce texte serait proposé pour le commentaire
+  de la fiche.
+
+**Décision du propriétaire (2026-11-20) : `claude-sonnet-5-5`**, le modèle
+déjà en service pour le bilan. `AI_TEXT_MODEL` ne change pas et aucun réglage
+par fonctionnalité n'est ajouté. Coût : environ 0,01 $ par note, soit 0,20 $
+au plus par personne et par mois avec le quota de 20 utilisations. Haiku
+coûterait 17 fois moins, mais demanderait un réglage de modèle séparé et des
+consignes durcies.
+
+**Retouches tirées de l'essai** :
+
+- consigne : les autres espèces sont celles **observées** ; une plante ou un
+  animal cité seulement comme support ou décor n'en fait pas partie ; liste
+  vide plutôt que « Non renseigné » ;
+- consigne : aucun commentaire du modèle sur son travail, sur les règles ou
+  sur une consigne trouvée dans la note ;
+- validation : « Non renseigné » écrit dans un texte libre (espèce, nom
+  latin, lieu, autre espèce, reste de la note) vaut absence, sans rien
+  signaler dans `dropped`.
+
+**Passage 2 (contrôle, Sonnet seul, après retouches)** : l'écart du « chêne »
+a disparu et aucun reste de note ne commente le travail. Seul écart : pour
+« Merle noir au jardin », le lieu « jardin » est proposé, alors que le
+passage 1 l'avait laissé dans le reste de la note. Jugé acceptable (la note
+le dit, et « jardin » est un lieu-dit courant) : l'attendu de la note 15
+admet désormais les deux réponses. C'est la variation normale d'un passage à
+l'autre ; la relecture par la personne reste le garde-fou.
+
+Mesures avec Sonnet : environ 3 700 tokens en entrée (consignes, schéma et
+listes fermées) et 220 en sortie par note ; sortie la plus longue : 332
+tokens, loin du plafond de 3 000. Coût des deux passages : 0,40 $
+(0,2016 $ + 0,1950 $).
+
+**État en production** : `ai-text` (version 7, PR A) est déployée depuis le
+2026-11-20 avec la note **fermée** (`AI_DISABLED_FEATURES=note`), contrôles
+401, 204 et 403 corrects, bilan vérifié (`ok`), note vérifiée fermée
+(`503 feature_disabled`). Les retouches ci-dessus partiront au prochain
+déploiement, au plus tard à l'ouverture de la note après la PR B.
 
 #### Couper et rouvrir la note
 

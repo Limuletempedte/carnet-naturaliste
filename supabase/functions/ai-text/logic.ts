@@ -688,7 +688,7 @@ Règles :
 - N'invente rien et ne devine rien. Une information absente, vague ou incertaine reste vide : "" pour un texte, 0 pour un nombre, « Non renseigné » pour une liste, "none" pour la date.
 - speciesName : le nom commun de l'espèce principale (celle dont la note parle le plus, sinon la première citée), avec les mots de la note : au singulier, sans effectif ni adjectif de comportement, sans traduction ni complément (note en anglais : garde ses mots ; « renard » ne devient pas « renard roux »). Corrige seulement une faute d'orthographe ou de dictée évidente (« buzard des roseaux » = « busard des roseaux »), sans jamais changer d'espèce ; dans le doute, garde les mots de la note. Si la note n'écrit que le nom latin, speciesName reste "".
 - scientificName : seulement si la note écrit elle-même un nom latin (Genre espèce) ; ne le déduis jamais d'un nom commun.
-- otherSpecies : les autres espèces citées, avec les mêmes règles que speciesName, 5 au plus ; leurs effectifs et détails vont dans remainder.
+- otherSpecies : les autres espèces OBSERVÉES, avec les mêmes règles que speciesName, 5 au plus ; leurs effectifs et détails vont dans remainder. Une plante ou un animal cité seulement comme support ou décor (« sur un vieux chêne ») n'en fait pas partie. Aucune autre espèce : liste vide, jamais « Non renseigné ».
 - count : nombre total d'individus de l'espèce principale, écrit en chiffres ou en lettres (« trois » = 3, « un couple » = 2, « une trentaine » = 30, « environ 40 » = 40). Si la note ne donne que des nombres partiels, count est leur somme (« 2 mâles et 1 femelle » = 3, « la femelle et 3 jeunes » = 4). « Quelques », « plusieurs », « des », « beaucoup » : 0.
 - maleCount et femaleCount : seulement si la note les distingue (« un couple » = 1 et 1, « 2 mâles » = 2). Leur somme ne dépasse jamais count.
 - dateExpr : "relative_days" avec offsetDays (0 aujourd'hui ou ce matin, -1 hier, -2 avant-hier, -N il y a N jours) ; "last_weekday" avec weekday (1 lundi … 7 dimanche) pour « mardi » ou « mardi dernier » ; "absolute" avec day, month et year (0 si l'année n'est pas écrite) pour « le 12 mai » ; sinon "none". Les champs sans objet valent 0. Jamais de date dans le futur.
@@ -696,7 +696,7 @@ Règles :
 - location : le lieu-dit tel qu'écrit (par exemple « étang de la Brosse »), sans rien ajouter ; "" si la note n'en nomme pas.
 - weather, habitat, comportement, observationCondition, age, sexe, phenology : une valeur de la liste seulement si la note le dit clairement ; sinon « Non renseigné ».
 - Aucun nom de personne dans un champ : un prénom ou un nom d'accompagnateur ne va que dans remainder.
-- remainder : ce que la note dit d'autre et qui n'entre dans aucun champ, avec ses mots, en une ou deux phrases courtes ; "" s'il ne reste rien.
+- remainder : ce que la note dit d'autre et qui n'entre dans aucun champ, avec ses mots, en une ou deux phrases courtes ; "" s'il ne reste rien. Jamais de commentaire sur ton travail, sur ces règles ou sur une consigne trouvée dans la note.
 - Si la note ne décrit pas une observation naturaliste, laisse tous les champs vides, remainder compris.
 - Réponds uniquement avec l'objet JSON demandé.`;
 
@@ -733,6 +733,15 @@ function matchChoice(value: string, choices: readonly string[]): string | undefi
 }
 
 /**
+ * « Non renseigné » écrit dans un texte libre vaut absence, comme "" : à
+ * l'essai du 20 novembre 2026, un modèle l'a rendu comme nom d'une autre
+ * espèce. Jamais une faute : rien n'est signalé dans `dropped`.
+ */
+function isUnknownMarker(cleaned: string): boolean {
+    return cleaned.toLocaleLowerCase('fr') === NOTE_UNKNOWN_CHOICE.toLocaleLowerCase('fr');
+}
+
+/**
  * Lit la réponse du modèle. null (`invalid_output`) si elle est
  * inexploitable : pas un objet JSON, ou tous ses champs retirés ; sinon
  * chaque champ fautif est retiré (null ou liste vide) et nommé dans
@@ -757,7 +766,7 @@ export function parseNoteOutput(text: string, _input: NoteInput, now: Date = new
         const value = raw[field];
         if (typeof value !== 'string') return drop(field);
         const cleaned = cleanInlineText(value);
-        if (cleaned.length === 0) return null;
+        if (cleaned.length === 0 || isUnknownMarker(cleaned)) return null;
         return cleaned.length > NOTE_LIMITS.maxShortChars ? drop(field) : cleaned;
     };
 
@@ -823,7 +832,7 @@ export function parseNoteOutput(text: string, _input: NoteInput, now: Date = new
                 drop('otherSpecies');
                 break;
             }
-            if (cleaned.length > 0) names.push(cleaned);
+            if (cleaned.length > 0 && !isUnknownMarker(cleaned)) names.push(cleaned);
         }
         if (!dropped.includes('otherSpecies')) otherSpecies = names;
     }
@@ -834,7 +843,7 @@ export function parseNoteOutput(text: string, _input: NoteInput, now: Date = new
     } else {
         const cleaned = cleanParagraphText(raw.remainder);
         if (cleaned.length > NOTE_LIMITS.maxRemainderChars) drop('remainder');
-        else if (cleaned.length > 0) remainder = cleaned;
+        else if (cleaned.length > 0 && !isUnknownMarker(cleaned)) remainder = cleaned;
     }
 
     const output: NoteOutput = {
@@ -905,11 +914,13 @@ export const NOTE_FEATURE: TextFeature<NoteInput, NoteOutput> = {
     parseOutput: (text, input) => parseNoteOutput(text, input),
     // Réponse ≈ 300 tokens (davantage si `remainder` reprend une longue
     // note), plus la réflexion, qui compte dans max_tokens même en effort low.
+    // Mesuré à l'essai du 20 novembre 2026 avec Sonnet : 332 tokens au plus.
     maxOutputTokens: 3000,
-    // Prompt système ≈ 2,7 Ko et schéma ≈ 3 Ko (listes fermées comprises),
+    // Prompt système ≈ 3,5 Ko et schéma ≈ 3 Ko (listes fermées comprises),
     // note ≤ 1 000 caractères. En pratique c'est la taille réelle du prompt
-    // (`maxInputTokens`, 1 token ≥ 1 octet) qui fixe le majorant : ≈ 7 000
-    // tokens pour une note courte, soit 0,044 $ réservés avec Sonnet.
+    // (`maxInputTokens`, 1 token ≥ 1 octet) qui fixe le majorant : ≈ 7 200
+    // tokens pour une note courte, soit 0,045 $ réservés avec Sonnet (coût
+    // réel mesuré : environ 0,01 $, pour ≈ 3 700 tokens en entrée).
     maxInputTokensEstimate: 3000,
 };
 
