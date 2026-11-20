@@ -153,9 +153,13 @@ describe('ai-text — note : listes fermées et schéma', () => {
         expect(NOTE_SYSTEM_PROMPT).toMatch(/en fin d'après-midi/);
         // Note hors sujet : rien, pas même un résumé (pas d'assistant généraliste).
         expect(NOTE_SYSTEM_PROMPT).toMatch(/laisse tous les champs vides, remainder compris/);
-        // Effectif : somme des nombres partiels ; nom d'espèce : les mots de la note.
+        // Effectif : somme des nombres partiels ; nom d'espèce : les mots de la
+        // note, faute évidente corrigée (dictée), ni traduction ni complément.
         expect(NOTE_SYSTEM_PROMPT).toMatch(/count est leur somme/);
-        expect(NOTE_SYSTEM_PROMPT).toMatch(/sans traduction, sans correction ni complément/);
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/sans traduction ni complément/);
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/faute d'orthographe ou de dictée évidente/);
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/sans jamais changer d'espèce ; dans le doute, garde les mots de la note/);
+        expect(NOTE_SYSTEM_PROMPT).toMatch(/otherSpecies : les autres espèces citées, avec les mêmes règles que speciesName/);
         expect(NOTE_SYSTEM_PROMPT).toMatch(/n'écrit que le nom latin, speciesName reste ""/);
     });
 });

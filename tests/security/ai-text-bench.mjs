@@ -217,7 +217,7 @@ try {
     assert.match(noteSent.messages[0].content, /<note>".*mésanges charbonnières.*\\u003cimg/);
     assert.doesNotMatch(noteSent.messages[0].content, /<img/);
     assert.doesNotMatch(JSON.stringify(noteSent), /Bordeaux|44\.8|2026-11-20|Paul/);
-    ok('note 200 : p_feature=note, coût max ≈ 0,043 $, max_tokens 3 000, note délimitée (« < » échappé), ni date, ni lieu, ni GPS, ni observateurs envoyés ; heure fautive retirée et signalée (dropped)');
+    ok('note 200 : p_feature=note, coût max ≈ 0,044 $, max_tokens 3 000, note délimitée (« < » échappé), ni date, ni lieu, ni GPS, ni observateurs envoyés ; heure fautive retirée et signalée (dropped)');
 
     rpcCalls.length = 0; anthMode = 'not_json';
     const nj = await call({ body: noteBody });

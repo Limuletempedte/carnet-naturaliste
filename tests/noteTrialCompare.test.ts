@@ -118,14 +118,41 @@ describe('essai de la note — jeu d’entrées', () => {
         expect(() => checkNoteExpected({ label: 'x' }, 'jeu')).toThrow(/expected/);
     });
 
-    it('le nom d’espèce attendu reprend les mots de la note (ni traduction ni complément)', () => {
-        const entries = fixture as { label: string; payload: { text: string }; expected: { speciesName?: unknown } }[];
+    it('les noms d’espèces attendus reprennent les mots de la note : faute évidente corrigée, ni traduction ni complément', () => {
+        /** Distance d'édition (Levenshtein) entre deux mots. */
+        const distance = (a: string, b: string): number => {
+            let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+            for (let i = 1; i <= a.length; i += 1) {
+                const current = [i];
+                for (let j = 1; j <= b.length; j += 1) {
+                    current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+                }
+                previous = current;
+            }
+            return previous[b.length];
+        };
+        // Chaque mot du nom attendu est un mot de la note, à une lettre près
+        // (« buzard » → « busard ») : une traduction ou un complément
+        // (« renard » → « renard roux ») n'y passe pas.
+        const wordsOf = (value: string) => normalizeName(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ');
+        const fromNote = (text: string, name: string) => {
+            const words = wordsOf(text);
+            return wordsOf(name).every(word => words.some(w => distance(w, word) <= 1));
+        };
+        expect(fromNote('un buzard des roseaux', 'Busard des roseaux')).toBe(true);
+        expect(fromNote('famille de renards', 'Renard roux')).toBe(false);
+        expect(fromNote('two red kites', 'Milan royal')).toBe(false);
+        const entries = fixture as { label: string; payload: { text: string }; expected: { speciesName?: unknown; otherSpecies?: unknown } }[];
         for (const { label, payload, expected } of entries) {
-            const names = expected.speciesName === undefined ? [] : [expected.speciesName].flat();
+            const names = [expected.speciesName ?? [], expected.otherSpecies ?? []].flat(2);
             for (const name of names) {
                 if (name === null) continue;
-                expect(normalizeName(payload.text), `${label} : ${String(name)}`).toContain(normalizeName(String(name)));
+                expect(fromNote(payload.text, String(name)), `${label} : ${String(name)}`).toBe(true);
             }
         }
+        // Seule la note dictée (12) a un nom corrigé.
+        const corrected = entries.filter(({ payload, expected }) => typeof expected.speciesName === 'string'
+            && !normalizeName(payload.text).includes(normalizeName(expected.speciesName)));
+        expect(corrected.map(entry => entry.label)).toEqual(['12 fautes de dictée vocale']);
     });
 });

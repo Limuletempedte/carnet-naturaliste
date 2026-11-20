@@ -246,7 +246,7 @@
       "text": "aujourd'hui j'ai vu un buzard des roseaux qui chasser au dessus de la roselière point il y avait du vent virgule beaucoup de vent"
     },
     "expected": {
-      "speciesName": "buzard des roseaux",
+      "speciesName": "Busard des roseaux",
       "count": 1,
       "dateExpr": {
         "kind": "relative_days",

@@ -666,12 +666,15 @@ pas un objet JSON, ou tous ses champs retirés (`{}`, clés inconnues). Une
 note hors sujet, où tout est vide sans rien de retiré, reste un succès.
 
 **Consignes notables** : `count` est le total ; si la note ne donne que des
-nombres partiels (« 2 mâles et 1 femelle »), c'est leur somme. Le nom
-d'espèce garde les mots de la note, sans traduction, correction ni
-complément ; une note qui n'écrit que le nom latin laisse `speciesName` vide
-et remplit `scientificName`.
+nombres partiels (« 2 mâles et 1 femelle »), c'est leur somme. Les noms
+d'espèces (`speciesName`, `otherSpecies`) gardent les mots de la note, sans
+traduction ni complément (« renard » ne devient pas « renard roux ») ; seule
+une faute d'orthographe ou de dictée évidente est corrigée (« buzard des
+roseaux » → « busard des roseaux »), sans jamais changer d'espèce, pour que
+la recherche d'espèce de l'application retrouve le nom. Une note qui n'écrit
+que le nom latin laisse `speciesName` vide et remplit `scientificName`.
 
-**Coût** : 0,043 $ réservés par note avec Sonnet (majorant calculé sur la
+**Coût** : 0,044 $ réservés par note avec Sonnet (majorant calculé sur la
 taille du prompt, schéma et listes fermées compris), remplacés par le coût
 réel après l'appel. Le coût réel se mesure à l'essai.
 
@@ -735,7 +738,7 @@ Essai à blanc (aucun appel, aucune clé) :
 deno run --no-config --allow-env --allow-read tests/security/ai-text-trial.mjs --feature note --inputs tests/security/fixtures/ai-text-trial-note.json --dry-run
 ```
 
-Essai réel (coût maximum annoncé : 0,91 $ pour les deux modèles, sous le
+Essai réel (coût maximum annoncé : 0,93 $ pour les deux modèles, sous le
 plafond `--max-usd` de 1 $) :
 
 ```bash
