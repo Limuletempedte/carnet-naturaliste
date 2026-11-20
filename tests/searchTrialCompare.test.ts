@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SEARCH_FIELDS, SEARCH_LIMITS, parseSearchOutput, validateSearchInput, type SearchOutput } from '../supabase/functions/ai-text/logic';
+import { SEARCH_FIELDS, SEARCH_LIMITS, SEARCH_SYSTEM_PROMPT, parseSearchOutput, validateSearchInput, type SearchOutput } from '../supabase/functions/ai-text/logic';
 import { checkSearchExpected, compareSearch, judgeSearchField, sameSet, type SearchTrialItem } from './security/searchTrialCompare';
 
 /** Réponse « tout vide » passée par le vrai validateur, puis complétée. */
@@ -121,6 +121,29 @@ describe('essai de la recherche — jeu de phrases', () => {
         expect(texts.some(text => /chez moi/.test(text))).toBe(true);
         expect(texts.some(text => /menacées/.test(text))).toBe(true);
         expect(texts.some(text => /\b20[3-9]\d\b/.test(text))).toBe(true);
+        // Après l'essai du 2026-11-20 : espèces précises d'une catégorie que la
+        // consigne ne cite pas, l'ensemble lui-même, code d'autres formes.
+        for (const phrase of ['mésange bleue en janvier', 'buses variables près de chez moi', 'les mésanges en janvier']) {
+            expect(texts, phrase).toContain(phrase);
+        }
+        expect(texts.some(text => /DROP TABLE/.test(text))).toBe(true);
+        expect(texts.some(text => /\{\{/.test(text))).toBe(true);
+        const byText = (text: string) => fixture.find(entry => (entry.payload as { text: string }).text === text);
+        expect(byText('mésange bleue en janvier')?.expected.categories).toBeUndefined();
+        expect(byText('les mésanges en janvier')?.expected.categories).toEqual(['mesanges']);
+        // Les phrases ajoutées, sauf celles marquées « citée par la consigne »,
+        // ne sont pas citées mot pour mot par la consigne.
+        for (const entry of fixture.slice(22).filter(e => !e.label.endsWith('(citée par la consigne)'))) {
+            expect(SEARCH_SYSTEM_PROMPT, entry.label).not.toContain((entry.payload as { text: string }).text);
+        }
+        // Une phrase dont l'espèce attendue est un exemple de la consigne est
+        // marquée « citée par la consigne » : elle ne compte plus comme inédite.
+        for (const entry of fixture) {
+            const text = entry.expected.text;
+            if (typeof text !== 'string') continue;
+            expect(entry.label.endsWith('(citée par la consigne)'), entry.label).toBe(SEARCH_SYSTEM_PROMPT.includes(`« ${text} »`));
+        }
+        expect(fixture.filter(entry => entry.label.endsWith('(citée par la consigne)'))).toHaveLength(6);
     });
 
     it('refuse un attendu hors liste, d’un champ inconnu ou mal formé', () => {

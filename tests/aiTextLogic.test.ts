@@ -27,6 +27,8 @@ import {
     maxInputTokens,
     parseAllowedOrigins,
     parseDisabledFeatures,
+    featureModelEnvName,
+    resolveFeatureModel,
     parseSummaryOutput,
     parseTextConfig,
     readEnvelope,
@@ -151,6 +153,29 @@ describe('ai-text — fonctionnalités et consentements', () => {
         expect([...(parseDisabledFeatures(' summary , note,') ?? [])]).toEqual(['summary', 'note']);
         expect(parseDisabledFeatures('sumary')).toBeNull();
         expect(parseDisabledFeatures('summary,identify')).toBeNull();
+    });
+});
+
+describe('ai-text — modèle par fonctionnalité', () => {
+    it('nomme le réglage propre à chaque fonctionnalité', () => {
+        expect(ALL_TEXT_FEATURES.map(featureModelEnvName)).toEqual(['AI_TEXT_MODEL_SUMMARY', 'AI_TEXT_MODEL_NOTE', 'AI_TEXT_MODEL_SEARCH']);
+    });
+
+    it('absent ou vide : le modèle commun (AI_TEXT_MODEL), rien ne change', () => {
+        expect(resolveFeatureModel('claude-sonnet-5-5', undefined)).toBe('claude-sonnet-5-5');
+        expect(resolveFeatureModel('claude-sonnet-5-5', '')).toBe('claude-sonnet-5-5');
+        expect(resolveFeatureModel('claude-sonnet-5-5', '  ')).toBe('claude-sonnet-5-5');
+    });
+
+    it('un modèle au prix connu l’emporte sur le modèle commun', () => {
+        expect(resolveFeatureModel('claude-sonnet-5-5', 'claude-haiku-5-5')).toBe('claude-haiku-5-5');
+        expect(resolveFeatureModel('claude-haiku-5-5', ' claude-sonnet-5-5 ')).toBe('claude-sonnet-5-5');
+    });
+
+    it('un nom inconnu donne null (misconfigured pour cette fonctionnalité), jamais un repli silencieux', () => {
+        for (const bad of ['claude-inconnu', 'claude-haiku', 'toString', '__proto__', 'claude-sonnet-5-5,claude-haiku-5-5']) {
+            expect(resolveFeatureModel('claude-sonnet-5-5', bad), bad).toBeNull();
+        }
     });
 });
 

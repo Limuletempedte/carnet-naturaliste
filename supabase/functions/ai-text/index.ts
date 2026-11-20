@@ -1,11 +1,11 @@
-// Fonction Edge `ai-text` : fonctionnalités IA en texte (bilan du mois ; plus
-// tard note → fiche et recherche), par Claude (API Anthropic). La clé API ne
-// quitte jamais le serveur. Même accès, même quota mensuel et même budget que
+// Fonction Edge `ai-text` : fonctionnalités IA en texte (bilan du mois, note →
+// fiche, recherche), par Claude (API Anthropic). La clé API ne quitte jamais
+// le serveur. Même accès, même quota mensuel et même budget que
 // `ai-identify` ; consentement propre à chaque fonctionnalité (`ai_consents`).
 // Voir docs/ops/ASSISTANT-IA.md et supabase/migrations/*_ai_text_features.sql.
 //
 // Ordre : CORS → identité → corps (≤ 16 Ko) → fonctionnalité connue et non
-// coupée → configuration → validation de la charge utile → réservation
+// coupée → configuration (modèle propre à la fonctionnalité compris) → validation de la charge utile → réservation
 // (quota, budget, sous verrou) → appel au modèle → coût réel → réponse.
 //
 // Journaux : uniquement l'id de la ligne d'usage, la fonctionnalité, le
@@ -21,6 +21,7 @@ import {
     classifyStopReason,
     computeCostUsd,
     corsDecision,
+    featureModelEnvName,
     httpStatusFor,
     isReservationRefusal,
     maxCostUsd,
@@ -28,6 +29,7 @@ import {
     parseDisabledFeatures,
     parseTextConfig,
     readEnvelope,
+    resolveFeatureModel,
     type ErrorCode,
 } from './logic.ts';
 
@@ -153,20 +155,27 @@ Deno.serve(async (req: Request): Promise<Response> => {
         log({ event: 'misconfigured', reason: !config ? 'ai_config' : 'api_key' });
         return fail('misconfigured');
     }
+    // Modèle propre à la fonctionnalité (AI_TEXT_MODEL_SEARCH…), sinon AI_TEXT_MODEL ;
+    // un nom inconnu ne coupe que cette fonctionnalité.
+    const model = resolveFeatureModel(config.model, Deno.env.get(featureModelEnvName(featureName)));
+    if (!model) {
+        log({ event: 'misconfigured', reason: 'feature_model', feature: featureName });
+        return fail('misconfigured');
+    }
 
     // 6. Charge utile propre à la fonctionnalité (refus au-delà des limites)
     const validation = feature.validate(envelope.payload);
     if (!validation.ok) return fail('invalid_request');
     const input = validation.value;
     const userPrompt = feature.buildUserPrompt(input);
-    const reservedCost = maxCostUsd(config.model, feature, userPrompt);
+    const reservedCost = maxCostUsd(model, feature, userPrompt);
 
     // 7. Réservation : accès, consentement de la fonctionnalité, quota, budget
     const admin = createClient(supabaseUrl, serviceRoleKey, clientOptions);
     const { data: reservation, error: reserveError } = await admin.rpc('ai_reserve_call', {
         p_user: user.id,
         p_consent_version: consentVersion,
-        p_model: config.model,
+        p_model: model,
         p_budget_usd: config.budgetUsd,
         p_max_cost_usd: reservedCost,
         p_feature: featureName,
@@ -200,7 +209,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             usage_id: usageId,
             feature: featureName,
             status,
-            model: config.model,
+            model,
             input_tokens: inputTokens,
             output_tokens: outputTokens,
             cost_usd: costUsd,
@@ -220,7 +229,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         let message: Anthropic.Message;
         try {
             message = await anthropic.messages.create({
-                model: config.model,
+                model,
                 max_tokens: feature.maxOutputTokens,
                 system: feature.systemPrompt,
                 output_config: {
@@ -243,7 +252,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
             + (message.usage.cache_creation_input_tokens ?? 0)
             + (message.usage.cache_read_input_tokens ?? 0);
         const outputTokens = message.usage.output_tokens;
-        const cost = computeCostUsd(config.model, message.usage);
+        const cost = computeCostUsd(model, message.usage);
         const outcome = classifyStopReason(message.stop_reason);
         if (outcome === 'refused') {
             await finalize('refused', inputTokens, outputTokens, cost);
