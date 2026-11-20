@@ -65,5 +65,9 @@ Application web PWA de carnet d'observations naturalistes (faune, flore, fonge).
 - ⚠️ **Ne pas surcharger `brace-expansion`** en override global : la v5 change sa
   forme d'export et casse ESLint (`expand is not a function`). Le correctif des
   alertes qui en decoulent passe par la montee majeure d'ESLint.
+- ⚠️ **`manualChunks` sous Rolldown aspire les dependances** : un chunk nomme
+  embarque aussi les modules dont il depend. Un chunk exclu du pre-cache
+  (`globIgnores`) peut ainsi devenir necessaire au demarrage, et l'app ne demarre
+  plus hors ligne. Garde-fou : `tests/precacheChunks.test.ts`.
 - **Documents legaux** : ajouter un service tiers implique de mettre a jour
   `components/LegalPages.tsx` ET `docs/legal/` (registre des traitements).
