@@ -117,8 +117,9 @@ describe('ai-text — constantes communes avec ai-identify', () => {
 
 describe('ai-text — fonctionnalités et consentements', () => {
     it('livre le bilan du mois et la note, chacun avec sa version de consentement', () => {
-        expect(Object.keys(TEXT_FEATURES)).toEqual(['summary', 'note']);
-        expect(CONSENT_VERSIONS).toEqual({ summary: '2026-11-v1', note: '2026-11-v1' });
+        expect(Object.keys(TEXT_FEATURES)).toEqual(['summary', 'note', 'search']);
+        // `search` : version provisoire de la PR A (côté fonction seulement).
+        expect(CONSENT_VERSIONS).toEqual({ summary: '2026-11-v1', note: '2026-11-v1', search: '2026-11-v0' });
         for (const name of Object.keys(TEXT_FEATURES)) {
             expect(ALL_TEXT_FEATURES as readonly string[]).toContain(name);
         }
@@ -136,7 +137,8 @@ describe('ai-text — fonctionnalités et consentements', () => {
     it('lit l’enveloppe { feature, payload } et refuse une fonctionnalité inconnue ou pas encore livrée', () => {
         expect(readEnvelope({ feature: 'summary', payload: { a: 1 } })).toEqual({ ok: true, feature: 'summary', payload: { a: 1 } });
         expect(readEnvelope({ feature: 'note', payload: { text: 'x' } })).toEqual({ ok: true, feature: 'note', payload: { text: 'x' } });
-        for (const body of [null, [], 'summary', {}, { feature: 'identify' }, { feature: 'search' },
+        expect(readEnvelope({ feature: 'search', payload: { text: 'x' } })).toEqual({ ok: true, feature: 'search', payload: { text: 'x' } });
+        for (const body of [null, [], 'summary', {}, { feature: 'identify' }, { feature: 'recherche' },
             { feature: '__proto__' }, { feature: 'toString' }, { feature: 42 }]) {
             expect(readEnvelope(body)).toEqual({ ok: false, code: 'invalid_request' });
         }
