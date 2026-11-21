@@ -555,7 +555,13 @@ describe('ObservationForm — note → fiche : relecture et application', () => 
         expect(within(panel).getByText(/mercredi 13 mai 2026/)).toBeTruthy();
         fireEvent.click(time);
         fireEvent.click(within(panel).getByRole('button', { name: 'Appliquer la sélection' }));
-        await screen.findByTestId('ai-note-applied');
+        const applied = await screen.findByTestId('ai-note-applied');
+        // Le formulaire note ce qu'il faudra annuler juste APRÈS l'affichage,
+        // dans la même étape de React qui donne le focus au compte rendu. Sur
+        // une machine chargée, React peut s'interrompre entre les deux : sans
+        // cette attente, « Annuler l'application » partait trop tôt et
+        // n'annulait rien.
+        await waitFor(() => expect(applied.contains(document.activeElement)).toBe(true));
         expect(field('speciesName').value).toBe('Mésange charbonnière');
         expect(field('latinName').value).toBe('Parus major');
         expect(field('count').value).toBe('3');
@@ -656,6 +662,17 @@ describe('ObservationForm — note → fiche : relecture et application', () => 
     });
 
     it('hors ligne au moment d’appliquer : dit que le nom n’a pas pu être vérifié', async () => {
+        // Deux appels possibles avec ce nom : la vérification de la note, faite
+        // AVANT d'écrire le nom dans le champ « espèce », et l'autocomplétion du
+        // champ, qui part 300 ms APRÈS (permise, et plus ou moins tôt selon la
+        // vitesse de la machine). On relève donc ce qu'affichait le champ à
+        // chaque appel : un appel alors que le champ n'affichait pas encore ce
+        // nom ne peut venir que de la note.
+        const fieldAtLookup: string[] = [];
+        mocks.suggestSpeciesAutocomplete.mockImplementation(async (query: string) => {
+            if (query === 'mésange charbonnière') fieldAtLookup.push(field('speciesName').value);
+            return [];
+        });
         const { rerender } = renderForm(null);
         openAndType();
         fireEvent.click(analyzeButton());
@@ -665,7 +682,10 @@ describe('ObservationForm — note → fiche : relecture et application', () => 
         const applied = await screen.findByTestId('ai-note-applied');
         expect(applied.textContent).toMatch(/n'a pas pu être vérifié/);
         expect(applied.textContent).not.toMatch(/introuvable/);
-        expect(mocks.suggestSpeciesAutocomplete).not.toHaveBeenCalledWith('mésange charbonnière', 5, expect.anything());
+        expect(field('speciesName').value).toBe('mésange charbonnière');
+        // La vérification de la note aurait eu lieu avant ce compte rendu : son
+        // absence se constate dès maintenant, sans attendre.
+        expect(fieldAtLookup.filter(shown => shown !== 'mésange charbonnière')).toEqual([]);
     });
 
     it('une case pré-cochée se décoche si l’on modifie ce champ dans la fiche', async () => {

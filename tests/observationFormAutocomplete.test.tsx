@@ -1,5 +1,5 @@
 import { setSessionIdentity } from '../services/sessionScope';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Age, Comportement, Observation, ObservationCondition, Protocol, Sexe, Status, TaxonomicGroup, WeatherCondition } from '../types';
@@ -240,12 +240,16 @@ describe('ObservationForm species autocomplete', () => {
 
     // Garde-fou: appliquer une suggestion ne doit PAS relancer une requête de
     // suggestions pour le nom appliqué (mécanisme skipNextSuggestionsFetchRef).
+    // La requête partirait 300 ms après l'application : l'horloge simulée
+    // permet de dépasser ce délai à coup sûr avant de vérifier. Sans elle, la
+    // vérification passait avant le délai et ne prouvait rien.
     it('does not refetch suggestions for the name applied from a suggestion', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true });
         suggestSpeciesAutocompleteMock.mockResolvedValue([
             { displayName: 'Mesange bleue', latinName: 'Cyanistes caeruleus', source: 'inat' }
         ]);
 
-        const user = userEvent.setup();
+        const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
         render(
             <ObservationForm onSave={vi.fn(async () => { })} onCancel={vi.fn()} initialData={null} onToast={vi.fn()} />
         );
@@ -258,6 +262,7 @@ describe('ObservationForm species autocomplete', () => {
         await waitFor(() => {
             expect(speciesInput.value).toBe('Mesange bleue');
         });
+        await act(async () => { vi.advanceTimersByTime(1000); });
 
         const refetchedAppliedName = suggestSpeciesAutocompleteMock.mock.calls.some(
             ([query]) => typeof query === 'string' && query.toLowerCase().startsWith('mesange')
