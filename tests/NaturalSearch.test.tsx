@@ -16,7 +16,7 @@ vi.mock('../services/aiAssistService', async (importOriginal) => {
 });
 vi.mock('../services/naturalSearchPlace', () => ({ resolveNear: mocks.resolveNear }));
 
-import NaturalSearch, { resetNaturalSearchAccessMemo } from '../components/NaturalSearch';
+import NaturalSearch, { AI_SEARCH_CONSENT_TIMEOUT_MS, resetNaturalSearchAccessMemo } from '../components/NaturalSearch';
 import { useFilterControls } from '../hooks/useFilterControls';
 import { AiAssistError, type AiOverview } from '../services/aiAssistService';
 import { NATURAL_SEARCH_CACHE_PREFIX } from '../services/naturalSearchCache';
@@ -875,5 +875,97 @@ describe('NaturalSearch : quatrième passe de la relecture croisée', () => {
         expect(mocks.callAiText).not.toHaveBeenCalled();
         expect(aiButton()).toBeTruthy();
         expect((aiButton() as HTMLButtonElement).disabled).toBe(false);
+    });
+});
+
+describe('NaturalSearch : dernières retouches avant la fusion', () => {
+    beforeEach(setup);
+    afterEach(teardown);
+
+    const PHRASE = 'hérons cendrés près de Castelbrume';
+    const savePreset = () => {
+        type('buse');
+        act(() => { controls.saveFilterPreset('Buses'); });
+        return controls.filterPresets[controls.filterPresets.length - 1].id;
+    };
+    const withRemaining = (remaining: number): AiOverview => ({ ...approved(), access: { kind: 'approved', remaining, monthlyQuota: 20 } });
+
+    // 1. Arrêt « la phrase a changé » : le verrou est libéré.
+    it('preset pendant une « Vérification… » muette, puis une autre phrase : le nouveau clic relance la vérification ; la réponse tardive n’envoie rien', async () => {
+        let resolveOld: (value: AiOverview) => void = () => undefined;
+        mocks.getAiOverview
+            .mockResolvedValueOnce(approved())
+            .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+        mocks.callAiText.mockResolvedValue({ result: serverResult({ text: 'Pessac', groups: ['Oiseaux'] }), remaining: 11 });
+        render(<Harness />);
+        const presetId = savePreset();
+        type(PHRASE);
+        await waitFor(() => expect(aiButton()).toBeTruthy());
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        expect(screen.getByRole('button', { name: /Vérification/ })).toBeTruthy();
+        act(() => { controls.applyFilterPreset(presetId); });
+        type('les oiseaux de Pessac');
+        const overviewCalls = mocks.getAiOverview.mock.calls.length;
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        expect(mocks.getAiOverview.mock.calls.length).toBe(overviewCalls + 1);
+        expect(mocks.callAiText.mock.calls[0][1]).toEqual({ text: 'les oiseaux de Pessac' });
+        expect(await screen.findByTestId('natural-search-proposal')).toBeTruthy();
+        // L'ancienne vérification répond enfin : rien d'autre ne part.
+        await act(async () => { resolveOld(approved()); });
+        expect(mocks.callAiText).toHaveBeenCalledTimes(1);
+        expect(screen.queryByTestId('ai-consent-card-search')).toBeNull();
+    });
+
+    it('« Vérification… » sans réponse : délai maximal, rien n’est envoyé, le bouton redevient utilisable', async () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+        vi.setSystemTime(new Date(2026, 10, 21, 12, 0, 0));
+        render(<Harness />);
+        type(PHRASE);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(aiButton()).toBeTruthy();
+        mocks.getAiOverview.mockReturnValue(new Promise(() => undefined));
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        expect(screen.getByRole('button', { name: /Vérification/ })).toBeTruthy();
+        await act(async () => { await vi.advanceTimersByTimeAsync(AI_SEARCH_CONSENT_TIMEOUT_MS); });
+        expect(screen.getByRole('alert').textContent).toMatch(/ne répond pas\. Rien n'a été envoyé/);
+        expect(screen.getByRole('alert').textContent).not.toMatch(/peut compter/);
+        expect((aiButton() as HTMLButtonElement).getAttribute('aria-busy')).toBeNull();
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+    });
+
+    // 2. Compteur relu après une erreur sans `remaining` : l'instance remontée le suit.
+    it.each(['internal_error', 'network', 'timeout'] as const)(
+        'remontage pendant l’envoi, puis %s : l’instance affichée montre le compteur relu (9)', async (code) => {
+            let rejectCall: (error: unknown) => void = () => undefined;
+            mocks.callAiText.mockReturnValue(new Promise((_resolve, reject) => { rejectCall = reject; }));
+            render(<Harness />);
+            type(PHRASE);
+            expect(await screen.findByText(/12 restantes/)).toBeTruthy();
+            fireEvent.click(aiButton() as HTMLButtonElement);
+            await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+            act(() => { setShown(false); });
+            act(() => { setShown(true); });
+            // La relecture du compteur répond APRÈS l'affichage de l'erreur.
+            let resolveRefresh: (value: AiOverview) => void = () => undefined;
+            mocks.getAiOverview.mockImplementation(() => new Promise(resolve => { resolveRefresh = resolve; }));
+            await act(async () => { rejectCall(new AiAssistError(code, { feature: 'search' })); });
+            expect(await screen.findByRole('alert')).toBeTruthy();
+            expect(screen.getByText(/12 restantes/)).toBeTruthy();
+            await act(async () => { resolveRefresh(withRemaining(9)); });
+            expect(screen.getByText(/9 restantes/)).toBeTruthy();
+            expect(screen.queryByText(/12 restantes/)).toBeNull();
+        });
+
+    // 3. Libellé : vrai pour une date comme pour une distance.
+    it('« oiseaux à moins de 5 km » : « une date, une durée ou une distance », rien d’appliqué', () => {
+        render(<Harness />);
+        type('oiseaux à moins de 5 km');
+        const message = screen.getByTestId('natural-search-time').textContent ?? '';
+        expect(message).toContain('« moins de 5 km »');
+        expect(message).toContain('une date, une durée ou une distance');
+        expect(message).not.toContain('repère de temps');
+        pressEnter();
+        expect(controls.naturalSearch).toBeNull();
     });
 });

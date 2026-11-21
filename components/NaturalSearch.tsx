@@ -40,7 +40,7 @@ import AiButton from './AiButton';
 import AiConsentCard from './AiConsentCard';
 import { SparklesIcon, XMarkIcon } from './icons';
 
-/** Délai maximal de l'enregistrement d'un accord (et de la relecture qui suit). */
+/** Délai maximal de la vérification de l'accès, de l'enregistrement d'un accord et de la relecture qui suit. */
 export const AI_SEARCH_CONSENT_TIMEOUT_MS = 20_000;
 
 /** Erreurs après lesquelles la tentative a pu être comptée : on relit le compteur. */
@@ -282,6 +282,26 @@ const ACCESS_MEMO_MS = 5 * 60_000;
 let accessMemo: AccessMemo | null = null;
 let accessRequest: { userId: string; promise: Promise<AccessMemo | null> } | null = null;
 
+/** Compteur (et accès, s'il est connu) mis à jour : toutes les instances du champ du même compte le suivent. */
+interface AccessUpdate {
+    userId: string;
+    remaining: number | null;
+    approved?: boolean;
+}
+type AccessListener = (update: AccessUpdate) => void;
+const accessListeners = new Set<AccessListener>();
+
+const subscribeAccess = (listener: AccessListener): (() => void) => {
+    accessListeners.add(listener);
+    return () => { accessListeners.delete(listener); };
+};
+
+const notifyAccess = (update: AccessUpdate) => {
+    for (const listener of [...accessListeners]) {
+        try { listener(update); } catch { /* un champ démonté ne bloque pas les autres */ }
+    }
+};
+
 /** Pour les tests : oublie l'état de l'assistant gardé en mémoire. */
 export const resetNaturalSearchAccessMemo = (): void => {
     accessMemo = null;
@@ -296,8 +316,19 @@ const rememberAccess = (context: SessionContext, overview: AiOverview): AccessMe
         remaining: overview.access.kind === 'approved' ? overview.access.remaining : null,
         at: Date.now(),
     };
+    notifyAccess({ userId: context.userId, remaining: accessMemo.remaining, approved });
     return accessMemo;
 };
+
+/** Compteur connu après un appel : gardé hors ligne, mémorisé et annoncé à toutes les instances. */
+const shareRemaining = (context: SessionContext, value: number): void => {
+    rememberRemaining(value, context);
+    if (accessMemo?.userId === context.userId) accessMemo = { ...accessMemo, remaining: value, at: Date.now() };
+    notifyAccess({ userId: context.userId, remaining: value });
+};
+
+/** Message d'une vérification d'accès restée sans réponse (rien n'est encore parti). */
+const ACCESS_CHECK_TIMEOUT_MESSAGE = "La vérification de votre accès ne répond pas. Rien n'a été envoyé : réessayez.";
 
 const freshAccess = (userId: string): AccessMemo | null =>
     (accessMemo && accessMemo.userId === userId && Date.now() - accessMemo.at < ACCESS_MEMO_MS ? accessMemo : null);
@@ -507,6 +538,14 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     // Une autre instance (ou le retrait de l'accord) a changé le cache : on relit.
     useEffect(() => subscribeNaturalSearchCache(() => setCacheVersion(version => version + 1)), []);
 
+    // Compteur relu ou mis à jour par une autre instance (par exemple celle
+    // démontée pendant l'attente) : celle-ci le suit aussi.
+    useEffect(() => subscribeAccess(update => {
+        if (update.userId !== currentUserId()) return;
+        setRemaining(update.remaining);
+        if (update.approved !== undefined) setAccess(update.approved ? 'approved' : 'none');
+    }), []);
+
     // Changement de compte : tout repart à zéro (le parent vide la phrase).
     useEffect(() => subscribeSessionChange(() => {
         runRef.current += 1;
@@ -569,8 +608,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
 
     /** Compteur connu après un appel : affiché, gardé hors ligne et partagé avec les autres instances. */
     const noteRemaining = (context: SessionContext, value: number) => {
-        rememberRemaining(value, context);
-        if (accessMemo?.userId === context.userId) accessMemo = { ...accessMemo, remaining: value, at: Date.now() };
+        shareRemaining(context, value);
         if (isSessionCurrent(context)) setRemaining(value);
     };
 
@@ -633,7 +671,10 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
 
     /** La phrase du champ n'est plus celle du parcours : il s'arrête, rien ne part. */
     function stopForChangedPhrase() {
+        // L'ancien parcours ne peut plus rien envoyer (`runRef` a changé) : le
+        // verrou est libéré tout de suite, comme avec « Annuler ».
         runRef.current += 1;
+        busyRef.current = null;
         setPhase({ kind: 'idle' });
         setConsentError(null);
         setAnnouncement('La phrase a changé : rien n’a été envoyé à l’assistant.');
@@ -670,7 +711,12 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
             return next;
         } catch (error) {
             if (!isSessionCurrent(context) || runRef.current !== runId) return null;
-            setPhase({ kind: 'error', message: nothingSent ?? (error instanceof AiAssistError ? error.message : "Impossible de joindre l'assistant. Réessayez plus tard.") });
+            const timedOut = timeoutMs !== undefined && error instanceof AiAssistError && error.code === 'timeout';
+            setPhase({
+                kind: 'error',
+                message: nothingSent ?? (timedOut ? ACCESS_CHECK_TIMEOUT_MESSAGE
+                    : error instanceof AiAssistError ? error.message : "Impossible de joindre l'assistant. Réessayez plus tard."),
+            });
             setAnnouncement('');
             focusTarget.current = 'ai';
             return null;
@@ -807,7 +853,8 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         setAnnouncement('Vérification de votre accès…');
         try {
             // Toujours relu : l'accord a pu changer dans « Assistant IA » entre-temps.
-            const current = await loadOverview(context, runId);
+            // Délai maximal : un serveur muet ne bloque ni le bouton ni le verrou.
+            const current = await loadOverview(context, runId, AI_SEARCH_CONSENT_TIMEOUT_MS);
             if (!current || runRef.current !== runId) return;
             const blocked = accessMessage(current);
             if (blocked) {
@@ -1101,7 +1148,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
 
             {!fragmented && local.unresolvedTime.length > 0 && !proposal && !alreadyApplied && (
                 <p className="rounded-xl bg-ai-50 p-3 text-sm text-nature-dark dark:bg-ai-500/10 dark:text-white" data-testid="natural-search-time">
-                    {local.unresolvedTime.map(passage => `« ${passage} »`).join(', ')} : un repère de temps que l'analyse gratuite ne sait pas lire. Rien n'est appliqué.
+                    {local.unresolvedTime.map(passage => `« ${passage} »`).join(', ')} : une date, une durée ou une distance que l'analyse gratuite ne sait pas lire. Rien n'est appliqué.
                 </p>
             )}
             {fragmented && !proposal && !alreadyApplied && (

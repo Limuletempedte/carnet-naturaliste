@@ -57,7 +57,6 @@ interface FilterSnapshot {
     statusFilter: Status | 'all';
     startDateFilter: string;
     endDateFilter: string;
-    advanced: AdvancedFilterDialogState;
     natural: AppliedNaturalSearch | null;
 }
 
@@ -255,7 +254,6 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         statusFilter,
         startDateFilter,
         endDateFilter,
-        advanced: { ...advancedFilterState },
         natural: naturalRef.current,
     });
 
@@ -280,8 +278,10 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
     };
 
     /**
-     * Applique une recherche en langage naturel : elle REMPLACE les filtres en
-     * cours (le tri est gardé) ; « Annuler la recherche » les rend. Les
+     * Applique une recherche en langage naturel : elle REMPLACE les filtres
+     * classiques en cours (recherche par nom, année, groupe, statut, dates) ;
+     * « Annuler la recherche » les rend. Le tri et les filtres avancés posés à
+     * la main (géographie comprise) restent et s'ajoutent à la recherche. Les
      * périodes relatives sont converties maintenant.
      */
     const applyNaturalSearch = (input: NaturalSearchInput) => {
