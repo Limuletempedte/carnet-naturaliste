@@ -367,7 +367,8 @@ describe('NaturalSearch : interprétation par l’assistant', () => {
         const { unmount } = render(<Harness />);
         type('les hérons à Castelbrume');
         fireEvent.click(aiButton() as HTMLButtonElement);
-        await screen.findByTestId('natural-search-proposal');
+        // La proposition locale est déjà là : on attend celle de l'assistant (gardée dans le cache).
+        await screen.findByText(/interprété par l'assistant IA/);
         unmount();
 
         render(<Harness isOffline />);
@@ -578,8 +579,10 @@ describe('NaturalSearch : interprétation par l’assistant', () => {
         render(<Harness />);
         type('les oiseaux de la Gironde maritime');
         fireEvent.click(aiButton() as HTMLButtonElement);
-        const proposal = await screen.findByTestId('natural-search-proposal');
-        expect(within(proposal).getByText(/mal lu le département/)).toBeTruthy();
+        // La proposition locale (« Oiseaux ») est déjà là : on attend celle de l'assistant.
+        expect(await screen.findByText(/mal lu le département/)).toBeTruthy();
+        const proposal = screen.getByTestId('natural-search-proposal');
+        expect(within(proposal).getByText(/interprété par l'assistant IA/)).toBeTruthy();
         fireEvent.click(within(proposal).getByRole('button', { name: 'Appliquer' }));
         await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
         expect(controls.filters.aiFilter).toBeNull();
