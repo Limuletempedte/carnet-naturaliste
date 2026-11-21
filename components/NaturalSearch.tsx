@@ -477,10 +477,16 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
 
     const isWaiting = phase.kind === 'checking' || phase.kind === 'analyzing';
     const lockedInput = isWaiting || phase.kind === 'consent' || consentWorking;
+    /** Une recherche appliquée, et le champ montre autre chose : elle reste telle quelle. */
+    const editingApplied = naturalSearch !== null && draft !== naturalSearch.phrase;
+    /** Rien à appliquer dans le nouveau texte : proposer de chercher ce nom à la place (lien, ou Entrée). */
+    const offerNameSearchInstead = editingApplied && !applicable && trimmed.length > 0 && !lockedInput;
     const tooLong = draft.length > AI_SEARCH_LIMITS.maxInputChars;
-    // Bouton IA : une phrase (mot outil ou critère reconnu) avec des mots non
-    // compris, pas déjà interprétée. Jamais pour un simple nom (« buse variable »).
-    const offerAi = trimmed.length > 0 && !tooLong && !local.understood && (local.hasFunctionWord || local.hasCriteria)
+    // Bouton IA : une phrase (mot outil, critère reconnu, ou ensemble du
+    // dictionnaire suivi d'un complément : « oiseaux de Pessac ») avec des mots
+    // non compris, pas déjà interprétée. Jamais pour un simple nom (« buse variable »).
+    const offerAi = trimmed.length > 0 && !tooLong && !local.understood
+        && (local.hasFunctionWord || local.hasCriteria || local.hasTaxonWord)
         && !cachedRaw && !aiForDraft && !alreadyApplied;
     const showAiZone = offerAi || phase.kind !== 'idle';
 
@@ -872,7 +878,13 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         // Entrée applique une phrase claire déjà comprise ; elle n'appelle
         // JAMAIS l'assistant, et ne change rien pour un simple nom.
         event.preventDefault();
-        if (enterApplies) void applyProposal();
+        if (enterApplies) {
+            void applyProposal();
+            return;
+        }
+        // Un nom tapé par-dessus une recherche appliquée : Entrée (la touche
+        // « Rechercher » du clavier) fait comme « Chercher « … » par nom à la place ».
+        if (offerNameSearchInstead) onReplaceWithNameSearch(draft);
     };
 
     const handleClear = () => {
@@ -925,13 +937,13 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
      * tapé sur la carte ou dans la galerie) : jamais un filtre invisible.
      */
     const nameSearchHidden = searchTerm !== '' && searchTerm !== draft && !(naturalSearch?.owned.includes('searchTerm'));
-    /** Une recherche appliquée, et le champ montre autre chose : elle reste telle quelle. */
-    const editingApplied = naturalSearch !== null && draft !== naturalSearch.phrase;
 
     let help = 'Un nom d’espèce ou de lieu, ou une phrase (« les oiseaux le mois dernier »).';
     if (editingApplied) help = enterApplies
         ? 'Entrée ou « Appliquer » remplace la recherche appliquée. La croix efface tout.'
-        : 'La recherche appliquée reste active jusqu’à « Appliquer ». La croix efface tout.';
+        : offerNameSearchInstead
+            ? 'La recherche appliquée reste active. Entrée cherche ce nom à la place ; la croix efface tout.'
+            : 'La recherche appliquée reste active jusqu’à « Appliquer ». La croix efface tout.';
     else if (proposal && enterApplies) help = 'Entrée ou « Appliquer » : les filtres en cours seront remplacés.';
     else if (proposal && applicable) help = 'La recherche par nom est active. « Appliquer ce filtre » pour l’utiliser à la place.';
 
@@ -975,7 +987,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                 )}
             </div>
             <p id={helpId} className="px-1 text-xs text-gray-500 dark:text-gray-400">{help}</p>
-            {editingApplied && !applicable && trimmed.length > 0 && !lockedInput && (
+            {offerNameSearchInstead && (
                 <button type="button" onClick={() => onReplaceWithNameSearch(draft)} className={`${linkButton} min-h-[36px] px-1 text-xs`}>
                     Chercher « {draft} » par nom à la place
                 </button>

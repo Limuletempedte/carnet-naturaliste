@@ -322,11 +322,21 @@ describe('relecture des critères (réponse de la fonction ou cache)', () => {
     it('le texte cherché reste tel quel ; la recherche par nom ignore un pluriel simple des deux côtés', () => {
         expect(buildFilterPlan(criteria({ text: 'canards colverts' }), at('2026-11-21')).writes.searchTerm).toBe('canards colverts');
         for (const [query, name] of [
-            ['canards colverts', 'Canard colvert'], ['courlis cendré', 'Courlis cendré'], ['ours brun', 'Ours brun'],
-            ['lynx boréal', 'Lynx boréal'], ['choucas des tours', 'Choucas des tours'], ['hiboux', 'Hibou grand-duc'],
-            ['hirondelles rustiques', 'Hirondelle rustique'], ['lis', 'Courlis cendré'], ['merl', 'Merle noir'],
+            ['canards colverts', 'Canard colvert'], ['courlis cendré', 'Courlis cendré'], ['courlis', 'Courlis cendré'],
+            ['ours brun', 'Ours brun'], ['ours', 'Ours brun'], ['lynx boréal', 'Lynx boréal'], ['choucas des tours', 'Choucas des tours'],
+            ['hiboux', 'Hibou moyen-duc'], ['mésanges bleues', 'Mésange bleue'], ['hirondelles rustiques', 'Hirondelle rustique'],
+            ['gris', 'Héron gris'], ['pics', 'Pic épeiche'], ['canards colv', 'Canard colvert'],
+            // La sous-chaîne d'avant reste telle quelle.
+            ['lis', 'Courlis cendré'], ['merl', 'Merle noir'], ['our', 'Tourterelle des bois'],
         ]) {
             expect(searchTextMatches(name, query), `${query} → ${name}`).toBe(true);
+        }
+        // Une lettre de plus n'élargit jamais la liste (précision d'avant la PR).
+        for (const [query, name] of [
+            ['gris', 'Grive musicienne'], ['roux', 'Rougegorge familier'], ['ours', 'Tourterelle des bois'], ['ours', 'Bourdon terrestre'],
+            ['pics', 'Épicéa commun'], ['pins', 'Lapin de garenne'], ['paris', 'Pariétaire de Judée'],
+        ]) {
+            expect(searchTextMatches(name, query), `${query} ↛ ${name}`).toBe(false);
         }
         expect(searchTextMatches('Buse variable', 'canard')).toBe(false);
     });

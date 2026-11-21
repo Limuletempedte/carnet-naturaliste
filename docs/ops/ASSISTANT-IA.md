@@ -1321,25 +1321,31 @@ même IA fermée) :
 
 - sans recherche en langage naturel appliquée, chaque frappe filtre **par
   nom**, exactement comme avant, quoi qu'on tape (« buse », « Fougères »,
-  « Petit Mars changeant ») ; un pluriel simple est ignoré des deux côtés
-  (« canards colverts » trouve « Canard colvert ») ;
+  « Petit Mars changeant ») ; en plus, un pluriel simple est ignoré des deux
+  côtés, de mot à mot (« canards colverts » trouve « Canard colvert », mais
+  « gris » ne trouve pas « Grive musicienne ») ;
 - l'**analyse locale gratuite** (`utils/naturalSearchLocal.ts`, aucun appel)
   **propose** en plus ce qu'elle reconnaît : un mois ou une saison seulement
-  avec un contexte temporel (« en mai », « mai 2024 », « l'été dernier »),
-  années, périodes relatives, groupes et catégories (jamais dans un nom :
-  « Étang des Canards », « Île aux Oiseaux »), statuts, quelques milieux, un
-  département après « en » ou « dans le », « près de chez moi » ;
+  avec un contexte temporel (« en mai », « fin mai », « mai 2024 », « l'été
+  dernier », « champignons d'automne »), années, périodes relatives, groupes
+  et catégories (jamais dans un nom : « Étang des Canards », « Île aux
+  Oiseaux » ; jamais après « à » devant une majuscule : « oiseaux à
+  Fougères »), statuts, quelques milieux, un département après « en » ou
+  « dans le », « près de chez moi » ;
 - Entrée n'applique la proposition que pour une **phrase claire** (mot
   outil, ou plusieurs critères) ; un mot seul reconnu (« Fougères ») reste une
   recherche par nom, et son filtre ne s'applique que sur « Appliquer ce
   filtre ». Des passages non compris séparés (« chouette effraie en mai à
   Pessac ») ne sont jamais collés : rien n'est appliqué ;
 - étiquettes « J'ai compris : … » retirables une à une ; une recherche
-  appliquée ne change plus avant « Appliquer » ; la croix l'efface ;
+  appliquée ne change plus avant « Appliquer » ; la croix l'efface ; un nom
+  tapé par-dessus se cherche à la place sur Entrée ou sur « Chercher « … »
+  par nom à la place » ;
   « Annuler la recherche » rend les filtres d'avant (le tri est gardé) ;
-- « **Interpréter avec l'IA** » n'est proposé que pour une phrase (mot outil
-  ou critère reconnu) qui garde des mots non compris, jamais pour un simple
-  nom (« buse variable ») ; sans accès approuvé, un lien discret vers
+- « **Interpréter avec l'IA** » n'est proposé que pour une phrase (mot outil,
+  critère reconnu, ou ensemble du dictionnaire suivi d'un complément :
+  « oiseaux de Pessac ») qui garde des mots non compris, jamais pour un
+  simple nom (« buse variable », « Pic épeiche ») ; sans accès approuvé, un lien discret vers
   « Assistant IA » remplace le bouton. L'état de l'assistant n'est lu qu'à ce
   moment-là. Carte d'accord `search` au premier usage, à l'endroit même ;
 - une phrase interprétée est gardée dans le navigateur

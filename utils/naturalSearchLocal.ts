@@ -45,6 +45,13 @@ export interface LocalSearchAnalysis {
     /** La phrase contient un mot outil (« les », « en », « près »…). */
     hasFunctionWord: boolean;
     /**
+     * Un mot d'ensemble du dictionnaire (« oiseaux », « canards »,
+     * « hirondelles ») suivi d'un complément (« de Pessac », « colverts ») :
+     * rien n'est appliqué (c'est peut-être une espèce ou un lieu), mais
+     * l'assistant peut interpréter la phrase.
+     */
+    hasTaxonWord: boolean;
+    /**
      * C'est clairement une phrase (mot outil, ou plusieurs critères) : Entrée
      * peut appliquer ce qui est compris. Sinon (« Fougères »), la recherche
      * par nom reste la règle, et le filtre ne s'applique que sur un clic.
@@ -261,6 +268,11 @@ const NUMBER_WORDS: ReadonlyMap<string, number> = new Map([
 const BEFORE_PARTICIPLE = new Set(words('a ai as avons avez ont avait avaient aurait étant ayant'));
 /** Mots qui donnent son contexte temporel à un mois ou une saison (« en mai », « au printemps »). */
 const TEMPORAL_BEFORE = new Set(words('en au pendant durant depuis début fin mi courant'));
+/** Devant un mois ou une saison, compris avec lui (« fin mai », « début mars », « mi-avril ») : le mois entier. */
+const MONTH_EDGES = new Set(words('début fin mi courant'));
+/** Avant un lieu : « à Fougères », « vers Pessac », « près de Pessac » (un nom à majuscule y est un lieu). */
+const PLACE_BEFORE = new Set(words('à vers'));
+const PLACE_BEFORE_DE = new Set(words('près autour proche loin'));
 /**
  * Petits mots qui se trouvent aussi DANS un nom (« Cèpe d'été », « commune de
  * Fougères ») : au milieu de mots inconnus, ils ne font pas une phrase.
@@ -341,9 +353,19 @@ const temporalBefore = (tokens: readonly Token[], at: number): boolean => {
     const previous = tokens[at - 1];
     if (!previous) return false;
     if (TEMPORAL_BEFORE.has(previous.f)) return true;
+    // « champignons d'automne », « oiseaux de mai » : un ensemble du dictionnaire, puis « de » et la période.
+    if ((previous.f === 'de' || previous.f === 'd') && taxonEndsAt(tokens, at - 1)) return true;
     const before = tokens[at - 2];
     return (previous.f === 'l' || previous.f === 'le') && before !== undefined && (TEMPORAL_BEFORE.has(before.f) || before.f === 'tout');
 };
+
+/** Un ensemble du dictionnaire (groupe ou catégorie) finit-il juste avant l'indice `end` ? */
+function taxonEndsAt(tokens: readonly Token[], end: number): boolean {
+    return LEXICON.some(entry => entry.taxon && end - entry.tokens.length >= 0 && sameTokens(tokens, end - entry.tokens.length, entry.tokens));
+}
+
+/** Premiers mots des ensembles du dictionnaire (« oiseaux », « canards », « hirondelles »…). */
+const TAXON_HEADS: ReadonlySet<string> = new Set(LEXICON.filter(entry => entry.taxon).map(entry => entry.tokens[0]));
 
 /** Un mois ou une saison n'est reconnu qu'avec un contexte temporel, avant ou après. */
 const hasTemporalContext = (tokens: readonly Token[], at: number, afterLength: number): boolean =>
@@ -393,6 +415,25 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
                 return setPeriod(state, { kind: 'month', days: null, month: monthIndex + 1, season: null, yearScope: after.scope });
             },
         });
+    }
+
+    // « fin mai », « début mars », « mi-avril », « courant juin » : le mois (ou la saison) entier.
+    if (MONTH_EDGES.has(token.f)) {
+        const next = tokens[at + 1];
+        const edgeMonth = next ? MONTHS.indexOf(next.f) : -1;
+        const edgeSeason = next ? SEASONS.get(next.f) : undefined;
+        if (edgeMonth >= 0 || edgeSeason) {
+            const edgeAfter = yearScopeAfter(tokens, at + 2);
+            matches.push({
+                length: 2 + edgeAfter.length,
+                apply: state => {
+                    if (edgeAfter.year !== undefined) state.years.add(edgeAfter.year);
+                    return setPeriod(state, edgeMonth >= 0
+                        ? { kind: 'month', days: null, month: edgeMonth + 1, season: null, yearScope: edgeAfter.scope }
+                        : { kind: 'season', days: null, month: null, season: edgeSeason ?? null, yearScope: edgeAfter.scope });
+                },
+            });
+        }
     }
 
     // Saisons : « au printemps », « cet été », « l'hiver dernier », « été 2024 » ;
@@ -556,11 +597,17 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
         // après « de », « des », « aux »… qui suit un mot inconnu (« Étang des
         // Canards », « Hygrophore de mars 2024 »).
         const afterUnknown = kinds[index - 1] === 'free';
+        // « oiseaux à Fougères », « près de Pessac » : après une préposition de
+        // lieu, un nom à majuscule est un lieu, jamais un groupe ni une catégorie.
+        const previousWord = tokens[index - 1]?.f ?? '';
+        const afterPlace = tokens[index].capital && (PLACE_BEFORE.has(previousWord)
+            || ((previousWord === 'de' || previousWord === 'd' || previousWord === 'du' || previousWord === 'des')
+                && PLACE_BEFORE_DE.has(tokens[index - 2]?.f ?? '')));
         const afterNameLink = kinds[index - 1] === 'stop' && NAME_LINKS.has(tokens[index - 1].f) && kinds[index - 2] === 'free';
         const candidates = matchersAt(tokens, index)
             .filter(match => !(isTaxonMatch(tokens, index, match.length) && followedByQualifier(tokens, index + match.length)))
             .filter(match => !(match.guard === 'time-after' && (afterUnknown || afterNameLink)))
-            .filter(match => !(match.guard === 'taxon' && afterNameLink))
+            .filter(match => !(match.guard === 'taxon' && (afterNameLink || afterPlace)))
             .sort((a, b) => b.length - a.length);
         let applied = 0;
         for (const candidate of candidates) {
@@ -659,6 +706,9 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
         while (after < tokens.length && kinds[after] === 'stop') after += 1;
         return kinds[before] === 'free' && kinds[after] === 'free';
     };
+    // Un ensemble du dictionnaire refusé parce qu'un complément le suit.
+    const hasTaxonWord = tokens.some((token, at) =>
+        kinds[at] === 'free' && TAXON_HEADS.has(token.f) && followedByQualifier(tokens, at + 1));
     const hasFunctionWord = tokens.some((token, at) =>
         STOPWORDS.has(token.f) && !(NAME_FILLERS.has(token.f) && kinds[at] === 'stop' && insideFreeRun(at)));
     return {
@@ -668,6 +718,7 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
         unknownWords,
         fragments,
         hasFunctionWord,
+        hasTaxonWord,
         clearlyPhrase: hasCriteria && (hasFunctionWord || fields >= 2),
         notes,
     };

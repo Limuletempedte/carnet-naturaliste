@@ -252,6 +252,60 @@ describe('analyse locale : cas relevés à la relecture croisée', () => {
     });
 });
 
+describe('analyse locale : troisième passe', () => {
+    it.each([
+        ['champignons d’automne', [TaxonomicGroup.MUSHROOM], { kind: 'season', season: 'autumn', yearScope: 'all' }],
+        ['oiseaux d’hiver', [TaxonomicGroup.BIRD], { kind: 'season', season: 'winter' }],
+        ['oiseaux de mai', [TaxonomicGroup.BIRD], { kind: 'month', month: 5, yearScope: 'all' }],
+        ['papillons de printemps', [TaxonomicGroup.BUTTERFLY, TaxonomicGroup.MOTH], { kind: 'season', season: 'spring' }],
+    ] as const)('« %s » : l’ensemble et la période, appliqués sur Entrée', (phrase, groups, period) => {
+        const result = analyze(phrase);
+        expect(result.criteria.groups).toEqual(groups);
+        expect(result.criteria.period).toMatchObject(period);
+        expect(result.understood).toBe(true);
+        expect(result.clearlyPhrase).toBe(true);
+    });
+
+    it('un nom d’espèce reste protégé (son premier mot n’est pas un ensemble du dictionnaire)', () => {
+        for (const phrase of ['Cèpe d’été', 'Hygrophore de mars', 'Petit Mars changeant', 'papillons de jour']) {
+            expect(analyze(phrase).criteria.period, phrase).toBeNull();
+        }
+        expect(analyze('papillons de jour').criteria.groups).toEqual([TaxonomicGroup.BUTTERFLY]);
+    });
+
+    it.each(['oiseaux de Pessac', 'rapaces de Gironde', 'Canards colverts', 'hirondelles rustiques', 'les oiseaux de Pessac'])(
+        '« %s » : ensemble suivi d’un complément, rien d’appliqué, mais l’IA peut interpréter', (phrase) => {
+            const result = analyze(phrase);
+            expect(result.criteria.groups).toEqual([]);
+            expect(result.criteria.categories).toEqual([]);
+            expect(result.hasTaxonWord).toBe(true);
+        });
+
+    it.each(['Pic épeiche', 'buse variable', 'mésange charbonnière', 'Étang des Canards', 'Île aux Oiseaux', 'commune de Fougères'])(
+        '« %s » : pas d’ensemble refusé (singulier ou nom propre), aucun bouton IA à proposer', (phrase) => {
+            expect(analyze(phrase).hasTaxonWord).toBe(false);
+        });
+
+    it('« oiseaux à Fougères » : après « à », un nom à majuscule est un lieu', () => {
+        const result = analyze('oiseaux à Fougères');
+        expect(result.criteria.groups).toEqual([TaxonomicGroup.BIRD]);
+        expect(result.criteria.categories).toEqual([]);
+        expect(result.criteria.text).toBe('Fougères');
+        expect(analyze('rapaces près de Fougères').criteria.categories).toEqual(['rapaces_diurnes', 'rapaces_nocturnes']);
+        expect(analyze('rapaces près de Fougères').criteria.text).toBe('Fougères');
+        expect(analyze('oiseaux vers Fougères').criteria.categories).toEqual([]);
+    });
+
+    it.each([['oiseaux fin mai', 5], ['oiseaux début mars', 3], ['oiseaux mi-avril', 4], ['oiseaux courant juin', 6]] as const)(
+        '« %s » : le mois entier, phrase comprise', (phrase, month) => {
+            const result = analyze(phrase);
+            expect(result.criteria.groups).toEqual([TaxonomicGroup.BIRD]);
+            expect(result.criteria.period).toMatchObject({ kind: 'month', month, yearScope: 'all' });
+            expect(result.criteria.text).toBeNull();
+            expect(result.understood).toBe(true);
+        });
+});
+
 describe('analyse locale : nom simple et utilitaires', () => {
     it('un nom d’espèce seul n’a aucun critère : recherche par nom comme avant', () => {
         const result = analyze('buse variable');

@@ -172,9 +172,8 @@ describe('NaturalSearch : la recherche par nom d’abord (non-régression)', () 
         expect(controls.searchTerm).toBe('hérons cendrés');
         expect(controls.filters.aiFilter?.months).toEqual([6]);
         type('buse');
-        pressEnter();
+        // Taper ne change rien ; un geste explicite (lien, ou Entrée) passe à une recherche par nom.
         expect(controls.naturalSearch?.phrase).toBe('hérons cendrés en juin');
-        // Geste explicite pour passer à une recherche par nom.
         fireEvent.click(screen.getByRole('button', { name: 'Chercher « buse » par nom à la place' }));
         expect(controls.naturalSearch).toBeNull();
         expect(controls.searchTerm).toBe('buse');
@@ -198,6 +197,51 @@ describe('NaturalSearch : la recherche par nom d’abord (non-régression)', () 
         expect(controls.naturalSearch).toBeNull();
         expect(controls.searchTerm).toBe('chouette effraie en mai à Pessac');
         expect(aiButton()).toBeTruthy();
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+    });
+
+    it('« champignons d’automne » : groupe et saison, appliqués sur Entrée', async () => {
+        render(<Harness />);
+        type('champignons d’automne');
+        pressEnter();
+        await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+        expect(controls.taxonomicGroupFilter).toBe('Champignons');
+        expect(controls.filters.aiFilter?.months).toEqual([9, 10, 11]);
+    });
+
+    it('« oiseaux de Pessac » : rien d’appliqué, mais le bouton IA est proposé ; « Pic épeiche » : aucun bouton', () => {
+        render(<Harness />);
+        type('oiseaux de Pessac');
+        expect(screen.queryByTestId('natural-search-proposal')).toBeNull();
+        expect(aiButton()).toBeTruthy();
+        pressEnter();
+        expect(controls.naturalSearch).toBeNull();
+        expect(controls.searchTerm).toBe('oiseaux de Pessac');
+        type('Pic épeiche');
+        expect(aiButton()).toBeNull();
+    });
+
+    it('« oiseaux à Fougères » : Oiseaux et le lieu cherché par nom, jamais la catégorie Fougères', async () => {
+        render(<Harness />);
+        type('oiseaux à Fougères');
+        pressEnter();
+        await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+        expect(controls.taxonomicGroupFilter).toBe('Oiseaux');
+        expect(controls.searchTerm).toBe('Fougères');
+        expect(controls.filters.aiFilter).toBeNull();
+    });
+
+    it('Entrée sur un nom tapé par-dessus une recherche appliquée : cherche ce nom à la place (jamais l’IA)', async () => {
+        render(<Harness />);
+        type('les canards en 2024');
+        pressEnter();
+        await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+        type('buse');
+        expect(screen.getByRole('button', { name: 'Chercher « buse » par nom à la place' })).toBeTruthy();
+        pressEnter();
+        expect(controls.naturalSearch).toBeNull();
+        expect(controls.searchTerm).toBe('buse');
+        expect(controls.yearFilter).toBe('all');
         expect(mocks.callAiText).not.toHaveBeenCalled();
     });
 
