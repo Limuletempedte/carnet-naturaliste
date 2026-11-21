@@ -201,7 +201,7 @@ const AdvancedFilterDialog: React.FC<AdvancedFilterDialogProps> = ({
                     </div>
                     {naturalSearchActive && (
                         <p className="mb-3 text-xs text-amber-800 dark:text-amber-200" data-testid="preset-natural-search-note">
-                            La recherche en langage naturel en cours utilise des critères (catégories, mois de toutes les années, habitats…) qu'un preset ne peut pas enregistrer : seuls les filtres classiques seront gardés.
+                            La recherche en langage naturel en cours utilise des critères (catégories, mois de toutes les années, habitats, « près de… »…) qu'un preset ne peut pas enregistrer : seuls les filtres classiques seront gardés, jamais votre position.
                         </p>
                     )}
                     <div className="space-y-2">

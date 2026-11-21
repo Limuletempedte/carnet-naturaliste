@@ -577,7 +577,7 @@ dépense dans la Console.
   **0,0060 $** (conforme à l'essai du §6.3).
 
 Pour refermer le bilan sans rien défaire (puis redéployer, §6.6), tant que
-la recherche n'est pas ouverte (§6.8, avant sa PR B) :
+la recherche n'est pas ouverte (§6.8, avant l'étape 3 de « Ouvrir la recherche après la fusion de la PR B ») :
 
 ```bash
 npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowiezzqehadcfnbkijo
@@ -585,7 +585,7 @@ npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowie
 
 > ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire toujours la
 > liste **complète** de ce qui doit rester coupé : `summary` seul rouvrirait
-> la recherche. Une fois la recherche ouverte (après sa PR B), refermer le
+> la recherche. Une fois la recherche ouverte (§6.8, étape 3 de l'ouverture faite), refermer le
 > bilan seul s'écrira `AI_DISABLED_FEATURES=summary`.
 
 ### 6.5 Comment `ai-text` décide
@@ -946,7 +946,7 @@ langage naturel (phase 4).
 #### Couper et rouvrir la note
 
 - **Refermer** (sans rien défaire) : tant que la recherche n'est pas ouverte
-  (§6.8, avant sa PR B), `AI_DISABLED_FEATURES=note,search` (ou
+  (§6.8, avant l'étape 3 de l'ouverture), `AI_DISABLED_FEATURES=note,search` (ou
   `summary,note,search` pour couper aussi le bilan) ; ensuite, `note` seul.
   Puis redéployer `ai-text` et refaire le contrôle de l'étape 5 de la PR A
   (`503 feature_disabled`). L'application affiche alors « momentanément

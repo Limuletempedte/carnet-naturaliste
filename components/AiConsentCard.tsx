@@ -126,7 +126,7 @@ export const SearchConsentText: React.FC = () => (
                 <li>Destinataire : Anthropic, via Anthropic Ireland Ltd pour l'Espace économique européen.</li>
                 <li>Transfert hors de l'UE : les données sont stockées aux <strong>États-Unis</strong> et peuvent être traitées hors de l'UE, dans le cadre des clauses contractuelles types de l'UE.</li>
                 <li>Chez Anthropic : effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Par défaut, ces données ne servent pas à entraîner les modèles.</li>
-                <li>Dans le Carnet : les phrases comprises par l'assistant sont gardées dans ce navigateur (50 au plus), avec leurs filtres, sans date calculée ni position, pour être rejouées sans nouvelle utilisation, même hors ligne. Elles sont effacées de cet appareil si vous retirez cet accord ici, et avec votre compte. Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la phrase ni les filtres.</li>
+                <li>Dans le Carnet : les phrases interprétées par l'assistant, même celles où il ne trouve aucun critère, sont gardées dans ce navigateur (50 au plus), avec leurs filtres, sans date calculée ni position, pour être rejouées sans nouvelle utilisation, même hors ligne. Elles sont effacées de cet appareil si vous retirez cet accord ici, et avec votre compte. Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la phrase ni les filtres.</li>
             </ul>
         </div>
         <div>

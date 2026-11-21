@@ -18,7 +18,7 @@ import { SpinnerIcon, PlusIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './ico
 import EmptyState from './EmptyState';
 import NaturalSearch from './NaturalSearch';
 import type { AppliedNaturalSearch, NaturalSearchInput } from '../hooks/useFilterControls';
-import type { CriterionRef, NearResolution } from '../utils/aiSearchFilters';
+import type { CriterionRef, NearResolution, SearchNear } from '../utils/aiSearchFilters';
 
 // Formats d'export : une couleur par format, partagée entre le menu « Exporter »
 // du téléphone et les pastilles teintées de l'en-tête ordinateur.
@@ -75,7 +75,7 @@ interface ObservationListProps {
     naturalSearch?: AppliedNaturalSearch | null;
     onApplyNaturalSearch?: (input: NaturalSearchInput) => void;
     onRemoveNaturalCriterion?: (ref: CriterionRef) => void;
-    onUpdateNaturalNear?: (near: NearResolution) => void;
+    onUpdateNaturalNear?: (near: NearResolution, forNear?: SearchNear) => void;
     onUndoNaturalSearch?: () => void;
     /** « Réinitialiser » : tous les filtres et la recherche en langage naturel. */
     onResetAllFilters?: () => void;

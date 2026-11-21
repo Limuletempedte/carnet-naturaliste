@@ -130,7 +130,7 @@ const FEATURES: readonly FeatureInfo[] = [
         title: 'Recherche',
         purpose: "Traduit en filtres une phrase de recherche (« les rapaces vus en mai près de chez moi ») quand l'analyse gratuite ne la comprend pas entièrement. Les filtres sont appliqués sur l'appareil.",
         where: "Liste des observations, sous le champ de recherche : « Interpréter avec l'IA ».",
-        sent: "La phrase telle que vous l'avez écrite (200 caractères au plus), lieux et noms compris. Jamais d'observation ni de position. Les phrases comprises sont gardées dans ce navigateur (50 au plus).",
+        sent: "La phrase telle que vous l'avez écrite (200 caractères au plus), lieux et noms compris. Jamais d'observation ni de position. Les phrases interprétées sont gardées dans ce navigateur (50 au plus).",
     },
 ];
 
@@ -221,7 +221,8 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
 
     // Retirer l'accord efface aussi les phrases de recherche gardées dans ce navigateur.
     const handleWithdraw = () => runAction(
-        context => withdrawAccess(context).then(() => clearNaturalSearchCache(context)),
+        // Même si le retrait échoue à mi-chemin (accords déjà supprimés) : le cache est vidé.
+        context => withdrawAccess(context).finally(() => clearNaturalSearchCache(context)),
         () => { setConfirmWithdraw(false); setJustRequested(false); },
     );
 
@@ -231,7 +232,7 @@ const AiAccessDialog: React.FC<AiAccessDialogProps> = ({ isOpen, onClose, isOffl
     );
 
     const handleWithdrawConsent = (feature: AiTextFeature) => runAction(
-        context => withdrawConsent(feature, context).then(() => { if (feature === 'search') clearNaturalSearchCache(context); }),
+        context => withdrawConsent(feature, context).finally(() => { if (feature === 'search') clearNaturalSearchCache(context); }),
         () => undefined,
     );
 

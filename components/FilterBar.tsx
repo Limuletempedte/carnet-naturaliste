@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Status } from '../types';
 import type { AppliedNaturalSearch } from '../hooks/useFilterControls';
-import type { CriterionRef, NearResolution } from '../utils/aiSearchFilters';
+import type { CriterionRef, NearResolution, SearchNear } from '../utils/aiSearchFilters';
 import { NaturalSearchApplied } from './NaturalSearch';
 
 interface FilterBarProps {
@@ -17,7 +17,7 @@ interface FilterBarProps {
     /** Recherche en langage naturel appliquée : ses étiquettes restent visibles ici aussi. */
     naturalSearch?: AppliedNaturalSearch | null;
     onRemoveNaturalCriterion?: (ref: CriterionRef) => void;
-    onUpdateNaturalNear?: (near: NearResolution) => void;
+    onUpdateNaturalNear?: (near: NearResolution, forNear?: SearchNear) => void;
     onUndoNaturalSearch?: () => void;
     onResetAllFilters?: () => void;
     excludedNoLatinName?: number;
@@ -43,6 +43,14 @@ const FilterBar: React.FC<FilterBarProps> = ({
     excludedNoLatinName = 0,
 }) => {
     const [announcement, setAnnouncement] = useState('');
+    const searchRef = useRef<HTMLInputElement | null>(null);
+    /** La section « J'ai compris » va disparaître : le focus revient au champ. */
+    const focusSearchNext = useRef(false);
+    useEffect(() => {
+        if (!focusSearchNext.current || naturalSearch) return;
+        focusSearchNext.current = false;
+        searchRef.current?.focus();
+    }, [naturalSearch]);
     // Identifiants dérivés du searchId pour rester uniques si plusieurs FilterBar
     // coexistent (UIA-06 : labels Année/Statut sans association).
     const yearId = `${searchId}-year`;
@@ -53,6 +61,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 <div className={`relative ${isMobileView ? '' : 'md:col-span-1'}`}>
                     <label htmlFor={searchId} className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Recherche</label>
                     <input
+                        ref={searchRef}
                         type="text"
                         id={searchId}
                         placeholder="Espèce, lieu..."
@@ -96,10 +105,11 @@ const FilterBar: React.FC<FilterBarProps> = ({
                     naturalSearch={naturalSearch}
                     onRemoveCriterion={onRemoveNaturalCriterion}
                     onUpdateNear={onUpdateNaturalNear}
-                    onUndo={() => { onUndoNaturalSearch(); setAnnouncement('Recherche annulée : les filtres d’avant sont rétablis.'); }}
-                    onResetAll={() => { onResetAllFilters(); setAnnouncement('Tous les filtres sont réinitialisés.'); }}
+                    onUndo={() => { focusSearchNext.current = true; onUndoNaturalSearch(); setAnnouncement('Recherche annulée : les filtres d’avant sont rétablis.'); }}
+                    onResetAll={() => { focusSearchNext.current = true; onResetAllFilters(); setAnnouncement('Tous les filtres sont réinitialisés.'); }}
                     excludedNoLatinName={excludedNoLatinName}
                     onAnnounce={setAnnouncement}
+                    onEmptied={() => { focusSearchNext.current = true; }}
                     compact={isMobileView}
                 />
             )}

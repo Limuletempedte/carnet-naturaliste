@@ -11,7 +11,7 @@ import {
     type AiAssistErrorCode,
     type AiOverview,
 } from '../services/aiAssistService';
-import { readCachedSearch, rememberSearch } from '../services/naturalSearchCache';
+import { naturalSearchCachePurges, readCachedSearch, rememberSearch } from '../services/naturalSearchCache';
 import { resolveNear } from '../services/naturalSearchPlace';
 import { captureSessionContext, isSessionCurrent, subscribeSessionChange, type SessionContext } from '../services/sessionScope';
 import type { AppliedNaturalSearch, NaturalSearchInput } from '../hooks/useFilterControls';
@@ -19,12 +19,14 @@ import {
     AI_SEARCH_LIMITS,
     buildFilterPlan,
     criteriaIsEmpty,
+    nearLabel,
     parseSearchResult,
     removeCriterion,
     type CriterionRef,
     type NearResolution,
     type SearchChip,
     type SearchCriteria,
+    type SearchNear,
 } from '../utils/aiSearchFilters';
 import { analyzeNaturalSearch, countWords } from '../utils/naturalSearchLocal';
 import AiButton from './AiButton';
@@ -40,7 +42,8 @@ const RECOUNT_CODES = new Set<AiAssistErrorCode>(['cancelled', 'timeout', 'netwo
 type Phase =
     | { kind: 'idle' }
     | { kind: 'checking' }
-    | { kind: 'consent'; outdated: boolean }
+    /** La phrase est figée dans la phase : c'est elle, et elle seule, qui partira. */
+    | { kind: 'consent'; outdated: boolean; phrase: string }
     | { kind: 'analyzing' }
     | { kind: 'needs_access'; message: string }
     | { kind: 'error'; message: string };
@@ -104,10 +107,12 @@ interface ChipListProps {
     retrying?: boolean;
     listLabel: string;
     removeRefs?: React.MutableRefObject<Array<HTMLButtonElement | null>>;
+    /** Un parcours est en cours (IA, localisation) : rien ne se retire. */
+    disabled?: boolean;
 }
 
 /** Liste d'étiquettes « J'ai compris : … », chacune retirable au clavier. */
-const ChipList: React.FC<ChipListProps> = ({ chips, removeLabel, onRemove, onRetryNear, retrying = false, listLabel, removeRefs }) => (
+const ChipList: React.FC<ChipListProps> = ({ chips, removeLabel, onRemove, onRetryNear, retrying = false, listLabel, removeRefs, disabled = false }) => (
     <ul aria-label={listLabel} className="flex flex-wrap gap-2">
         {chips.map((chip, index) => (
             <li key={chip.id} className={`inline-flex max-w-full items-center gap-1 rounded-full border py-1 pl-3 pr-1 text-sm ${chipTone[chip.tone]}`} data-testid={`search-chip-${chip.id}`} data-tone={chip.tone}>
@@ -116,7 +121,7 @@ const ChipList: React.FC<ChipListProps> = ({ chips, removeLabel, onRemove, onRet
                     <button
                         type="button"
                         onClick={onRetryNear}
-                        disabled={retrying}
+                        disabled={retrying || disabled}
                         className="min-h-[36px] rounded-full px-2 text-xs font-semibold underline underline-offset-2 disabled:opacity-50"
                     >
                         {retrying ? 'Recherche…' : 'Réessayer'}
@@ -124,10 +129,13 @@ const ChipList: React.FC<ChipListProps> = ({ chips, removeLabel, onRemove, onRet
                 )}
                 <button
                     type="button"
+                    // Sentry garde ce nom fixe au lieu du sélecteur : l'aria-label cite la phrase.
+                    data-sentry-element="natural-search-chip-remove"
                     ref={element => { if (removeRefs) removeRefs.current[index] = element; }}
                     onClick={() => onRemove(chip, index)}
+                    disabled={disabled}
                     aria-label={removeLabel(chip)}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ai-500 dark:hover:bg-white/15"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ai-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/15"
                 >
                     <XMarkIcon className="h-4 w-4" />
                 </button>
@@ -139,13 +147,18 @@ const ChipList: React.FC<ChipListProps> = ({ chips, removeLabel, onRemove, onRet
 interface NaturalSearchAppliedProps {
     naturalSearch: AppliedNaturalSearch;
     onRemoveCriterion: (ref: CriterionRef) => void;
-    onUpdateNear: (near: NearResolution) => void;
+    /** `forNear` : le critère pour lequel le lieu a été cherché (un résultat périmé est ignoré). */
+    onUpdateNear: (near: NearResolution, forNear?: SearchNear) => void;
     onUndo: () => void;
     onResetAll: () => void;
     /** Observations écartées d'une catégorie ou d'un genre faute de nom latin. */
     excludedNoLatinName: number;
     /** Annonce d'un événement (région d'état du parent). */
     onAnnounce?: (message: string) => void;
+    /** La dernière étiquette a été retirée (la section disparaît) : le parent reprend le focus. */
+    onEmptied?: () => void;
+    /** Un parcours de l'assistant est en cours : la recherche appliquée ne change pas. */
+    locked?: boolean;
     compact?: boolean;
 }
 
@@ -162,6 +175,8 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
     onResetAll,
     excludedNoLatinName,
     onAnnounce,
+    onEmptied,
+    locked = false,
     compact = false,
 }) => {
     const headingId = useId();
@@ -182,13 +197,19 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
     }, [chips]);
 
     const handleRetry = async () => {
-        if (retrying || !naturalSearch.criteria.near) return;
+        const near = naturalSearch.criteria.near;
+        if (retrying || !near) return;
+        let context: SessionContext;
+        try { context = captureSessionContext(); } catch { return; }
         setRetrying(true);
-        onUpdateNear({ status: 'pending' });
-        const resolution = await resolveNear(naturalSearch.criteria.near);
+        onUpdateNear({ status: 'pending' }, near);
+        const resolution = await resolveNear(near);
+        // Compte changé pendant l'attente : rien ne passe à l'autre compte.
+        if (!isSessionCurrent(context)) return;
         setRetrying(false);
-        onUpdateNear(resolution);
-        onAnnounce?.(resolution.status === 'ok' ? 'Lieu trouvé : critère appliqué.' : 'Lieu toujours introuvable : critère non appliqué.');
+        // Lié à SON critère : ignoré si une autre recherche est appliquée entre-temps.
+        onUpdateNear(resolution, near);
+        onAnnounce?.(resolution.status === 'ok' ? 'Lieu trouvé : critère appliqué.' : `${nearLabel(near, resolution).label}.`);
     };
 
     return (
@@ -203,13 +224,17 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
                 listLabel="Critères appliqués"
                 removeLabel={chip => `Retirer le critère : ${chip.label}`}
                 onRemove={(chip, index) => {
-                    focusAfterRemove.current = index;
+                    if (locked) return;
+                    const last = chips.length === 1;
+                    focusAfterRemove.current = last ? null : index;
                     onRemoveCriterion(chip.ref);
-                    onAnnounce?.(`Critère retiré : ${chip.label}.`);
+                    onAnnounce?.(last ? `Critère retiré : ${chip.label}. Plus aucun filtre de la recherche.` : `Critère retiré : ${chip.label}.`);
+                    if (last) onEmptied?.();
                 }}
                 onRetryNear={() => void handleRetry()}
                 retrying={retrying}
                 removeRefs={removeRefs}
+                disabled={locked}
             />
             {notes.map(note => <p key={note} className="text-xs text-amber-800 dark:text-amber-200">{note}</p>)}
             {usesLatinName && excludedNoLatinName > 0 && (
@@ -218,10 +243,10 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
                 </p>
             )}
             <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={onUndo} className={quietButton}>
+                <button type="button" onClick={onUndo} disabled={locked} className={`${quietButton} disabled:cursor-not-allowed disabled:opacity-50`}>
                     Annuler la recherche
                 </button>
-                <button type="button" onClick={onResetAll} className={quietButton}>
+                <button type="button" onClick={onResetAll} disabled={locked} className={`${quietButton} disabled:cursor-not-allowed disabled:opacity-50`}>
                     Réinitialiser les filtres
                 </button>
             </div>
@@ -241,7 +266,7 @@ interface NaturalSearchProps {
     naturalSearch: AppliedNaturalSearch | null;
     onApply: (input: NaturalSearchInput) => void;
     onRemoveCriterion: (ref: CriterionRef) => void;
-    onUpdateNear: (near: NearResolution) => void;
+    onUpdateNear: (near: NearResolution, forNear?: SearchNear) => void;
     onUndo: () => void;
     onResetAll: () => void;
     hasActiveFilters: boolean;
@@ -319,6 +344,8 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const focusTarget = useRef<'ai' | 'proposal' | 'input' | null>(null);
     const counterLoaded = useRef(false);
 
+    const draftRef = useRef(draft);
+    useEffect(() => { draftRef.current = draft; }, [draft]);
     const trimmed = draft.trim();
     const local = useMemo(() => analyzeNaturalSearch(draft), [draft]);
     /** Phrase déjà interprétée par l'assistant (même sans aucun critère : elle n'est pas repayée). */
@@ -356,11 +383,12 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         && (countWords(draft) >= 2 || local.hasCriteria);
     const showAiZone = offerAi || phase.kind !== 'idle';
 
-    // Démontage : la suite d'un parcours en cours s'arrête.
+    // Démontage (onglet Carte, rotation de l'écran…) : l'écran ne suit plus,
+    // mais une phrase déjà partie n'est PAS coupée : sa réponse, peut-être
+    // déjà comptée, est gardée dans le cache pour ne jamais être repayée.
     useEffect(() => () => {
         runRef.current += 1;
         applyRunRef.current += 1;
-        abortRef.current?.abort();
     }, []);
 
     // Changement de compte : tout repart à zéro (la phrase n'est pas gardée).
@@ -476,26 +504,34 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         if (abortRef.current || runRef.current !== runId) return;
         const controller = new AbortController();
         abortRef.current = controller;
+        const purges = naturalSearchCachePurges();
         setPhase({ kind: 'analyzing' });
         setAnnouncement('Interprétation de la phrase en cours…');
         try {
             const response = await callAiText('search', { text: phrase }, { signal: controller.signal }, context);
-            if (controller.signal.aborted || runRef.current !== runId || !isSessionCurrent(context)) return;
-            setRemaining(response.remaining);
+            if (controller.signal.aborted || !isSessionCurrent(context)) return;
+            // Payé : relu et gardé tout de suite, même si la liste a été
+            // quittée entre-temps (jamais si l'accord a été retiré depuis).
             rememberRemaining(response.remaining, context);
             const criteria = parseSearchResult(response.result);
+            if (criteria) rememberSearch(phrase, criteria, context, purges);
+            if (runRef.current !== runId) return;
+            setRemaining(response.remaining);
             if (!criteria) {
                 setPhase({ kind: 'error', message: new AiAssistError('invalid_output', { feature: 'search' }).message });
                 setAnnouncement('');
                 focusTarget.current = 'ai';
                 return;
             }
-            // Payé : gardé tout de suite, pour ne jamais le repayer.
-            rememberSearch(phrase, criteria, context);
             setCacheVersion(version => version + 1);
             setAiProposal({ phrase, source: 'ai', criteria });
             setRemoved([]);
             setPhase({ kind: 'idle' });
+            // Le champ ne montre plus cette phrase : rien d'annoncé ni de focalisé (le résultat reste gardé).
+            if (draftRef.current !== phrase) {
+                setAnnouncement('');
+                return;
+            }
             if (criteriaIsEmpty(criteria)) {
                 const message = criteria.dropped.length > 0
                     ? "L'assistant n'a rien compris d'utilisable dans cette phrase : rien n'est appliqué. Reformulez-la, ou cherchez un nom."
@@ -519,7 +555,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
             }
             if (wrapped.code === 'consent_outdated') {
                 const refreshed = await loadOverview(context, runId);
-                if (refreshed && runRef.current === runId) setPhase({ kind: 'consent', outdated: true });
+                if (refreshed && runRef.current === runId) setPhase({ kind: 'consent', outdated: true, phrase });
                 return;
             }
             if (wrapped.code === 'not_approved') {
@@ -561,7 +597,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                 return;
             }
             if (!hasCurrentConsent(current, 'search')) {
-                setPhase({ kind: 'consent', outdated: hasOutdatedConsent(current, 'search') });
+                setPhase({ kind: 'consent', outdated: hasOutdatedConsent(current, 'search'), phrase });
                 setAnnouncement('');
                 return;
             }
@@ -596,11 +632,13 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     };
 
     const handleAcceptConsent = async () => {
+        // La phrase envoyée est celle pour laquelle la carte a été ouverte, jamais une autre.
+        if (phase.kind !== 'consent') return;
+        const phrase = phase.phrase;
         let context: SessionContext;
         try { context = captureSessionContext(); } catch { return; }
         const runId = lock();
         if (runId === null) return;
-        const phrase = draft;
         const stillWanted = () => isSessionCurrent(context) && runRef.current === runId;
         setConsentWorking(true);
         setConsentError(null);
@@ -645,8 +683,8 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         // Le bouton « Appliquer » disparaît : le focus revient au champ.
         focusTarget.current = 'input';
         const count = buildFilterPlan(proposalCriteria, new Date(), input.near).chips.length;
-        setAnnouncement(input.near && input.near.status !== 'ok'
-            ? `Filtres appliqués, sauf le lieu : ${input.near.status === 'denied' ? 'position refusée' : 'lieu introuvable'}.`
+        setAnnouncement(proposalCriteria.near && input.near && input.near.status !== 'ok'
+            ? `Filtres appliqués, sauf : ${nearLabel(proposalCriteria.near, input.near).label}.`
             : `${plural(count, 'critère appliqué', 'critères appliqués')}.`);
     };
 
@@ -669,10 +707,16 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         inputRef.current?.focus();
     };
 
+    // Pendant un parcours de l'assistant (vérification, accord, attente) ou
+    // une localisation, la recherche appliquée ne change pas : ces boutons
+    // sont désactivés. Ils remettent aussi l'assistant à zéro.
     const handleResetAll = () => {
+        if (lockedInput || locating) return;
         onResetAll();
         setDraft('');
         setRemoved([]);
+        setPhase({ kind: 'idle' });
+        setConsentError(null);
         focusTarget.current = 'input';
         setAiProposal(null);
         setEmptyMessage(null);
@@ -680,7 +724,13 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     };
 
     const handleUndo = () => {
+        if (lockedInput || locating) return;
         onUndo();
+        setRemoved([]);
+        setPhase({ kind: 'idle' });
+        setConsentError(null);
+        setEmptyMessage(null);
+        focusTarget.current = 'input';
         setAnnouncement('Recherche annulée : les filtres d’avant sont rétablis.');
     };
 
@@ -688,6 +738,11 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const inputClass = isDesktop
         ? 'w-full pl-12 pr-12 py-4 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none read-only:opacity-70'
         : 'w-full pl-10 pr-11 py-2 bg-gray-100 dark:bg-white/10 rounded-xl text-base focus:ring-2 focus:ring-nature-green/50 outline-none dark:text-white placeholder-gray-500 dark:placeholder-gray-400 read-only:opacity-70';
+    /**
+     * Recherche par nom active mais absente du champ (preset appliqué, nom
+     * tapé sur la carte ou dans la galerie) : jamais un filtre invisible.
+     */
+    const nameSearchHidden = searchTerm !== '' && searchTerm !== draft && !(naturalSearch?.owned.includes('searchTerm'));
     // Ce que l'analyse gratuite n'a pas compris, tel qu'écrit (« lézard des murailles »).
     const unknownText = proposal?.source === 'local' && !local.understood ? local.criteria.text : null;
 
@@ -747,6 +802,8 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                             chips={proposalPlan.chips}
                             listLabel="Critères compris, pas encore appliqués"
                             removeLabel={chip => `Ne pas garder : ${chip.label}`}
+                            // Pendant la localisation, les critères sont déjà partis vers l'application.
+                            disabled={locating}
                             onRemove={chip => {
                                 setRemoved(previous => [...previous, chip.ref]);
                                 setAnnouncement(`Critère écarté : ${chip.label}.`);
@@ -846,10 +903,20 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                     onResetAll={handleResetAll}
                     excludedNoLatinName={excludedNoLatinName}
                     onAnnounce={setAnnouncement}
+                    onEmptied={() => { focusTarget.current = 'input'; }}
+                    locked={lockedInput || locating}
                 />
             )}
+            {nameSearchHidden && (
+                <p className="flex flex-wrap items-center gap-x-2 px-1 text-xs text-gray-600 dark:text-gray-300" data-testid="natural-search-hidden-term">
+                    Recherche par nom active : « {searchTerm} ».
+                    <button type="button" onClick={() => onSearchChange('')} disabled={lockedInput} className={`${linkButton} min-h-[36px] text-xs`}>
+                        Retirer
+                    </button>
+                </p>
+            )}
             {!naturalSearch && hasActiveFilters && (
-                <button type="button" onClick={handleResetAll} className={`${quietButton} px-2`}>
+                <button type="button" onClick={handleResetAll} disabled={lockedInput || locating} className={`${quietButton} px-2 disabled:cursor-not-allowed disabled:opacity-50`}>
                     Réinitialiser les filtres
                 </button>
             )}

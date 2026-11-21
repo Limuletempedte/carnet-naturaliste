@@ -237,9 +237,20 @@ export const parseSearchResult = (result: unknown): SearchCriteria | null => {
         text: read('text', value => cleanText(value, AI_SEARCH_LIMITS.maxTextChars), null),
         dropped: [],
     };
+    // Comme la fonction : une année écrite l'emporte sur une période qui fixe
+    // déjà l'année (une entrée du cache abîmée ou forgée ne fait pas mentir
+    // une étiquette).
+    if (criteria.period && criteria.years.length > 0 && periodFixesYear(criteria.period)) {
+        criteria.period = null;
+        dropped.add('period');
+    }
     criteria.dropped = AI_SEARCH_FIELDS.filter(field => dropped.has(field));
     return criteria;
 };
+
+/** Période qui fixe déjà l'année (relative) : incompatible avec une année écrite. */
+export const periodFixesYear = (period: SearchPeriod): boolean =>
+    (period.kind !== 'month' && period.kind !== 'season') || period.yearScope !== 'all';
 
 /** Aucun critère à appliquer (les champs de `dropped` ne comptent pas). */
 export const criteriaIsEmpty = (criteria: SearchCriteria): boolean =>
@@ -589,8 +600,14 @@ export const buildFilterPlan = (criteria: SearchCriteria, now: Date, near?: Near
                 owners.endDateFilter = 'period';
                 break;
             case 'year':
-                writes.yearFilter = String(resolved.year);
-                owners.yearFilter = 'period';
+                if (writes.yearFilter !== undefined) {
+                    // Jamais une étiquette d'année qui ne filtre rien : l'année écrite l'emporte.
+                    tone = 'error';
+                    label = `${label} : ignoré, l'année écrite l'emporte`;
+                } else {
+                    writes.yearFilter = String(resolved.year);
+                    owners.yearFilter = 'period';
+                }
                 break;
             case 'months': {
                 aiFilter.months = resolved.months;

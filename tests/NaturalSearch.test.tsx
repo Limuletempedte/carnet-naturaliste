@@ -134,6 +134,31 @@ describe('NaturalSearch : analyse gratuite', () => {
         expect(controls.naturalSearch).toBeNull();
     });
 
+    it('une recherche par nom active mais absente du champ (preset, carte) est montrée et se retire', () => {
+        render(<Harness />);
+        act(() => { controls.setSearchTerm('buse'); });
+        const hidden = screen.getByTestId('natural-search-hidden-term');
+        expect(hidden.textContent).toMatch(/Recherche par nom active : « buse »/);
+        fireEvent.click(within(hidden).getByRole('button', { name: 'Retirer' }));
+        expect(controls.searchTerm).toBe('');
+        expect(screen.queryByTestId('natural-search-hidden-term')).toBeNull();
+    });
+
+    it('pendant la localisation, une étiquette ne peut plus être écartée ; la dernière retirée rend le focus au champ', async () => {
+        let resolveNear: (value: unknown) => void = () => undefined;
+        mocks.resolveNear.mockReturnValueOnce(new Promise(resolve => { resolveNear = resolve; }));
+        render(<Harness />);
+        type('les oiseaux près de chez moi');
+        fireEvent.click(screen.getByRole('button', { name: 'Appliquer' }));
+        expect((screen.getByRole('button', { name: 'Ne pas garder : Oiseaux' }) as HTMLButtonElement).disabled).toBe(true);
+        await act(async () => { resolveNear({ status: 'ok', lat: 44.8, lon: -0.6 }); });
+        await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+        fireEvent.click(screen.getByRole('button', { name: /Retirer le critère : autour de ma position/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Retirer le critère : Oiseaux' }));
+        await waitFor(() => expect(controls.naturalSearch).toBeNull());
+        await waitFor(() => expect(document.activeElement).toBe(input()));
+    });
+
     it('« Réinitialiser les filtres » efface les filtres existants et l’AiFilter', async () => {
         render(<Harness />);
         type('les canards en 2024');
@@ -249,6 +274,23 @@ describe('NaturalSearch : interprétation par l’assistant', () => {
         expect(mocks.callAiText).toHaveBeenCalledTimes(1);
     });
 
+    it('quitter la liste pendant l’attente ne perd pas un résultat payé : il est gardé, rejoué sans appel', async () => {
+        let resolveCall: (value: unknown) => void = () => undefined;
+        mocks.callAiText.mockReturnValue(new Promise(resolve => { resolveCall = resolve; }));
+        const { unmount } = render(<Harness />);
+        type(PHRASE);
+        fireEvent.click(screen.getByRole('button', { name: "Interpréter avec l'IA" }));
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        const signal = mocks.callAiText.mock.calls[0][2].signal as AbortSignal;
+        unmount();
+        expect(signal.aborted).toBe(false);
+        await act(async () => { resolveCall({ result: serverResult({ text: 'hérons cendrés' }), remaining: 11 }); });
+        render(<Harness />);
+        type(PHRASE);
+        expect(within(screen.getByTestId('natural-search-proposal')).getByText(/sans nouvelle utilisation/)).toBeTruthy();
+        expect(mocks.callAiText).toHaveBeenCalledTimes(1);
+    });
+
     it('hors ligne : bouton désactivé avec la raison, aucun appel', () => {
         render(<Harness isOffline />);
         type(PHRASE);
@@ -290,6 +332,47 @@ describe('NaturalSearch : interprétation par l’assistant', () => {
         fireEvent.click(within(card).getByRole('button', { name: 'Annuler' }));
         await act(async () => { resolveConsent(); });
         expect(mocks.callAiText).not.toHaveBeenCalled();
+    });
+
+    it('pendant l’accord, la recherche appliquée ne peut pas changer, et « Accepter » envoie la phrase de la carte, jamais une autre', async () => {
+        mocks.getAiOverview.mockResolvedValue(approved({}));
+        mocks.callAiText.mockResolvedValue({ result: serverResult({ text: 'hérons cendrés' }), remaining: 11 });
+        render(<Harness />);
+        type('les oiseaux en mai');
+        pressEnter();
+        await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+        type(PHRASE);
+        fireEvent.click(screen.getByRole('button', { name: "Interpréter avec l'IA" }));
+        const card = await screen.findByTestId('ai-consent-card-search');
+        const undo = screen.getByRole('button', { name: 'Annuler la recherche' }) as HTMLButtonElement;
+        const reset = screen.getByRole('button', { name: 'Réinitialiser les filtres' }) as HTMLButtonElement;
+        expect(undo.disabled).toBe(true);
+        expect(reset.disabled).toBe(true);
+        expect((screen.getByRole('button', { name: 'Retirer le critère : Oiseaux' }) as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.click(undo);
+        fireEvent.click(reset);
+        expect(input().value).toBe(PHRASE);
+        mocks.getAiOverview.mockResolvedValue(approved());
+        fireEvent.click(within(card).getByRole('checkbox'));
+        fireEvent.click(within(card).getByRole('button', { name: 'Accepter et interpréter' }));
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        expect(mocks.callAiText.mock.calls[0][1]).toEqual({ text: PHRASE });
+        expect(await screen.findByTestId('natural-search-proposal')).toBeTruthy();
+    });
+
+    it('« Annuler » pendant l’interprétation : rien d’appliqué, message, compteur relu', async () => {
+        mocks.callAiText.mockImplementation((_feature: string, _payload: unknown, options: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(new AiAssistError('cancelled', { feature: 'search' })));
+        }));
+        render(<Harness />);
+        type(PHRASE);
+        fireEvent.click(screen.getByRole('button', { name: "Interpréter avec l'IA" }));
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        const overviewCalls = mocks.getAiOverview.mock.calls.length;
+        fireEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+        expect((await screen.findByRole('alert')).textContent).toMatch(/Interprétation arrêtée : rien n'a été appliqué.*peut compter/);
+        await waitFor(() => expect(mocks.getAiOverview.mock.calls.length).toBeGreaterThan(overviewCalls));
+        expect(controls.naturalSearch).toBeNull();
     });
 
     it.each([

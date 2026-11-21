@@ -736,3 +736,48 @@ describe('parseNoteResult', () => {
     });
 });
 
+
+describe('recherche en langage naturel : service', () => {
+    const searchPayload = { text: 'les hérons cendrés près de Castelbrume' };
+
+    it('ne fait aucun appel réseau hors ligne, avec un message propre à la recherche', async () => {
+        setOnline(false);
+        const fetchMock = vi.fn();
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+        const error = await callAiText('search', searchPayload).catch(e => e);
+        expect(error).toMatchObject({ code: 'offline', feature: 'search' });
+        expect(error.message).toMatch(/qu'en ligne/);
+        expect(error.message).toMatch(/analyse gratuite/);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('chaque code d’erreur a un message propre à la recherche (jamais une photo, une note ou un bilan)', async () => {
+        const codes = (Object.keys(TEXT_ERROR_HTTP_STATUS) as AiAssistErrorCode[])
+            .filter(code => code !== 'method_not_allowed' as AiAssistErrorCode);
+        for (const code of codes) {
+            globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(TEXT_ERROR_HTTP_STATUS[code as keyof typeof TEXT_ERROR_HTTP_STATUS], { error: code })) as unknown as typeof fetch;
+            const error = await callAiText('search', searchPayload).catch(e => e);
+            expect(error).toBeInstanceOf(AiAssistError);
+            expect(error.code).toBe(code);
+            expect(error.message).toBe(aiAssistErrorMessage(code, 'search'));
+            expect(error.message, code).not.toMatch(/photo|bilan|rédaction|note/i);
+        }
+        // Les codes propres à l'application aussi.
+        for (const code of ['offline', 'cancelled', 'timeout', 'stale_session', 'network', 'unknown'] as AiAssistErrorCode[]) {
+            expect(aiAssistErrorMessage(code, 'search'), code).not.toMatch(/photo|bilan|rédaction|note/i);
+            expect(aiAssistErrorMessage(code, 'search'), code).not.toBe(aiAssistErrorMessage(code));
+        }
+        expect(aiAssistErrorMessage('feature_disabled', 'search')).toMatch(/momentanément indisponible/);
+        expect(aiAssistErrorMessage('invalid_output', 'search')).toMatch(/compte dans votre quota/);
+        expect(aiAssistErrorMessage('payload_too_large', 'search')).toMatch(/200 caractères/);
+    });
+
+    it('ne journalise ni la phrase ni les filtres', async () => {
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(500, { error: 'internal_error' })) as unknown as typeof fetch;
+        await callAiText('search', searchPayload).catch(() => undefined);
+        globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { remaining: 3 })) as unknown as typeof fetch;
+        await callAiText('search', searchPayload).catch(() => undefined);
+        const logged = JSON.stringify([...mocks.warn.mock.calls, ...mocks.error.mock.calls]);
+        expect(logged).not.toMatch(/hérons|Castelbrume/);
+    });
+});

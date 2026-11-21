@@ -26,7 +26,10 @@ export const scrubBreadcrumb = (breadcrumb: Sentry.Breadcrumb): Sentry.Breadcrum
     // Parus major », image d'une espèce). Seul le nom de l'attribut reste.
     if (typeof breadcrumb.category === 'string' && breadcrumb.category.startsWith('ui.')) {
         if (typeof breadcrumb.message !== 'string') return breadcrumb;
-        return { ...breadcrumb, message: breadcrumb.message.replace(/\[(aria-label|alt|title)=(?:"[^"]*"|'[^']*'|[^\]]*)\]/g, '[$1]') };
+        // La valeur peut contenir « "] » (texte tapé par la personne) : on
+        // va jusqu'au guillemet fermant suivi d'un autre attribut, d'un « > »
+        // ou de la fin, jamais au premier « "] » venu.
+        return { ...breadcrumb, message: breadcrumb.message.replace(/\[(aria-label|alt|title)=(?:"[\s\S]*?"|'[\s\S]*?'|[^\]]*)\](?=\[|\s>\s|$)/g, '[$1]') };
     }
     if (breadcrumb.category !== 'fetch' && breadcrumb.category !== 'xhr') return breadcrumb;
     const data = breadcrumb.data ? { ...breadcrumb.data } : undefined;

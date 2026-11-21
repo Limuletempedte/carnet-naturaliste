@@ -5,6 +5,7 @@ import {
     NATURAL_SEARCH_CACHE_PREFIX,
     NATURAL_SEARCH_CACHE_VERSION,
     clearNaturalSearchCache,
+    naturalSearchCachePurges,
     readCachedSearch,
     rememberSearch,
 } from '../services/naturalSearchCache';
@@ -76,5 +77,15 @@ describe('cache des phrases comprises', () => {
         clearNaturalSearchCache(context);
         expect(readCachedSearch('les canards')).toBeNull();
         expect(ACCOUNT_SCOPED_STORAGE_PREFIXES).toContain(NATURAL_SEARCH_CACHE_PREFIX);
+    });
+
+    it('une réponse partie avant le retrait de l’accord ne remplit pas de nouveau le cache', () => {
+        const context = captureSessionContext();
+        const before = naturalSearchCachePurges();
+        clearNaturalSearchCache(context);
+        rememberSearch('les canards', criteria({ categories: ['canards'] }), context, before);
+        expect(readCachedSearch('les canards')).toBeNull();
+        rememberSearch('les canards', criteria({ categories: ['canards'] }), context, naturalSearchCachePurges());
+        expect(readCachedSearch('les canards')?.categories).toEqual(['canards']);
     });
 });

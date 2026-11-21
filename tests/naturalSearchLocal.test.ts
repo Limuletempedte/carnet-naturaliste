@@ -138,6 +138,13 @@ describe('analyse locale : groupes, catégories, statuts, milieux', () => {
         expect(alone.understood).toBe(false);
     });
 
+    it('« près de » n’est pas un qualificatif : l’ensemble reste une catégorie', () => {
+        const result = analyze('hérons près de Castelbrume');
+        expect(result.criteria.categories).toEqual(['ardeides']);
+        expect(result.criteria.text).toBe('Castelbrume');
+        expect(result.understood).toBe(false);
+    });
+
     it('un lieu nommé n’est pas deviné : texte libre, l’assistant peut l’interpréter', () => {
         const result = analyze('rapaces à Pessac');
         expect(result.criteria.categories).toEqual(['rapaces_diurnes', 'rapaces_nocturnes']);

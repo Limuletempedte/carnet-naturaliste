@@ -177,6 +177,7 @@ const App: React.FC = () => {
         applyFilterPreset,
         deleteFilterPreset,
         naturalSearch,
+        naturalSearchPresetLimited,
         applyNaturalSearch,
         removeNaturalCriterion,
         updateNaturalNear,
@@ -908,7 +909,7 @@ const App: React.FC = () => {
                 onSavePreset={saveFilterPreset}
                 onApplyPreset={applyFilterPreset}
                 onDeletePreset={deleteFilterPreset}
-                naturalSearchActive={naturalSearch?.plan.aiFilter != null}
+                naturalSearchActive={naturalSearchPresetLimited}
             />
             <StatsExportDialog
                 isOpen={isStatsExportDialogOpen}

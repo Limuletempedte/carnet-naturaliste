@@ -301,6 +301,16 @@ describe('relecture des critères (réponse de la fonction ou cache)', () => {
         expect(parsed).toMatchObject({ categories: ['rapaces_diurnes', 'rapaces_nocturnes'], genera: ['Sitta'], commune: 'Saint-Martin-d’Hères', dropped: [] });
     });
 
+    it('une année écrite l’emporte sur une période qui fixe l’année (aucune étiquette mensongère)', () => {
+        const parsed = parseSearchResult({ years: [2024], period: { kind: 'this_year', days: 0, month: 0, season: 'none', yearScope: 'all' } });
+        expect(parsed?.period).toBeNull();
+        expect(parsed?.dropped).toEqual(['period']);
+        // Même construit à la main, le plan n'écrase pas l'année écrite.
+        const plan = buildFilterPlan(criteria({ years: [2024], period: period('this_year') }), at('2026-11-21'));
+        expect(plan.writes.yearFilter).toBe('2024');
+        expect(plan.chips.find(chip => chip.id === 'period')?.tone).toBe('error');
+    });
+
     it('le texte libre passe au singulier pour la recherche par nom', () => {
         expect(singularizeSearchText('canards colverts')).toBe('canard colvert');
         expect(singularizeSearchText('hiboux')).toBe('hibou');

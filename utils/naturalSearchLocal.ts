@@ -19,6 +19,7 @@ import {
     AI_SEARCH_LIMITS,
     clampRadiusKm,
     emptyCriteria,
+    periodFixesYear,
     type SearchCriteria,
     type SearchPeriod,
     type SearchSeason,
@@ -99,7 +100,9 @@ const STOPWORDS = new Set(words(
     "les le la l des de du d un une en au aux à a dans et ou mes mon ma toutes tous tout toute j ai " +
     "que qui quels quelles quel quelle vu vus vue vues observé observés observée observées observation observations " +
     "espèce espèces individus sur pour par avec y ont pendant durant ce cet cette ces cherche chercher montre moi " +
-    "affiche afficher liste voir trouve trouvé trouvés trouvée trouvées donne",
+    "affiche afficher liste voir trouve trouvé trouvés trouvée trouvées donne " +
+    // Prépositions de lieu : jamais un qualificatif d'espèce (« hérons près de Pessac »).
+    "près autour vers proche loin",
 ));
 
 type Effect =
@@ -519,8 +522,7 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
     criteria.period = state.period;
     // Une année écrite l'emporte sur une période qui fixe déjà l'année (comme la fonction).
     if (criteria.period && criteria.years.length > 0) {
-        const fixesYear = (criteria.period.kind !== 'month' && criteria.period.kind !== 'season') || criteria.period.yearScope !== 'all';
-        if (fixesYear) {
+        if (periodFixesYear(criteria.period)) {
             criteria.period = null;
             notes.push("L'année écrite l'emporte sur la période relative, qui est ignorée.");
         }

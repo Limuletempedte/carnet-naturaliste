@@ -140,6 +140,17 @@
   - **lieu** : la position (« près de chez moi ») ou le géocodage d'un lieu nommé se font **au moment d'appliquer**, jamais pendant la frappe ; gardés en mémoire seulement (jamais dans le cache) ; « Réessayer » sur l'étiquette d'erreur ;
   - **cache** : seules les phrases interprétées par l'assistant y vont (l'analyse locale est gratuite) ; une phrase rendue vide par l'assistant est gardée aussi (elle n'est pas repayée) ; il est vidé au retrait de l'accord à la recherche ou à l'assistant, en plus de la suppression du compte ;
   - **préréglages** : un preset garde les filtres classiques (même écrits par une recherche) et jamais l'`AiFilter` ; la fenêtre des filtres avancés et le message d'enregistrement le disent. Appliquer un preset retire la recherche en cours ;
+  - **changement de compte** : tous les filtres de la liste sont remis à zéro, pas seulement la recherche (une phrase, une commune ou un rayon ne passent jamais d'un compte à l'autre) ;
+  - **corrections après les deux relectures (sous-agents Opus, 2026-11-21), dans la même PR** :
+    - un preset n'enregistre **jamais** le rayon d'un « près de… » (centre = position de l'appareil ou lieu cherché), et le dit ; avant, la position y restait sans limite de durée ;
+    - pendant un parcours de l'assistant (vérification, carte d'accord, attente) ou une localisation, « Annuler la recherche », « Réinitialiser les filtres » et le retrait d'étiquettes sont désactivés ; la phrase est figée dans la carte d'accord : « Accepter » envoie celle-là, jamais une autre (avant, « Annuler la recherche » pendant la carte faisait partir l'ancienne phrase) ;
+    - **écart avec la note et le bilan** : quitter la liste (onglet Carte, rotation de l'écran) pendant l'attente ne coupe plus l'appel ; sa réponse, peut-être déjà comptée, est gardée dans le cache et rejouée sans nouvel appel. Seul « Annuler » arrête un envoi ;
+    - « Réessayer » sur un lieu est lié à son critère et au compte : un résultat tardif ne s'applique pas à une autre recherche ;
+    - une réponse partie avant un retrait d'accord ne remplit pas de nouveau le cache ; le cache est vidé même si le retrait échoue à mi-chemin ;
+    - les boutons de retrait d'étiquette portent un nom fixe pour Sentry (leur `aria-label` cite la phrase), et le nettoyage des traces d'interface résiste à une valeur qui contient `"]` ;
+    - une recherche par nom active mais absente du champ (preset, carte) est signalée sous le champ (« Recherche par nom active : … », « Retirer ») ;
+    - texte d'accord : les phrases gardées sont les phrases **interprétées**, même sans critère trouvé (version `2026-11-v1` inchangée : jamais acceptée en production) ;
+    - une année écrite l'emporte aussi à la relecture du cache (aucune étiquette d'année qui ne filtre rien) ; annonces du lieu reprises de l'étiquette ; focus rendu au champ quand la section « J'ai compris » disparaît ;
   - **dictionnaire des catégories** : inchangé (hors périmètre). Manques relevés pour le propriétaire : pas de catégorie pour les chouettes seules ni les hiboux seuls (« chouettes » reste du texte libre), pour les grimpereaux et les sittelles ; les synonymes au singulier (« un rapace ») ne sont pas reconnus.
 
 - **Base** : `main` à `57bbbe5`. La phase 1 (`docs/plans/assistant-ia-phase1.md`) est en production : fonction `ai-identify`, tables `ai_access` et `ai_usage`, fonctions SQL `ai_reserve_call`, `ai_finalize_call` et `ai_my_status`.

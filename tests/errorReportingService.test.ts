@@ -62,6 +62,12 @@ describe('errorReportingService — traces réseau', () => {
         });
         expect(click?.message).toBe('div.panel > button.choose[aria-label] > img[alt][title]');
         expect(click?.message).not.toMatch(/Rougegorge|Erithacus|Parus/);
+        // Une valeur qui contient « "] » (phrase tapée) ne laisse rien passer.
+        const tricky = service.scrubBreadcrumb({
+            category: 'ui.click',
+            message: 'li > button[aria-label="Retirer le critère : nom ou lieu contenant « ab"]secretfragment »"][type="button"]',
+        });
+        expect(tricky?.message).toBe('li > button[aria-label][type="button"]');
         const input = service.scrubBreadcrumb({ category: 'ui.input', message: 'input#speciesName' });
         expect(input?.message).toBe('input#speciesName');
     });

@@ -22,6 +22,13 @@ export const NATURAL_SEARCH_CACHE_MAX = 50;
 /** Format des entrées et version du dictionnaire des catégories. */
 export const NATURAL_SEARCH_CACHE_VERSION = `1-categories-${TAXON_CATEGORIES_VERSION}`;
 
+/**
+ * Nombre d'effacements depuis le chargement de la page : une réponse partie
+ * AVANT un retrait d'accord ne doit pas remplir de nouveau le cache après.
+ */
+let purges = 0;
+export const naturalSearchCachePurges = (): number => purges;
+
 interface StoredEntry {
     key: string;
     criteria: SearchCriteria;
@@ -54,10 +61,15 @@ export const readCachedSearch = (phrase: string, context?: SessionContext): Sear
     return entry ? parseSearchResult(entry.criteria) : null;
 };
 
-/** Garde les critères d'une phrase (en tête, 50 au plus). Sans effet si le stockage échoue. */
-export const rememberSearch = (phrase: string, criteria: SearchCriteria, context: SessionContext): void => {
+/**
+ * Garde les critères d'une phrase (en tête, 50 au plus). Sans effet si le
+ * stockage échoue, ou si le cache a été effacé depuis `sincePurges` (relevé
+ * par l'appelant avant l'envoi).
+ */
+export const rememberSearch = (phrase: string, criteria: SearchCriteria, context: SessionContext, sincePurges?: number): void => {
     const key = normalizePhraseKey(phrase);
     if (key.length === 0) return;
+    if (sincePurges !== undefined && sincePurges !== purges) return;
     try {
         assertSessionContext(context);
         // Forme relative seulement : aucune date calculée, aucune coordonnée.
@@ -84,6 +96,7 @@ export const rememberSearch = (phrase: string, criteria: SearchCriteria, context
 
 /** Efface les phrases gardées de la personne (retrait de l'accord). */
 export const clearNaturalSearchCache = (context: SessionContext): void => {
+    purges += 1;
     try {
         assertSessionContext(context);
         localStorage.removeItem(`${NATURAL_SEARCH_CACHE_PREFIX}:${context.userId}`);

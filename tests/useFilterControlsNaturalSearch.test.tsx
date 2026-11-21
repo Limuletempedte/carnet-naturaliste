@@ -129,6 +129,44 @@ describe('useFilterControls : recherche en langage naturel', () => {
         expect(result.current.filters.aiFilter).toBeNull();
     });
 
+    it('un preset ne garde jamais la position de « près de chez moi », et le dit', () => {
+        const onToast = vi.fn();
+        const { result } = renderHook(() => useFilterControls({ onToast }));
+        act(() => {
+            result.current.applyNaturalSearch({
+                phrase: 'les oiseaux près de chez moi', source: 'local',
+                criteria: criteria({ groups: [TaxonomicGroup.BIRD], near: { kind: 'current_position', placeName: null, radiusKm: 10 } }),
+                near: { status: 'ok', lat: 12.3456789, lon: 6.5432109 },
+            });
+        });
+        expect(result.current.naturalSearchPresetLimited).toBe(true);
+        act(() => { result.current.saveFilterPreset('Oiseaux du coin'); });
+        const stored = localStorage.getItem('observation-filter-presets-v2:user-1') ?? '';
+        expect(stored).not.toContain('12.3456789');
+        expect(stored).not.toContain('6.5432109');
+        expect(result.current.filterPresets[0].advancedFilters.geoMode).toBe('none');
+        expect(result.current.filterPresets[0].taxonomicGroupFilter).toBe(TaxonomicGroup.BIRD);
+        expect(onToast).toHaveBeenCalledWith('warning', expect.stringContaining('« près de… »'), 8000);
+    });
+
+    it('« Réessayer » : un lieu trouvé après une autre recherche n’est jamais appliqué à celle-ci', () => {
+        const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
+        const alpha = { kind: 'place' as const, placeName: 'Alpha', radiusKm: 10 };
+        act(() => {
+            result.current.applyNaturalSearch({ phrase: 'près de Alpha', source: 'ai', criteria: criteria({ near: alpha }), near: { status: 'not_found' } });
+        });
+        act(() => {
+            result.current.applyNaturalSearch({
+                phrase: 'près de Beta', source: 'ai',
+                criteria: criteria({ near: { kind: 'place', placeName: 'Beta', radiusKm: 10 } }), near: { status: 'not_found' },
+            });
+        });
+        // Résultat tardif de la recherche d'Alpha.
+        act(() => { result.current.updateNaturalNear({ status: 'ok', lat: 1.111, lon: 2.222 }, alpha); });
+        expect(result.current.advancedFilterState.geoMode).toBe('none');
+        expect(result.current.naturalSearch?.near).toEqual({ status: 'not_found' });
+    });
+
     it('changement de compte : la recherche ne passe pas d’un compte à l’autre', () => {
         const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
         act(() => {
