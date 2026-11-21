@@ -576,17 +576,17 @@ dépense dans la Console.
   statut `ok`, `claude-sonnet-5-5`, 1 316 tokens d'entrée et 332 de sortie,
   **0,0060 $** (conforme à l'essai du §6.3).
 
-Pour refermer le bilan sans rien défaire (puis redéployer, §6.6), tant que
-la recherche n'est pas ouverte (§6.8, avant l'étape 3 de « Ouvrir la recherche après la fusion de la PR B ») :
+Pour refermer le bilan sans rien défaire (puis redéployer, §6.6). La
+recherche étant ouverte depuis le 2026-11-21 (§6.8), la liste ne contient que
+ce que l'on veut couper :
 
 ```bash
-npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowiezzqehadcfnbkijo
+npx supabase secrets set AI_DISABLED_FEATURES=summary --project-ref xowiezzqehadcfnbkijo
 ```
 
 > ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire toujours la
-> liste **complète** de ce qui doit rester coupé : `summary` seul rouvrirait
-> la recherche. Une fois la recherche ouverte (§6.8, étape 3 de l'ouverture faite), refermer le
-> bilan seul s'écrira `AI_DISABLED_FEATURES=summary`.
+> liste **complète** de ce qui doit rester coupé : si une autre fonctionnalité
+> est déjà coupée, l'oublier ici la rouvrirait.
 
 ### 6.5 Comment `ai-text` décide
 
@@ -945,19 +945,19 @@ langage naturel (phase 4).
 
 #### Couper et rouvrir la note
 
-- **Refermer** (sans rien défaire) : tant que la recherche n'est pas ouverte
-  (§6.8, avant l'étape 3 de l'ouverture), `AI_DISABLED_FEATURES=note,search` (ou
-  `summary,note,search` pour couper aussi le bilan) ; ensuite, `note` seul.
+- **Refermer** (sans rien défaire) : `AI_DISABLED_FEATURES=note` (ou
+  `summary,note` pour couper aussi le bilan). La recherche est ouverte depuis
+  le 2026-11-21 (§6.8) : ne plus l'écrire dans la liste, sauf pour la couper.
   Puis redéployer `ai-text` et refaire le contrôle de l'étape 5 de la PR A
   (`503 feature_disabled`). L'application affiche alors « momentanément
   indisponible », sans erreur technique, et la note tapée reste dans la zone.
 
   ```bash
-  npx supabase secrets set AI_DISABLED_FEATURES=note,search --project-ref xowiezzqehadcfnbkijo
+  npx supabase secrets set AI_DISABLED_FEATURES=note --project-ref xowiezzqehadcfnbkijo
   ```
 
 - **Toujours écrire la liste complète** : `secrets set` remplace la valeur ;
-  `note` seul rouvrirait la recherche.
+  oublier une fonctionnalité déjà coupée la rouvrirait.
 - **Rouvrir** : étapes 3 à 5 ci-dessus.
 
 ### 6.8 Lot « recherche en langage naturel » (phase 4)
@@ -974,7 +974,8 @@ fonction seulement et **plus longue que les 32 caractères** permis par
 `ai_consents.version` : aucun accord ne pouvait l'atteindre (second verrou,
 `consent_outdated` pour tous). La **PR B** (application et textes légaux,
 voir plus bas) la remplace par `2026-11-v1`, des deux côtés ; la coupure
-(`AI_DISABLED_FEATURES=search`) reste le verrou jusqu'à l'ouverture.
+(`AI_DISABLED_FEATURES=search`) est restée le verrou jusqu'à l'ouverture du
+2026-11-21 (« Fait le 2026-11-21 », à la fin de ce paragraphe 6.8).
 
 **Ce qui est envoyé à Claude** : la phrase tapée dans la recherche
 seulement, 200 caractères au plus (refus au-delà, jamais de troncature),
@@ -1256,9 +1257,12 @@ pour **cette** fonctionnalité seulement, jamais un repli silencieux sur
 `AI_TEXT_MODEL`. Le coût réservé, le coût réel et la colonne `model`
 d'`ai_usage` suivent le modèle réellement utilisé.
 
-**Mise en production de ce lot** (propriétaire, dans l'ordre). État avant :
-la recherche est en production **fermée** (`AI_DISABLED_FEATURES=search`,
-`ai-text` version 12).
+**Mise en production de ce lot** (propriétaire, dans l'ordre). **Fait le
+2026-11-21**, avec le redéploiement d'ouverture de la recherche (`ai-text`
+version 13, voir « Fait le 2026-11-21 » à la fin de ce paragraphe 6.8) : les
+six points ci-dessous ont été vérifiés ce jour-là. État avant : la recherche
+était en production **fermée** (`AI_DISABLED_FEATURES=search`, `ai-text`
+version 12).
 
 1. **La recherche reste fermée.** Vérifier dans *Edge Functions → Secrets*
    que `AI_DISABLED_FEATURES` existe toujours (sa valeur doit être
@@ -1309,8 +1313,12 @@ la recherche est en production **fermée** (`AI_DISABLED_FEATURES=search`,
   ```
 
 - **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
-- **Ouvrir pour la première fois** : voir « Ouvrir la recherche après la
-  fusion de la PR B » plus bas (ordre impératif).
+- **Rouvrir après une coupure** : retirer `search` de la liste (`secrets
+  unset AI_DISABLED_FEATURES` si elle ne contient que `search`), redéployer
+  `ai-text`, refaire les trois contrôles 401, 204, 403.
+- **Première ouverture** : faite le 2026-11-21, voir « Ouvrir la recherche
+  après la fusion de la PR B » plus bas (l'ordre impératif qui y est décrit
+  ne valait que pour cette première fois).
 
 #### PR B (application et textes légaux)
 
@@ -1380,11 +1388,12 @@ n'est pas touché par cette PR.
 
 #### Ouvrir la recherche après la fusion de la PR B (propriétaire, dans l'ordre)
 
-État avant : recherche en production **fermée**
+Procédure suivie le 2026-11-21 (compte rendu « Fait le 2026-11-21 » à la
+fin). État avant : recherche en production **fermée**
 (`AI_DISABLED_FEATURES=search`, `ai-text` version 12, celle de la PR #138).
-La PR #139 (modèle par fonctionnalité, consignes durcies) est sur `main` mais
-**pas encore déployée** : le redéploiement de l'étape 2 l'emporte, avec la
-nouvelle version de l'accord.
+La PR #139 (modèle par fonctionnalité, consignes durcies) était sur `main`
+mais pas encore déployée : le redéploiement de l'étape 2 l'a emportée, avec
+la nouvelle version de l'accord.
 
 > ⚠️ **Ordre impératif : redéployer `ai-text` (étape 2) AVANT de retirer
 > `search` de la liste de coupure (étape 3).** La version en service attend
@@ -1449,3 +1458,36 @@ nouvelle version de l'accord.
 Retour arrière : refermer (« Couper et rouvrir la recherche », plus haut).
 L'analyse gratuite, le cache et les étiquettes continuent de marcher ; le
 bouton IA répond alors « momentanément indisponible ».
+
+**Fait le 2026-11-21.** PR B fusionnée (#140, `54fce13`) après trois
+relectures indépendantes par agents et cinq passes de corrections, et
+déployée par Vercel. Puis, dans l'ordre :
+
+- `ai-text` redéployée avec la recherche encore fermée. Vérifié juste
+  avant : `AI_DISABLED_FEATURES` valait `search`, aucun `AI_TEXT_MODEL_…`
+  n'était posé, et le banc local passait sur `54fce13`. Résultat :
+  version 13, « Verify JWT » actif, 401, 204, 403. Ce déploiement a emporté
+  la PR #139 ;
+- bilan et note revérifiés par le propriétaire depuis le site : lignes
+  `ai_usage` `summary` (11 h 38) puis `note` (11 h 40), statut `ok`,
+  `claude-sonnet-5-5`, **0,0055 $** et **0,0098 $**. Recherche vérifiée
+  fermée : accord `search` enregistré en `2026-11-v1` à la carte d'accord,
+  puis réponse 503 de la fonction, sans aucune ligne `ai_usage` ;
+- `AI_DISABLED_FEATURES` supprimé (absence vérifiée dans la liste des
+  secrets), `ai-text` redéployée (version 15, « Verify JWT » actif) : 401,
+  204, 403. `ai-identify` et `delete-account` gardent le même code (leur
+  numéro de version monte à chaque changement de secret) ;
+- première recherche réelle du propriétaire depuis le site, à 11 h 46 :
+  ligne `ai_usage` `search`, statut `ok`, `claude-sonnet-5-5`, 5 024 tokens
+  en entrée et 129 en sortie, **0,0113 $**. La même phrase rejouée n'a
+  produit aucun nouvel appel : une seule ligne `ai_usage`, un seul envoi
+  dans le journal de la fonction.
+
+Pas vérifié par cette procédure : la dépense affichée dans la Console
+Anthropic ; les étiquettes proposées à l'écran et la recherche du lieu sur
+OpenStreetMap, que seul le propriétaire a vues.
+
+**Troisième lot (recherche en langage naturel) terminé.** Les quatre
+fonctions de l'assistant (photo, bilan du mois, note → fiche, recherche)
+sont ouvertes en production : le plan
+`docs/plans/assistant-ia-phases-2-4.md` est achevé.
