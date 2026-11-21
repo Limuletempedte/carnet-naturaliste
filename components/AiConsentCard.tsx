@@ -126,13 +126,13 @@ export const SearchConsentText: React.FC = () => (
                 <li>Destinataire : Anthropic, via Anthropic Ireland Ltd pour l'Espace économique européen.</li>
                 <li>Transfert hors de l'UE : les données sont stockées aux <strong>États-Unis</strong> et peuvent être traitées hors de l'UE, dans le cadre des clauses contractuelles types de l'UE.</li>
                 <li>Chez Anthropic : effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Par défaut, ces données ne servent pas à entraîner les modèles.</li>
-                <li>Dans le Carnet : les phrases interprétées par l'assistant, même celles où il ne trouve aucun critère, sont gardées dans ce navigateur (50 au plus), avec leurs filtres, sans date calculée ni position, pour être rejouées sans nouvelle utilisation, même hors ligne. Elles sont effacées de cet appareil si vous retirez cet accord ici, et avec votre compte. Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la phrase ni les filtres.</li>
+                <li>Dans le Carnet : les phrases interprétées par l'assistant, même celles où il ne trouve aucun critère, sont gardées dans ce navigateur (les 50 dernières, 12 mois au plus), avec leurs filtres, sans date calculée ni position, pour être rejouées sans nouvelle utilisation, même hors ligne. Elles restent après une déconnexion ; elles sont effacées de cet appareil si vous y retirez cet accord dans « Assistant IA », et avec votre compte. Le journal d'usage (date, modèle, volume traité, coût, résultat technique) est gardé 3 mois, sans la phrase ni les filtres.</li>
             </ul>
         </div>
         <div>
             <p className="font-semibold text-nature-dark dark:text-white">Lieux</p>
             <ul className="list-disc pl-5 space-y-1">
-                <li>« Près de chez moi » utilise la position actuelle de votre appareil, après l'autorisation de votre navigateur. Elle sert au filtre sur l'appareil seulement : elle n'est ni envoyée à l'assistant, ni gardée.</li>
+                <li>« Près de chez moi » utilise la position actuelle de votre appareil, après l'autorisation de votre navigateur. Elle sert au filtre sur l'appareil seulement : elle n'est ni envoyée à l'assistant, ni enregistrée (pas même dans un préréglage de filtres).</li>
                 <li>Un lieu nommé (« près de Pessac ») est cherché sur la carte d'OpenStreetMap (service Nominatim), qui reçoit ce nom.</li>
             </ul>
         </div>

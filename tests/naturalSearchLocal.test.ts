@@ -154,6 +154,104 @@ describe('analyse locale : groupes, catégories, statuts, milieux', () => {
     });
 });
 
+describe('analyse locale : la recherche par nom d’abord', () => {
+    it.each(['Mars', 'Petit Mars changeant', 'Cèpe d’été', 'Saint-Mars-du-Désert', 'Hygrophore de mars', 'mars', 'été', 'printemps'])(
+        '« %s » : ni mois ni saison sans contexte temporel', (phrase) => {
+            const result = analyze(phrase);
+            expect(result.criteria.period).toBeNull();
+            expect(result.hasCriteria).toBe(false);
+            expect(result.criteria.text).toBe(phrase);
+        });
+
+    it.each(['commune de Fougères', 'Étang des Canards', 'Île aux Oiseaux'])('« %s » : un nom propre reste un nom', (phrase) => {
+        const result = analyze(phrase);
+        expect(result.hasCriteria).toBe(false);
+        expect(result.criteria.text).toBe(phrase);
+    });
+
+    it('un mois ou une saison avec un contexte temporel', () => {
+        for (const phrase of ['en mai', 'mai dernier', 'mai 2024', 'au printemps', 'cet été', "l'hiver dernier", "pendant l'hiver", 'tout l’été', 'été 2023']) {
+            expect(analyze(phrase).criteria.period ?? analyze(phrase).criteria.years.length, phrase).toBeTruthy();
+        }
+    });
+
+    it('un mot seul reconnu n’est pas « clairement une phrase » ; avec un mot outil ou deux critères, si', () => {
+        expect(analyze('Fougères').clearlyPhrase).toBe(false);
+        expect(analyze('rapaces nocturnes').clearlyPhrase).toBe(false);
+        expect(analyze('les fougères').clearlyPhrase).toBe(true);
+        expect(analyze('rapaces 2024').clearlyPhrase).toBe(true);
+        expect(analyze('buse').clearlyPhrase).toBe(false);
+    });
+
+    it('des passages non compris séparés ne sont jamais collés', () => {
+        const result = analyze('chouette effraie en mai à Pessac');
+        expect(result.criteria.text).toBeNull();
+        expect(result.fragments).toEqual(['chouette effraie', 'Pessac']);
+        expect(result.criteria.period).toMatchObject({ month: 5 });
+    });
+
+    it('mot outil : un petit mot DANS un nom ne fait pas une phrase', () => {
+        expect(analyze('Cèpe d’été').hasFunctionWord).toBe(false);
+        expect(analyze('Saint-Mars-du-Désert').hasFunctionWord).toBe(false);
+        expect(analyze('mésange charbonnière').hasFunctionWord).toBe(false);
+        expect(analyze('hérons cendrés près de Castelbrume').hasFunctionWord).toBe(true);
+        expect(analyze('les oiseaux').hasFunctionWord).toBe(true);
+    });
+
+    it('clés héritées d’Object : jamais une saison, un nombre ou un critère', () => {
+        for (const phrase of ['les oiseaux constructor', 'en constructor', 'cet constructor', 'les constructor derniers jours', 'toString', '__proto__ hiver', 'en hasOwnProperty']) {
+            const result = analyze(phrase);
+            expect(result.criteria.period, phrase).toBeNull();
+        }
+    });
+});
+
+describe('analyse locale : cas relevés à la relecture croisée', () => {
+    it('« les oiseaux limicoles » : la catégorie seule', () => {
+        const result = analyze('les oiseaux limicoles');
+        expect(result.criteria.categories).toEqual(['limicoles']);
+        expect(result.criteria.groups).toEqual([]);
+    });
+
+    it('les participes ne sont ni des qualificatifs ni une saison', () => {
+        expect(analyze('rapaces entendus en mai').criteria).toMatchObject({ categories: ['rapaces_diurnes', 'rapaces_nocturnes'], text: null });
+        expect(analyze('hérons aperçus en juin').criteria).toMatchObject({ categories: ['ardeides'], text: null });
+        const ayant = analyze('oiseaux ayant été vus en mai');
+        expect(ayant.criteria.period).toMatchObject({ kind: 'month', month: 5 });
+        expect(ayant.understood).toBe(true);
+    });
+
+    it('« dans les environs de Bordeaux » n’est pas la position actuelle', () => {
+        expect(analyze('dans les environs de Bordeaux').criteria.near).toBeNull();
+        expect(analyze('dans le coin').criteria.near).toMatchObject({ kind: 'current_position' });
+    });
+
+    it('bornes d’années dans n’importe quel ordre', () => {
+        expect(analyze('de 2022 à 2020').criteria.years).toEqual([2020, 2021, 2022]);
+        expect(analyze('entre 2022 et 2020').criteria.years).toEqual([2020, 2021, 2022]);
+    });
+
+    it('« menaces » (le nom) n’est pas « menacés »', () => {
+        expect(analyze('menaces').criteria.statuses).toEqual([]);
+        expect(analyze('menacés').criteria.statuses).toEqual([Status.VU, Status.EN, Status.CR]);
+        expect(analyze('quasi menacées').criteria.statuses).toEqual([Status.NT]);
+    });
+
+    it('un rayon de 0 km devient 0,1 km, jamais 10', () => {
+        expect(analyze('à moins de 0 km de chez moi').criteria.near?.radiusKm).toBe(0.1);
+        expect(analyze('dans un rayon de 5km autour de moi').criteria.near?.radiusKm).toBe(5);
+    });
+
+    it('départements : Corse, 2A et 2B reconnus ; un numéro inconnu ne l’est pas', () => {
+        expect(analyze('en Corse').criteria.department).toBe('Corse');
+        expect(analyze('dans le 2A').criteria.department).toBe('2A');
+        expect(analyze('dans le 2b').criteria.department).toBe('2B');
+        const unknown = analyze('dans le 99');
+        expect(unknown.criteria.department).toBeNull();
+        expect(unknown.understood).toBe(false);
+    });
+});
+
 describe('analyse locale : nom simple et utilitaires', () => {
     it('un nom d’espèce seul n’a aucun critère : recherche par nom comme avant', () => {
         const result = analyze('buse variable');

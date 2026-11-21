@@ -1315,42 +1315,44 @@ la recherche est en production **fermée** (`AI_DISABLED_FEATURES=search`,
 #### PR B (application et textes légaux)
 
 Ce que voit l'utilisateur, dans la liste des observations (téléphone et
-ordinateur) :
+ordinateur). Principe : **la recherche par nom d'abord**, jamais moins bonne
+qu'avant la PR (l'analyse gratuite est en service pour tous dès la fusion,
+même IA fermée) :
 
-- le champ « Rechercher » accepte un nom (recherche par nom, à chaque
-  frappe, comme avant) **ou une phrase** (« les rapaces vus en mai près de
-  chez moi ») ;
-- chaque saisie passe par l'**analyse locale gratuite**
-  (`utils/naturalSearchLocal.ts`, aucun appel) : mois, années (et « de 2020
-  à 2022 »), ce mois-ci, le mois dernier, cette année, l'an dernier,
-  aujourd'hui, les N derniers jours ou semaines, saisons (« cet été »,
-  « l'hiver dernier »), groupes et leurs synonymes (« papillons » = les deux
-  groupes), catégories du dictionnaire par leurs synonymes, statuts
-  (« menacées » = VU, EN, CR), quelques milieux (« en forêt », « en
-  montagne »…), un département après « en » ou « dans le » (« en Gironde »,
-  « dans le 33 »), « près de chez moi » (rayon écrit compris). Un nom suivi
-  d'un qualificatif (« hirondelles rustiques ») reste en texte libre ;
-- ce qui est compris s'affiche en étiquettes « J'ai compris : … », retirables
-  une à une ; **rien n'est appliqué** avant Entrée ou « Appliquer ». Entrée
-  n'appelle **jamais** l'assistant. Appliquer **remplace** les filtres en
-  cours (le tri est gardé) ; « Annuler la recherche » rend ceux d'avant ;
-  « Réinitialiser les filtres » efface tout ;
-- si l'analyse gratuite ne comprend pas tout (au moins deux mots, ou des mots
-  restants à côté de critères compris), un bouton **« Interpréter avec
-  l'IA »** (1 utilisation, désactivé hors ligne) envoie la phrase ; carte
-  d'accord `search` au premier usage, à l'endroit même ; la réponse
-  s'affiche en étiquettes avant toute application ;
+- sans recherche en langage naturel appliquée, chaque frappe filtre **par
+  nom**, exactement comme avant, quoi qu'on tape (« buse », « Fougères »,
+  « Petit Mars changeant ») ; un pluriel simple est ignoré des deux côtés
+  (« canards colverts » trouve « Canard colvert ») ;
+- l'**analyse locale gratuite** (`utils/naturalSearchLocal.ts`, aucun appel)
+  **propose** en plus ce qu'elle reconnaît : un mois ou une saison seulement
+  avec un contexte temporel (« en mai », « mai 2024 », « l'été dernier »),
+  années, périodes relatives, groupes et catégories (jamais dans un nom :
+  « Étang des Canards », « Île aux Oiseaux »), statuts, quelques milieux, un
+  département après « en » ou « dans le », « près de chez moi » ;
+- Entrée n'applique la proposition que pour une **phrase claire** (mot
+  outil, ou plusieurs critères) ; un mot seul reconnu (« Fougères ») reste une
+  recherche par nom, et son filtre ne s'applique que sur « Appliquer ce
+  filtre ». Des passages non compris séparés (« chouette effraie en mai à
+  Pessac ») ne sont jamais collés : rien n'est appliqué ;
+- étiquettes « J'ai compris : … » retirables une à une ; une recherche
+  appliquée ne change plus avant « Appliquer » ; la croix l'efface ;
+  « Annuler la recherche » rend les filtres d'avant (le tri est gardé) ;
+- « **Interpréter avec l'IA** » n'est proposé que pour une phrase (mot outil
+  ou critère reconnu) qui garde des mots non compris, jamais pour un simple
+  nom (« buse variable ») ; sans accès approuvé, un lien discret vers
+  « Assistant IA » remplace le bouton. L'état de l'assistant n'est lu qu'à ce
+  moment-là. Carte d'accord `search` au premier usage, à l'endroit même ;
 - une phrase interprétée est gardée dans le navigateur
-  (`ai-search-phrases-v1:<id>`, 50 au plus, forme relative, sans date ni
-  position, versionnée avec le dictionnaire) : rejouée, elle ne coûte rien
-  et marche hors ligne ;
+  (`ai-search-phrases-v1:<id>`, 50 au plus, **12 mois** au plus, forme
+  relative, sans date calculée ni position, versionnée avec le dictionnaire,
+  gardée après une déconnexion) : rejouée, elle ne coûte rien et marche hors
+  ligne. Une phrase en cours d'interprétation n'est jamais renvoyée, même
+  après un passage par la carte ou une rotation de l'écran ;
 - « près de chez moi » demande la position au navigateur **au moment
-  d'appliquer** ; refusée ou introuvable, l'étiquette le dit (« Réessayer »),
-  le critère n'est jamais abandonné en silence. Un lieu nommé (rendu par
-  l'assistant) est cherché par Nominatim (`searchAddress`) ;
-- les étiquettes restent visibles sur la carte et dans la galerie (même
-  filtres) ; un preset n'enregistre pas les critères propres à la recherche
-  (un message le dit).
+  d'appliquer** ; refusée ou introuvable, l'étiquette le dit (« Réessayer »).
+  La position n'est jamais enregistrée, pas même dans un préréglage. Un lieu
+  nommé (rendu par l'assistant) est cherché par Nominatim (`searchAddress`) ;
+- les étiquettes restent visibles sur la carte et dans la galerie.
 
 Côté fonction, seule la version de l'accord change : `CONSENT_VERSIONS.search`
 = `2026-11-v1` (égalité stricte avec l'application, testée). `index.ts`

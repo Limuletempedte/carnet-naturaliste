@@ -294,7 +294,9 @@ export type ResolvedPeriod =
     /** Ces mois, toutes les années. */
     | { kind: 'months'; months: number[]; label: string }
     /** Entièrement à venir : aucune observation. */
-    | { kind: 'future'; label: string };
+    | { kind: 'future'; label: string }
+    /** Période illisible (saison inconnue…) : non appliquée. */
+    | { kind: 'unknown'; label: string };
 
 /**
  * Hiver de l'année Y : de décembre Y-1 à fin février Y (29 février compris
@@ -353,7 +355,8 @@ export const resolvePeriod = (period: SearchPeriod, now: Date): ResolvedPeriod =
             return { kind: 'range', start: startIso, end: today, label };
         }
         case 'month': {
-            const m = period.month ?? 1;
+            const m = period.month ?? 0;
+            if (!Number.isInteger(m) || m < 1 || m > 12) return { kind: 'unknown', label: 'période inconnue, non appliquée' };
             const name = MONTH_NAMES[m - 1];
             switch (period.yearScope) {
                 case 'this_year':
@@ -369,7 +372,9 @@ export const resolvePeriod = (period: SearchPeriod, now: Date): ResolvedPeriod =
             }
         }
         case 'season': {
-            const season = period.season ?? 'spring';
+            const season = period.season;
+            // Jamais une clé héritée d'Object (« constructor ») : saison inconnue, rien d'appliqué.
+            if (season === null || !Object.hasOwn(SEASON_MONTHS, season)) return { kind: 'unknown', label: 'période inconnue, non appliquée' };
             const months = SEASON_MONTHS[season];
             const name = SEASON_NAMES[season];
             if (period.yearScope === 'all' || period.yearScope === null) {
@@ -397,7 +402,7 @@ export const resolvePeriod = (period: SearchPeriod, now: Date): ResolvedPeriod =
             return range(start, end, `${name}${period.yearScope === 'most_recent' ? ' dernier' : ''} (${dates})`);
         }
         default:
-            return { kind: 'future', label: 'période inconnue' };
+            return { kind: 'unknown', label: 'période inconnue, non appliquée' };
     }
 };
 
@@ -520,15 +525,6 @@ const joinFr = (items: readonly string[]): string =>
 const categoryLabel = (key: string): string =>
     TAXON_CATEGORIES.find(category => category.key === key)?.label ?? key;
 
-/**
- * Texte libre prêt pour la recherche par nom (sous-chaîne) : un pluriel
- * simple est ramené au singulier (« canards colverts » trouve « Canard
- * colvert »). Retirer un « s » ou un « x » final ne fait qu'élargir la
- * recherche, jamais la restreindre.
- */
-export const singularizeSearchText = (text: string): string =>
-    text.split(/(\s+)/).map(part => (/^\p{L}{4,}$/u.test(part) && /[sx]$/i.test(part) && !/ss$/i.test(part) ? part.slice(0, -1) : part)).join('');
-
 /** Libellé de l'étiquette « près de… » selon l'état de la recherche du lieu. */
 export const nearLabel = (near: SearchNear, resolution: NearResolution | undefined): { label: string; tone: SearchChip['tone'] } => {
     const where = near.kind === 'current_position' ? 'autour de ma position actuelle' : `autour de ${near.placeName ?? ''}`;
@@ -623,6 +619,9 @@ export const buildFilterPlan = (criteria: SearchCriteria, now: Date, near?: Near
                 aiFilter.nothing = true;
                 tone = 'warning';
                 break;
+            case 'unknown':
+                tone = 'error';
+                break;
         }
         chips.push({ id: 'period', label, tone, ref: { field: 'period' } });
     }
@@ -680,7 +679,8 @@ export const buildFilterPlan = (criteria: SearchCriteria, now: Date, near?: Near
     }
 
     if (criteria.text) {
-        writes.searchTerm = singularizeSearchText(criteria.text);
+        // Le texte tel qu'il est : la recherche par nom ignore elle-même un pluriel simple (utils/textUtils.ts).
+        writes.searchTerm = criteria.text;
         owners.searchTerm = 'text';
         chips.push({ id: 'text', label: `nom ou lieu contenant « ${criteria.text} »`, tone: 'ok', ref: { field: 'text' } });
     }

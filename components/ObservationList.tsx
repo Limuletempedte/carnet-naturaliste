@@ -17,7 +17,7 @@ import { useLiquidGlassRefraction } from './LiquidGlass';
 import { SpinnerIcon, PlusIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from './icons';
 import EmptyState from './EmptyState';
 import NaturalSearch from './NaturalSearch';
-import type { AppliedNaturalSearch, NaturalSearchInput } from '../hooks/useFilterControls';
+import type { AiSearchProposal, AppliedNaturalSearch, NaturalSearchInput } from '../hooks/useFilterControls';
 import type { CriterionRef, NearResolution, SearchNear } from '../utils/aiSearchFilters';
 
 // Formats d'export : une couleur par format, partagée entre le menu « Exporter »
@@ -84,9 +84,22 @@ interface ObservationListProps {
     excludedNoLatinName?: number;
     isOffline?: boolean;
     onOpenAiAccess?: () => void;
+    /** Texte du champ et dernière réponse de l'assistant, gardés par App (remontage). */
+    naturalDraft?: string;
+    onNaturalDraftChange?: (value: string) => void;
+    lastAiProposal?: AiSearchProposal | null;
+    onLastAiProposalChange?: (proposal: AiSearchProposal | null) => void;
+    onClearNaturalSearch?: () => void;
+    onReplaceWithNameSearch?: (text: string) => void;
 }
 
 const noop = () => undefined;
+
+/** Années du sélecteur : celles des observations, plus l'année active (même sans observation). */
+export const yearOptions = (availableYears: string[], yearFilter: string): string[] =>
+    yearFilter === 'all' || availableYears.includes(yearFilter)
+        ? availableYears
+        : [...availableYears, yearFilter].sort((a, b) => Number(b) - Number(a));
 
 const ObservationList: React.FC<ObservationListProps> = ({
     observations,
@@ -126,7 +139,19 @@ const ObservationList: React.FC<ObservationListProps> = ({
     excludedNoLatinName = 0,
     isOffline = false,
     onOpenAiAccess,
+    naturalDraft,
+    onNaturalDraftChange,
+    lastAiProposal,
+    onLastAiProposalChange,
+    onClearNaturalSearch,
+    onReplaceWithNameSearch,
 }) => {
+    // Sans parent qui les garde (tests, ancien usage) : état local.
+    const [localDraft, setLocalDraft] = useState(() => naturalSearch?.phrase ?? searchTerm);
+    const [localAiProposal, setLocalAiProposal] = useState<AiSearchProposal | null>(null);
+    const draft = naturalDraft ?? localDraft;
+    const setDraft = onNaturalDraftChange ?? setLocalDraft;
+    const yearChoices = yearOptions(availableYears, yearFilter);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const tableRef = useRef<HTMLDivElement>(null);
     const [isParsingImport, setIsParsingImport] = React.useState(false);
@@ -335,6 +360,12 @@ const ObservationList: React.FC<ObservationListProps> = ({
             inputId={variant === 'desktop' ? 'search-input' : 'search-input-mobile'}
             searchTerm={searchTerm}
             onSearchChange={onSearchChange}
+            draft={draft}
+            onDraftChange={setDraft}
+            aiProposal={lastAiProposal ?? (onLastAiProposalChange ? null : localAiProposal)}
+            onAiProposalChange={onLastAiProposalChange ?? setLocalAiProposal}
+            onClearNatural={onClearNaturalSearch ?? (() => { onResetAllFilters(); setDraft(''); })}
+            onReplaceWithNameSearch={onReplaceWithNameSearch ?? (text => { onResetAllFilters(); onSearchChange(text); setDraft(text); })}
             naturalSearch={naturalSearch}
             onApply={onApplyNaturalSearch}
             onRemoveCriterion={onRemoveNaturalCriterion}
@@ -536,7 +567,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                 className="bg-gray-100 dark:bg-white/10 px-3 py-1.5 rounded-lg text-base font-medium whitespace-nowrap dark:text-white border-none outline-none"
                             >
                                 <option value="all">Toutes années</option>
-                                {availableYears.map(year => (
+                                {yearChoices.map(year => (
                                     <option key={year} value={year}>{year}</option>
                                 ))}
                             </select>
@@ -693,7 +724,7 @@ const ObservationList: React.FC<ObservationListProps> = ({
                                         className="w-full py-4 px-5 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white appearance-none cursor-pointer outline-none"
                                     >
                                         <option value="all">Toutes les années</option>
-                                        {availableYears.map(year => (
+                                        {yearChoices.map(year => (
                                             <option key={year} value={year} className="text-gray-900 dark:text-white bg-white dark:bg-nature-dark-surface">{year}</option>
                                         ))}
                                     </select>

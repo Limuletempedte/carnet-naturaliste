@@ -12,12 +12,12 @@ import {
     parseSearchResult,
     removeCriterion,
     resolvePeriod,
-    singularizeSearchText,
     type SearchCriteria,
     type SearchPeriod,
 } from '../utils/aiSearchFilters';
 import { normalizeDepartment, observationInDepartment } from '../utils/frenchDepartments';
 import { distanceKm } from '../utils/geoDistance';
+import { searchTextMatches } from '../utils/textUtils';
 
 /** Date locale figée (jamais l'heure réelle). */
 const at = (iso: string) => {
@@ -138,7 +138,7 @@ describe('plan de filtres', () => {
         const plan = buildFilterPlan(criteria({
             years: [2024], groups: [TaxonomicGroup.MAMMAL], statuses: [Status.VU], text: 'canards colverts',
         }), now);
-        expect(plan.writes).toEqual({ yearFilter: '2024', taxonomicGroupFilter: TaxonomicGroup.MAMMAL, statusFilter: Status.VU, searchTerm: 'canard colvert' });
+        expect(plan.writes).toEqual({ yearFilter: '2024', taxonomicGroupFilter: TaxonomicGroup.MAMMAL, statusFilter: Status.VU, searchTerm: 'canards colverts' });
         expect(plan.aiFilter).toBeNull();
         expect(plan.owners).toEqual({ yearFilter: 'years', taxonomicGroupFilter: 'groups', statusFilter: 'statuses', searchTerm: 'text' });
         const dates = buildFilterPlan(criteria({ period: period('last_month') }), now);
@@ -214,6 +214,14 @@ describe('plan de filtres', () => {
         expect(observationInDepartment('33', '33')).toBe(true);
         expect(observationInDepartment('Gironde', '33')).toBe(true);
         expect(observationInDepartment('20', '2B')).toBe(true);
+        // « Corse » ou « 20 » : 2A, 2B et 20.
+        expect(normalizeDepartment('Corse')).toBe('20');
+        expect(normalizeDepartment('20')).toBe('20');
+        expect(observationInDepartment('2A', '20')).toBe(true);
+        expect(observationInDepartment('Haute-Corse', '20')).toBe(true);
+        expect(observationInDepartment('20', '20')).toBe(true);
+        expect(observationInDepartment('33', '20')).toBe(false);
+        expect(buildFilterPlan(criteria({ department: 'Corse' }), now).chips[0].label).toBe('Corse (20)');
         expect(observationInDepartment('', '33')).toBe(false);
         const plan = buildFilterPlan(criteria({ department: 'Gironde' }), now);
         expect(plan.aiFilter?.department).toBe('33');
@@ -311,11 +319,25 @@ describe('relecture des critères (réponse de la fonction ou cache)', () => {
         expect(plan.chips.find(chip => chip.id === 'period')?.tone).toBe('error');
     });
 
-    it('le texte libre passe au singulier pour la recherche par nom', () => {
-        expect(singularizeSearchText('canards colverts')).toBe('canard colvert');
-        expect(singularizeSearchText('hiboux')).toBe('hibou');
-        expect(singularizeSearchText('lézard des murailles')).toBe('lézard des muraille');
-        expect(singularizeSearchText('Pessac')).toBe('Pessac');
+    it('le texte cherché reste tel quel ; la recherche par nom ignore un pluriel simple des deux côtés', () => {
+        expect(buildFilterPlan(criteria({ text: 'canards colverts' }), at('2026-11-21')).writes.searchTerm).toBe('canards colverts');
+        for (const [query, name] of [
+            ['canards colverts', 'Canard colvert'], ['courlis cendré', 'Courlis cendré'], ['ours brun', 'Ours brun'],
+            ['lynx boréal', 'Lynx boréal'], ['choucas des tours', 'Choucas des tours'], ['hiboux', 'Hibou grand-duc'],
+            ['hirondelles rustiques', 'Hirondelle rustique'], ['lis', 'Courlis cendré'], ['merl', 'Merle noir'],
+        ]) {
+            expect(searchTextMatches(name, query), `${query} → ${name}`).toBe(true);
+        }
+        expect(searchTextMatches('Buse variable', 'canard')).toBe(false);
+    });
+
+    it('une saison ou un mois illisible n’est jamais appliqué (clés héritées d’Object)', () => {
+        const bogus = { kind: 'season', days: null, month: null, season: 'constructor', yearScope: 'all' } as unknown as SearchPeriod;
+        expect(resolvePeriod(bogus, at('2026-11-21')).kind).toBe('unknown');
+        const plan = buildFilterPlan(criteria({ period: bogus }), at('2026-11-21'));
+        expect(plan.aiFilter).toBeNull();
+        expect(plan.chips[0].tone).toBe('error');
+        expect(parseSearchResult({ period: { kind: 'season', season: '__proto__', yearScope: 'all' } })?.dropped).toEqual(['period']);
     });
 
     it('la distance (haversine) est partagée avec les filtres de la liste', () => {

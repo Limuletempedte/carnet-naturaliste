@@ -120,7 +120,11 @@ const ALIASES: Readonly<Record<string, string>> = {
     belfort: '90',
     'corse du sud': '2A',
     'haute corse': '2B',
+    corse: '20',
 };
+
+/** « Corse » ou « 20 » (code postal) : les deux départements corses. */
+export const CORSICA_CODE = '20';
 
 /** Sans casse ni accents ; traits d'union, apostrophes et espaces repliés en une espace. */
 export const foldPlaceName = (value: string): string => value
@@ -153,6 +157,7 @@ export const normalizeDepartment = (value: string | null | undefined): string | 
     const upper = folded.replace(/\s+/g, '').toUpperCase();
     if (/^\d{1,3}$/.test(upper)) {
         const code = upper.length === 1 ? `0${upper}` : upper;
+        if (code === CORSICA_CODE) return CORSICA_CODE;
         return CODES.has(code) ? code : null;
     }
     if (upper === '2A' || upper === '2B') return upper;
@@ -162,7 +167,7 @@ export const normalizeDepartment = (value: string | null | undefined): string | 
 
 /** Nom d'un département à partir de son numéro (« 33 » → « Gironde »). */
 export const departmentName = (code: string): string | null =>
-    FRENCH_DEPARTMENTS.find(department => department.code === code)?.name ?? null;
+    code === CORSICA_CODE ? 'Corse' : FRENCH_DEPARTMENTS.find(department => department.code === code)?.name ?? null;
 
 /**
  * L'observation est-elle dans ce département ? Son champ peut contenir un
@@ -171,7 +176,9 @@ export const departmentName = (code: string): string | null =>
 export const observationInDepartment = (observationDepartment: string | null | undefined, code: string): boolean => {
     if (typeof observationDepartment !== 'string' || observationDepartment.trim() === '') return false;
     const raw = observationDepartment.trim();
-    // Code postal de Corse : « 20 » vaut les deux départements.
-    if ((code === '2A' || code === '2B') && raw === '20') return true;
-    return normalizeDepartment(raw) === code;
+    const own = normalizeDepartment(raw);
+    // Code postal de Corse : « 20 » vaut les deux départements, et « Corse » couvre 2A, 2B et 20.
+    if (code === CORSICA_CODE) return own === CORSICA_CODE || own === '2A' || own === '2B';
+    if ((code === '2A' || code === '2B') && own === CORSICA_CODE) return true;
+    return own === code;
 };

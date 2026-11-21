@@ -11,10 +11,17 @@ import {
     type AiAssistErrorCode,
     type AiOverview,
 } from '../services/aiAssistService';
-import { naturalSearchCachePurges, readCachedSearch, rememberSearch } from '../services/naturalSearchCache';
+import {
+    interpretationInFlight,
+    naturalSearchCachePurges,
+    readCachedSearch,
+    rememberSearch,
+    subscribeNaturalSearchCache,
+    trackInterpretation,
+} from '../services/naturalSearchCache';
 import { resolveNear } from '../services/naturalSearchPlace';
 import { captureSessionContext, isSessionCurrent, subscribeSessionChange, type SessionContext } from '../services/sessionScope';
-import type { AppliedNaturalSearch, NaturalSearchInput } from '../hooks/useFilterControls';
+import type { AiSearchProposal, AppliedNaturalSearch, NaturalSearchInput } from '../hooks/useFilterControls';
 import {
     AI_SEARCH_LIMITS,
     buildFilterPlan,
@@ -28,7 +35,7 @@ import {
     type SearchCriteria,
     type SearchNear,
 } from '../utils/aiSearchFilters';
-import { analyzeNaturalSearch, countWords } from '../utils/naturalSearchLocal';
+import { analyzeNaturalSearch } from '../utils/naturalSearchLocal';
 import AiButton from './AiButton';
 import AiConsentCard from './AiConsentCard';
 import { SparklesIcon, XMarkIcon } from './icons';
@@ -160,6 +167,8 @@ interface NaturalSearchAppliedProps {
     /** Un parcours de l'assistant est en cours : la recherche appliquée ne change pas. */
     locked?: boolean;
     compact?: boolean;
+    /** Titre de la section, pour que le parent puisse y mettre le focus. */
+    headingRef?: React.MutableRefObject<HTMLParagraphElement | null>;
 }
 
 /**
@@ -178,9 +187,11 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
     onEmptied,
     locked = false,
     compact = false,
+    headingRef: outerHeadingRef,
 }) => {
     const headingId = useId();
-    const headingRef = useRef<HTMLParagraphElement | null>(null);
+    const ownHeadingRef = useRef<HTMLParagraphElement | null>(null);
+    const headingRef = outerHeadingRef ?? ownHeadingRef;
     const removeRefs = useRef<Array<HTMLButtonElement | null>>([]);
     const [retrying, setRetrying] = useState(false);
     const focusAfterRemove = useRef<number | null>(null);
@@ -194,7 +205,7 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
         focusAfterRemove.current = null;
         const target = removeRefs.current[Math.min(index, chips.length - 1)];
         (target ?? headingRef.current)?.focus();
-    }, [chips]);
+    }, [chips, headingRef]);
 
     const handleRetry = async () => {
         const near = naturalSearch.criteria.near;
@@ -210,6 +221,8 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
         // Lié à SON critère : ignoré si une autre recherche est appliquée entre-temps.
         onUpdateNear(resolution, near);
         onAnnounce?.(resolution.status === 'ok' ? 'Lieu trouvé : critère appliqué.' : `${nearLabel(near, resolution).label}.`);
+        // « Réessayer » disparaît si le lieu est trouvé : le focus va au titre de la section.
+        headingRef.current?.focus();
     };
 
     return (
@@ -255,6 +268,58 @@ export const NaturalSearchApplied: React.FC<NaturalSearchAppliedProps> = ({
 };
 
 // ---------------------------------------------------------------------------
+// État de l'assistant (accès, compteur), lu seulement quand le bouton IA
+// doit s'afficher, et partagé entre les instances du champ
+// ---------------------------------------------------------------------------
+
+interface AccessMemo {
+    userId: string;
+    approved: boolean;
+    remaining: number | null;
+    at: number;
+}
+const ACCESS_MEMO_MS = 5 * 60_000;
+let accessMemo: AccessMemo | null = null;
+let accessRequest: { userId: string; promise: Promise<AccessMemo | null> } | null = null;
+
+/** Pour les tests : oublie l'état de l'assistant gardé en mémoire. */
+export const resetNaturalSearchAccessMemo = (): void => {
+    accessMemo = null;
+    accessRequest = null;
+};
+
+const rememberAccess = (context: SessionContext, overview: AiOverview): AccessMemo => {
+    const approved = overview.access.kind === 'approved';
+    accessMemo = {
+        userId: context.userId,
+        approved,
+        remaining: overview.access.kind === 'approved' ? overview.access.remaining : null,
+        at: Date.now(),
+    };
+    return accessMemo;
+};
+
+const freshAccess = (userId: string): AccessMemo | null =>
+    (accessMemo && accessMemo.userId === userId && Date.now() - accessMemo.at < ACCESS_MEMO_MS ? accessMemo : null);
+
+/** Lit l'état de l'assistant une seule fois pour toutes les instances (StrictMode compris). */
+const loadAccess = (context: SessionContext): Promise<AccessMemo | null> => {
+    const fresh = freshAccess(context.userId);
+    if (fresh) return Promise.resolve(fresh);
+    if (accessRequest && accessRequest.userId === context.userId) return accessRequest.promise;
+    const promise = getAiOverview(context)
+        .then(overview => (isSessionCurrent(context) ? rememberAccess(context, overview) : null))
+        .catch(() => null)
+        .finally(() => { if (accessRequest?.promise === promise) accessRequest = null; });
+    accessRequest = { userId: context.userId, promise };
+    return promise;
+};
+
+const currentUserId = (): string | null => {
+    try { return captureSessionContext().userId; } catch { return null; }
+};
+
+// ---------------------------------------------------------------------------
 // Champ de recherche
 // ---------------------------------------------------------------------------
 
@@ -262,13 +327,24 @@ interface NaturalSearchProps {
     variant: 'mobile' | 'desktop';
     inputId: string;
     searchTerm: string;
+    /** Recherche par nom (filtre existant), à chaque frappe comme avant. */
     onSearchChange: (value: string) => void;
+    /** Texte du champ, gardé par le parent (un remontage ne le perd pas). */
+    draft: string;
+    onDraftChange: (value: string) => void;
+    /** Dernière réponse de l'assistant, gardée par le parent. */
+    aiProposal: AiSearchProposal | null;
+    onAiProposalChange: (proposal: AiSearchProposal | null) => void;
     naturalSearch: AppliedNaturalSearch | null;
     onApply: (input: NaturalSearchInput) => void;
     onRemoveCriterion: (ref: CriterionRef) => void;
     onUpdateNear: (near: NearResolution, forNear?: SearchNear) => void;
     onUndo: () => void;
     onResetAll: () => void;
+    /** Croix « Effacer la recherche » : retire aussi la recherche appliquée. */
+    onClearNatural: () => void;
+    /** Remplace la recherche appliquée par une recherche par nom. */
+    onReplaceWithNameSearch: (text: string) => void;
     hasActiveFilters: boolean;
     excludedNoLatinName: number;
     isOffline?: boolean;
@@ -278,17 +354,21 @@ interface NaturalSearchProps {
 /**
  * Champ « Rechercher » de la liste, avec la recherche en langage naturel.
  *
- * - Chaque saisie passe par l'analyse locale GRATUITE ; si elle reconnaît
- *   des critères (période, groupe, « près de chez moi »…), elle les montre
- *   en étiquettes « J'ai compris : … » ; Entrée ou « Appliquer » les
- *   applique. Sinon, le champ cherche dans les noms, comme avant.
- * - Une phrase que l'analyse gratuite ne comprend pas entièrement peut être
- *   interprétée par l'assistant, sur un bouton explicite (1 utilisation) :
- *   JAMAIS sur Entrée. Accord au premier usage, à l'endroit même.
- * - Rien n'est appliqué avant que les étiquettes soient visibles ; tout
- *   s'annule (« Annuler la recherche »).
+ * Principe : **la recherche par nom d'abord**, jamais moins bonne qu'avant.
+ * - Sans recherche en langage naturel appliquée, chaque frappe filtre par
+ *   nom, exactement comme avant, quoi qu'on tape.
+ * - L'analyse locale GRATUITE propose en plus ce qu'elle reconnaît
+ *   (« J'ai compris : … »). Entrée ne l'applique que pour une phrase
+ *   claire (mot outil, ou plusieurs critères) ; un mot seul (« Fougères »)
+ *   reste une recherche par nom, et son filtre ne s'applique que sur un clic.
+ * - Une phrase en partie comprise peut être interprétée par l'assistant, sur
+ *   un bouton explicite (1 utilisation) : JAMAIS sur Entrée. Accord au
+ *   premier usage, à l'endroit même.
+ * - Une recherche appliquée ne change plus avant « Appliquer » (ou Entrée
+ *   pour une phrase) ; la croix l'efface.
  * - Une phrase interprétée est gardée (cache du navigateur) : rejouée, elle
- *   ne coûte rien et marche hors ligne.
+ *   ne coûte rien et marche hors ligne ; une phrase en cours d'interprétation
+ *   n'est jamais renvoyée, même par une autre instance du champ.
  *
  * Garde-fous repris de la note : un seul envoi à la fois (verrou posé dès le
  * clic), aucun envoi pendant l'enregistrement d'un accord, « Annuler »
@@ -301,12 +381,18 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     inputId,
     searchTerm,
     onSearchChange,
+    draft,
+    onDraftChange,
+    aiProposal,
+    onAiProposalChange,
     naturalSearch,
     onApply,
     onRemoveCriterion,
     onUpdateNear,
     onUndo,
     onResetAll,
+    onClearNatural,
+    onReplaceWithNameSearch,
     hasActiveFilters,
     excludedNoLatinName,
     isOffline = false,
@@ -315,14 +401,22 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const baseId = useId();
     const helpId = `${baseId}-help`;
     const proposalHeadingId = `${baseId}-proposal`;
-    const [draft, setDraft] = useState(() => naturalSearch?.phrase ?? searchTerm);
     const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
-    /** Dernière réponse de l'assistant, pour la phrase qu'elle interprète. */
-    const [aiProposal, setAiProposal] = useState<Proposal | null>(null);
+    /** On attend la réponse d'une interprétation lancée par une autre instance du champ. */
+    const [adopted, setAdopted] = useState(false);
     /** Critères retirés de la proposition avant de l'appliquer. */
     const [removed, setRemoved] = useState<CriterionRef[]>([]);
     const [locating, setLocating] = useState(false);
-    const [remaining, setRemaining] = useState<number | null>(() => readCachedAiCounter()?.remaining ?? null);
+    const [access, setAccess] = useState<'unknown' | 'approved' | 'none'>(() => {
+        const userId = currentUserId();
+        const memo = userId ? freshAccess(userId) : null;
+        if (memo) return memo.approved ? 'approved' : 'none';
+        return readCachedAiCounter() ? 'approved' : 'unknown';
+    });
+    const [remaining, setRemaining] = useState<number | null>(() => {
+        const userId = currentUserId();
+        return (userId ? freshAccess(userId)?.remaining : null) ?? readCachedAiCounter()?.remaining ?? null;
+    });
     const [consentWorking, setConsentWorking] = useState(false);
     const [consentError, setConsentError] = useState<string | null>(null);
     const [announcement, setAnnouncement] = useState('');
@@ -333,16 +427,17 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
      * fois. Il porte le numéro du parcours qui le tient.
      */
     const busyRef = useRef<number | null>(null);
-    /** Incrémenté par « Annuler », un changement de phrase ou de compte, le démontage : la suite s'arrête. */
+    /** Incrémenté par « Annuler », un changement de compte, le démontage : la suite s'arrête. */
     const runRef = useRef(0);
     const abortRef = useRef<AbortController | null>(null);
     /** Incrémenté à chaque nouvelle application : une localisation périmée est ignorée. */
     const applyRunRef = useRef(0);
     const inputRef = useRef<HTMLInputElement | null>(null);
     const aiButtonRef = useRef<HTMLButtonElement | null>(null);
+    const applyButtonRef = useRef<HTMLButtonElement | null>(null);
     const proposalHeadingRef = useRef<HTMLParagraphElement | null>(null);
-    const focusTarget = useRef<'ai' | 'proposal' | 'input' | null>(null);
-    const counterLoaded = useRef(false);
+    const appliedHeadingRef = useRef<HTMLParagraphElement | null>(null);
+    const focusTarget = useRef<'ai' | 'proposal' | 'input' | 'apply' | 'applied' | null>(null);
 
     const draftRef = useRef(draft);
     useEffect(() => { draftRef.current = draft; }, [draft]);
@@ -355,15 +450,18 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         return readCachedSearch(draft);
     }, [draft, trimmed, local.understood, cacheVersion]);
     const cached = cachedRaw && !criteriaIsEmpty(cachedRaw) ? cachedRaw : null;
+    const aiForDraft = aiProposal && aiProposal.phrase === draft ? aiProposal : null;
     const alreadyApplied = naturalSearch !== null && naturalSearch.phrase === draft;
+    /** Plusieurs passages non compris séparés : jamais appliqué tel quel. */
+    const fragmented = local.fragments.length > 0;
 
     const proposal: Proposal | null = useMemo(() => {
         if (trimmed.length === 0 || alreadyApplied) return null;
-        if (aiProposal && aiProposal.phrase === draft && !criteriaIsEmpty(aiProposal.criteria)) return aiProposal;
+        if (aiForDraft && !criteriaIsEmpty(aiForDraft.criteria)) return { phrase: draft, source: 'ai', criteria: aiForDraft.criteria };
         if (cached) return { phrase: draft, source: 'cache', criteria: cached };
-        if (local.hasCriteria) return { phrase: draft, source: 'local', criteria: local.criteria };
+        if (local.hasCriteria && !fragmented) return { phrase: draft, source: 'local', criteria: local.criteria };
         return null;
-    }, [trimmed, alreadyApplied, aiProposal, draft, cached, local]);
+    }, [trimmed, alreadyApplied, aiForDraft, draft, cached, local, fragmented]);
 
     const proposalCriteria = useMemo(() => {
         if (!proposal) return null;
@@ -373,14 +471,17 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         () => (proposalCriteria ? buildFilterPlan(proposalCriteria, new Date(), locating ? { status: 'pending' } : undefined) : null),
         [proposalCriteria, locating],
     );
+    const applicable = proposalCriteria !== null && !criteriaIsEmpty(proposalCriteria);
+    /** Entrée applique seulement une phrase claire, ou ce que l'assistant a interprété à la demande. */
+    const enterApplies = applicable && proposal !== null && (proposal.source !== 'local' || local.clearlyPhrase);
 
     const isWaiting = phase.kind === 'checking' || phase.kind === 'analyzing';
     const lockedInput = isWaiting || phase.kind === 'consent' || consentWorking;
     const tooLong = draft.length > AI_SEARCH_LIMITS.maxInputChars;
-    // Bouton IA : la phrase n'est pas entièrement comprise et n'a pas déjà été interprétée.
-    const offerAi = trimmed.length > 0 && !tooLong && !local.understood && !cachedRaw && !alreadyApplied
-        && !(aiProposal && aiProposal.phrase === draft)
-        && (countWords(draft) >= 2 || local.hasCriteria);
+    // Bouton IA : une phrase (mot outil ou critère reconnu) avec des mots non
+    // compris, pas déjà interprétée. Jamais pour un simple nom (« buse variable »).
+    const offerAi = trimmed.length > 0 && !tooLong && !local.understood && (local.hasFunctionWord || local.hasCriteria)
+        && !cachedRaw && !aiForDraft && !alreadyApplied;
     const showAiZone = offerAi || phase.kind !== 'idle';
 
     // Démontage (onglet Carte, rotation de l'écran…) : l'écran ne suit plus,
@@ -391,45 +492,39 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         applyRunRef.current += 1;
     }, []);
 
-    // Changement de compte : tout repart à zéro (la phrase n'est pas gardée).
+    // Une autre instance (ou le retrait de l'accord) a changé le cache : on relit.
+    useEffect(() => subscribeNaturalSearchCache(() => setCacheVersion(version => version + 1)), []);
+
+    // Changement de compte : tout repart à zéro (le parent vide la phrase).
     useEffect(() => subscribeSessionChange(() => {
         runRef.current += 1;
         applyRunRef.current += 1;
         abortRef.current?.abort();
         abortRef.current = null;
         busyRef.current = null;
-        setDraft('');
-        setAiProposal(null);
         setRemoved([]);
         setPhase({ kind: 'idle' });
+        setAdopted(false);
         setLocating(false);
+        setConsentWorking(false);
+        setConsentError(null);
         setRemaining(null);
+        setAccess('unknown');
         setEmptyMessage(null);
         setAnnouncement('');
     }), []);
 
-    // Recherche appliquée, annulée ou réinitialisée (ici, sur la carte, par
-    // un preset, ou en retirant sa dernière étiquette) : le champ suit.
-    const appliedPhrase = naturalSearch?.phrase ?? null;
-    const previousApplied = useRef(appliedPhrase);
+    // État de l'assistant : lu seulement quand le bouton IA doit s'afficher.
     useEffect(() => {
-        if (previousApplied.current === appliedPhrase) return;
-        previousApplied.current = appliedPhrase;
-        setDraft(appliedPhrase ?? searchTerm);
-        setRemoved([]);
-    }, [appliedPhrase, searchTerm]);
-
-    // Compteur : lu une fois, en silence, quand le bouton IA apparaît.
-    useEffect(() => {
-        if (!offerAi || isOffline || counterLoaded.current) return;
-        counterLoaded.current = true;
+        if (!offerAi || isOffline) return;
         let context: SessionContext;
         try { context = captureSessionContext(); } catch { return; }
         let cancelled = false;
-        getAiOverview(context).then(next => {
-            if (cancelled || !isSessionCurrent(context)) return;
-            setRemaining(next.access.kind === 'approved' ? next.access.remaining : null);
-        }).catch(() => undefined);
+        void loadAccess(context).then(memo => {
+            if (cancelled || !memo || !isSessionCurrent(context)) return;
+            setAccess(memo.approved ? 'approved' : 'none');
+            setRemaining(memo.remaining);
+        });
         return () => { cancelled = true; };
     }, [offerAi, isOffline]);
 
@@ -437,11 +532,17 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     useEffect(() => {
         const target = focusTarget.current;
         if (!target) return;
-        const element = { ai: aiButtonRef.current, proposal: proposalHeadingRef.current, input: inputRef.current }[target];
+        const element = {
+            ai: aiButtonRef.current,
+            proposal: proposalHeadingRef.current,
+            input: inputRef.current,
+            apply: applyButtonRef.current,
+            applied: appliedHeadingRef.current,
+        }[target];
         if (!element) return;
         focusTarget.current = null;
         element.focus();
-    }, [phase, proposal, removed, naturalSearch]);
+    }, [phase, proposal, removed, naturalSearch, locating]);
 
     const lock = (): number | null => {
         if (busyRef.current !== null) return null;
@@ -454,102 +555,163 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         if (busyRef.current === runId) busyRef.current = null;
     };
 
+    /** Compteur connu après un appel : affiché, gardé hors ligne et partagé avec les autres instances. */
+    const noteRemaining = (context: SessionContext, value: number) => {
+        rememberRemaining(value, context);
+        if (accessMemo?.userId === context.userId) accessMemo = { ...accessMemo, remaining: value, at: Date.now() };
+        if (isSessionCurrent(context)) setRemaining(value);
+    };
+
+    const noteOverview = (context: SessionContext, overview: AiOverview) => {
+        const memo = rememberAccess(context, overview);
+        setAccess(memo.approved ? 'approved' : 'none');
+        setRemaining(memo.remaining);
+    };
+
     /** Relit le compteur en arrière-plan (gratuit), après une tentative qui a pu compter. */
     const refreshCounter = (context: SessionContext) => {
         if (!navigator.onLine) return;
         getAiOverview(context).then(next => {
-            if (!isSessionCurrent(context)) return;
-            setRemaining(next.access.kind === 'approved' ? next.access.remaining : null);
+            if (isSessionCurrent(context)) noteOverview(context, next);
         }).catch(() => undefined);
     };
 
+    // Remontage pendant une interprétation lancée ailleurs : on attend SA
+    // réponse (gardée dans le cache), sans jamais renvoyer la phrase.
+    useEffect(() => {
+        let context: SessionContext;
+        try { context = captureSessionContext(); } catch { return; }
+        const phrase = draftRef.current;
+        const pending = phrase.trim() ? interpretationInFlight(phrase, context.userId) : null;
+        if (!pending) return;
+        const runId = lock();
+        if (runId === null) return;
+        setPhase({ kind: 'analyzing' });
+        setAdopted(true);
+        setAnnouncement('Interprétation de la phrase en cours…');
+        void pending.then(() => {
+            if (runRef.current !== runId || !isSessionCurrent(context)) return;
+            setAdopted(false);
+            const found = readCachedSearch(phrase, context);
+            if (found) showInterpretation(phrase, found, 'cache');
+            else setPhase({ kind: 'idle' });
+        }).finally(() => unlock(runId));
+        // Au montage seulement.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const handleChange = (value: string) => {
         if (lockedInput) return;
-        setDraft(value);
+        onDraftChange(value);
         setRemoved([]);
         setEmptyMessage(null);
         applyRunRef.current += 1;
         setLocating(false);
         if (phase.kind === 'error' || phase.kind === 'needs_access') setPhase({ kind: 'idle' });
-        const analysis = analyzeNaturalSearch(value);
-        const cachedHit = !analysis.understood ? readCachedSearch(value) : null;
-        const phraseMode = analysis.hasCriteria || (cachedHit !== null && !criteriaIsEmpty(cachedHit));
-        if (!phraseMode) {
-            // Recherche par nom, comme avant : appliquée à chaque frappe.
-            onSearchChange(value);
-        } else if (naturalSearch === null && searchTerm !== '') {
-            // Une phrase : la recherche par nom ne reflète plus le champ ; rien d'autre n'est appliqué avant « Appliquer ».
-            onSearchChange('');
-        }
+        // Recherche par nom à chaque frappe, exactement comme avant. Une
+        // recherche en langage naturel appliquée, elle, reste telle quelle
+        // jusqu'à « Appliquer » (ou la croix).
+        if (naturalSearch === null) onSearchChange(value);
     };
 
-    const loadOverview = async (context: SessionContext, runId: number, timeoutMs?: number): Promise<AiOverview | null> => {
+    /** Lit l'accès ; en cas d'échec, message d'erreur (ou `nothingSent` si l'accord vient d'être donné). */
+    const loadOverview = async (context: SessionContext, runId: number, timeoutMs?: number, nothingSent?: string): Promise<AiOverview | null> => {
         try {
             const pending = getAiOverview(context);
             const next = await (timeoutMs ? withTimeout(pending, timeoutMs) : pending);
             if (!isSessionCurrent(context) || runRef.current !== runId) return null;
-            setRemaining(next.access.kind === 'approved' ? next.access.remaining : null);
+            noteOverview(context, next);
             return next;
         } catch (error) {
             if (!isSessionCurrent(context) || runRef.current !== runId) return null;
-            setPhase({ kind: 'error', message: error instanceof AiAssistError ? error.message : "Impossible de joindre l'assistant. Réessayez plus tard." });
+            setPhase({ kind: 'error', message: nothingSent ?? (error instanceof AiAssistError ? error.message : "Impossible de joindre l'assistant. Réessayez plus tard.") });
             setAnnouncement('');
             focusTarget.current = 'ai';
             return null;
         }
     };
 
-    /** Envoie la phrase. Ne relance jamais un appel déjà parti. */
+    /** Montre une interprétation (nouvelle, ou relue du cache) ; rien n'est appliqué. */
+    function showInterpretation(phrase: string, criteria: SearchCriteria, source: 'ai' | 'cache') {
+        if (source === 'ai') onAiProposalChange({ phrase, criteria });
+        setCacheVersion(version => version + 1);
+        setRemoved([]);
+        setPhase({ kind: 'idle' });
+        // Le champ ne montre plus cette phrase : rien d'annoncé ni de focalisé (le résultat reste gardé).
+        if (draftRef.current !== phrase) {
+            setAnnouncement('');
+            return;
+        }
+        if (criteriaIsEmpty(criteria)) {
+            const message = criteria.dropped.length > 0
+                ? "L'assistant n'a rien compris d'utilisable dans cette phrase : rien n'est appliqué. Reformulez-la, ou cherchez un nom."
+                : "L'assistant n'a trouvé aucun critère de recherche dans cette phrase : rien n'est appliqué.";
+            setEmptyMessage(message);
+            setAnnouncement(message);
+            focusTarget.current = 'input';
+            return;
+        }
+        setAnnouncement("L'assistant a compris votre phrase : relisez les étiquettes, puis appliquez-les.");
+        focusTarget.current = 'proposal';
+    }
+
+    /** Envoie la phrase. Ne relance jamais un appel déjà parti, ni une phrase déjà interprétée. */
     const interpret = async (context: SessionContext, runId: number, phrase: string) => {
         if (abortRef.current || runRef.current !== runId) return;
+        // Déjà en cours (autre instance du champ) : on attend cette réponse.
+        const pending = interpretationInFlight(phrase, context.userId);
+        if (pending) {
+            setPhase({ kind: 'analyzing' });
+            setAdopted(true);
+            await pending;
+            if (runRef.current !== runId || !isSessionCurrent(context)) return;
+            setAdopted(false);
+            const found = readCachedSearch(phrase, context);
+            if (found) showInterpretation(phrase, found, 'cache');
+            else setPhase({ kind: 'error', message: aiAssistErrorText('unknown') });
+            return;
+        }
+        // Déjà interprétée (cache relu juste avant d'envoyer).
+        const already = readCachedSearch(phrase, context);
+        if (already) {
+            showInterpretation(phrase, already, 'cache');
+            return;
+        }
         const controller = new AbortController();
         abortRef.current = controller;
         const purges = naturalSearchCachePurges();
         setPhase({ kind: 'analyzing' });
         setAnnouncement('Interprétation de la phrase en cours…');
-        try {
-            const response = await callAiText('search', { text: phrase }, { signal: controller.signal }, context);
-            if (controller.signal.aborted || !isSessionCurrent(context)) return;
-            // Payé : relu et gardé tout de suite, même si la liste a été
-            // quittée entre-temps (jamais si l'accord a été retiré depuis).
-            rememberRemaining(response.remaining, context);
+        // Payé : relu et gardé dès la réponse, même si la liste a été quittée
+        // entre-temps (jamais si l'accord a été retiré depuis).
+        const request = Promise.resolve().then(() => callAiText('search', { text: phrase }, { signal: controller.signal }, context)).then(response => {
+            if (controller.signal.aborted || !isSessionCurrent(context)) return null;
+            noteRemaining(context, response.remaining);
             const criteria = parseSearchResult(response.result);
             if (criteria) rememberSearch(phrase, criteria, context, purges);
-            if (runRef.current !== runId) return;
-            setRemaining(response.remaining);
-            if (!criteria) {
-                setPhase({ kind: 'error', message: new AiAssistError('invalid_output', { feature: 'search' }).message });
+            return { remaining: response.remaining, criteria };
+        });
+        trackInterpretation(phrase, context.userId, request.then(() => undefined, () => undefined));
+        try {
+            const outcome = await request;
+            if (!outcome || runRef.current !== runId) return;
+            setRemaining(outcome.remaining);
+            if (!outcome.criteria) {
+                setPhase({ kind: 'error', message: aiAssistErrorText('invalid_output') });
                 setAnnouncement('');
                 focusTarget.current = 'ai';
                 return;
             }
-            setCacheVersion(version => version + 1);
-            setAiProposal({ phrase, source: 'ai', criteria });
-            setRemoved([]);
-            setPhase({ kind: 'idle' });
-            // Le champ ne montre plus cette phrase : rien d'annoncé ni de focalisé (le résultat reste gardé).
-            if (draftRef.current !== phrase) {
-                setAnnouncement('');
-                return;
-            }
-            if (criteriaIsEmpty(criteria)) {
-                const message = criteria.dropped.length > 0
-                    ? "L'assistant n'a rien compris d'utilisable dans cette phrase : rien n'est appliqué. Reformulez-la, ou cherchez un nom."
-                    : "L'assistant n'a trouvé aucun critère de recherche dans cette phrase : rien n'est appliqué.";
-                setEmptyMessage(message);
-                setAnnouncement(message);
-                focusTarget.current = 'input';
-                return;
-            }
-            setAnnouncement("L'assistant a compris votre phrase : relisez les étiquettes, puis appliquez-les.");
-            focusTarget.current = 'proposal';
+            showInterpretation(phrase, outcome.criteria, 'ai');
         } catch (error) {
             if (controller.signal.aborted || runRef.current !== runId || !isSessionCurrent(context)) return;
             setAnnouncement('');
             const wrapped = error instanceof AiAssistError ? error : new AiAssistError('unknown', { feature: 'search' });
             if (typeof wrapped.remaining === 'number') {
-                setRemaining(wrapped.remaining);
-                rememberRemaining(wrapped.remaining, context);
+                noteRemaining(context, wrapped.remaining);
+            } else if (wrapped.code === 'quota_exceeded') {
+                // Plus rien ce mois-ci : le compteur affiché le dit.
+                noteRemaining(context, 0);
             } else if (RECOUNT_CODES.has(wrapped.code)) {
                 refreshCounter(context);
             }
@@ -560,6 +722,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
             }
             if (wrapped.code === 'not_approved') {
                 setRemaining(null);
+                setAccess('none');
                 setPhase({ kind: 'needs_access', message: wrapped.message });
                 return;
             }
@@ -614,7 +777,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         abortRef.current?.abort();
         abortRef.current = null;
         busyRef.current = null;
-        setPhase({ kind: 'error', message: new AiAssistError('cancelled', { feature: 'search' }).message });
+        setPhase({ kind: 'error', message: aiAssistErrorText('cancelled') });
         setAnnouncement('');
         focusTarget.current = 'ai';
         if (wasSending) {
@@ -643,19 +806,27 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         setConsentWorking(true);
         setConsentError(null);
         try {
-            // Délai maximal : un serveur muet ne bloque pas la carte (ni le verrou).
-            await withTimeout(giveConsent('search', context), AI_SEARCH_CONSENT_TIMEOUT_MS);
+            try {
+                // Délai maximal : un serveur muet ne bloque pas la carte (ni le verrou).
+                await withTimeout(giveConsent('search', context), AI_SEARCH_CONSENT_TIMEOUT_MS);
+            } catch (error) {
+                if (!stillWanted()) return;
+                setConsentError(error instanceof AiAssistError && error.code === 'timeout'
+                    ? "L'enregistrement de votre accord ne répond pas. Rien n'a été envoyé : réessayez."
+                    : error instanceof AiAssistError ? error.message : 'Votre accord n’a pas pu être enregistré. Réessayez.');
+                return;
+            }
             // « Annuler » pendant l'enregistrement : l'accord est donné, mais rien n'est envoyé.
             if (!stillWanted()) return;
-            const refreshed = await loadOverview(context, runId, AI_SEARCH_CONSENT_TIMEOUT_MS);
-            if (!refreshed || !stillWanted()) return;
+            // La carte se ferme : le bouton IA, occupé, reprend le focus (« Annuler » reste atteignable).
             setConsentWorking(false);
+            setPhase({ kind: 'checking' });
+            setAnnouncement('Accord enregistré. Vérification de votre accès…');
+            focusTarget.current = 'ai';
+            const refreshed = await loadOverview(context, runId, AI_SEARCH_CONSENT_TIMEOUT_MS,
+                "Votre accord est enregistré, mais l'assistant ne répond pas. Rien n'a été envoyé : réessayez.");
+            if (!refreshed || !stillWanted()) return;
             await interpret(context, runId, phrase);
-        } catch (error) {
-            if (!stillWanted()) return;
-            setConsentError(error instanceof AiAssistError && error.code === 'timeout'
-                ? "L'enregistrement de votre accord ne répond pas. Rien n'a été envoyé : réessayez."
-                : error instanceof AiAssistError ? error.message : 'Votre accord n’a pas pu être enregistré. Réessayez.');
         } finally {
             unlock(runId);
             if (isSessionCurrent(context)) setConsentWorking(false);
@@ -664,8 +835,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
 
     /** Applique la proposition (gratuit : jamais d'appel à l'assistant ici). */
     const applyProposal = async () => {
-        if (!proposal || !proposalCriteria || locating || lockedInput) return;
-        if (criteriaIsEmpty(proposalCriteria)) return;
+        if (!proposal || !proposalCriteria || !applicable || locating || lockedInput) return;
         const applyRun = applyRunRef.current + 1;
         applyRunRef.current = applyRun;
         const input: NaturalSearchInput = { phrase: proposal.phrase, source: proposal.source, criteria: proposalCriteria };
@@ -680,8 +850,10 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         }
         onApply(input);
         setRemoved([]);
-        // Le bouton « Appliquer » disparaît : le focus revient au champ.
-        focusTarget.current = 'input';
+        // Sur téléphone, le clavier se ferme : le focus va aux étiquettes
+        // appliquées. Sur ordinateur, il revient au champ.
+        focusTarget.current = variant === 'mobile' ? 'applied' : 'input';
+        if (variant === 'mobile') inputRef.current?.blur();
         const count = buildFilterPlan(proposalCriteria, new Date(), input.near).chips.length;
         setAnnouncement(proposalCriteria.near && input.near && input.near.status !== 'ok'
             ? `Filtres appliqués, sauf : ${nearLabel(proposalCriteria.near, input.near).label}.`
@@ -692,18 +864,28 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         applyRunRef.current += 1;
         setLocating(false);
         setAnnouncement('Rien n’a été appliqué.');
+        focusTarget.current = 'apply';
     };
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key !== 'Enter') return;
-        // Entrée applique ce qui est déjà compris ; elle n'appelle JAMAIS l'assistant.
+        // Entrée applique une phrase claire déjà comprise ; elle n'appelle
+        // JAMAIS l'assistant, et ne change rien pour un simple nom.
         event.preventDefault();
-        if (proposal) void applyProposal();
+        if (enterApplies) void applyProposal();
     };
 
     const handleClear = () => {
         if (lockedInput) return;
-        handleChange('');
+        setRemoved([]);
+        setEmptyMessage(null);
+        applyRunRef.current += 1;
+        setLocating(false);
+        if (phase.kind === 'error' || phase.kind === 'needs_access') setPhase({ kind: 'idle' });
+        // La croix efface aussi une recherche appliquée.
+        if (naturalSearch) onClearNatural();
+        else handleChange('');
+        setAnnouncement(naturalSearch ? 'Recherche effacée.' : '');
         inputRef.current?.focus();
     };
 
@@ -713,12 +895,10 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const handleResetAll = () => {
         if (lockedInput || locating) return;
         onResetAll();
-        setDraft('');
         setRemoved([]);
         setPhase({ kind: 'idle' });
         setConsentError(null);
         focusTarget.current = 'input';
-        setAiProposal(null);
         setEmptyMessage(null);
         setAnnouncement('Tous les filtres sont réinitialisés.');
     };
@@ -738,13 +918,22 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const inputClass = isDesktop
         ? 'w-full pl-12 pr-12 py-4 bg-gray-100/80 dark:bg-white/10 border border-transparent rounded-2xl focus:ring-2 focus:ring-nature-green/50 focus:border-nature-green/50 transition-all dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none read-only:opacity-70'
         : 'w-full pl-10 pr-11 py-2 bg-gray-100 dark:bg-white/10 rounded-xl text-base focus:ring-2 focus:ring-nature-green/50 outline-none dark:text-white placeholder-gray-500 dark:placeholder-gray-400 read-only:opacity-70';
+    // Ce que l'analyse gratuite n'a pas compris, tel qu'écrit (« lézard des murailles »).
+    const unknownText = proposal?.source === 'local' && !local.understood ? local.criteria.text : null;
     /**
      * Recherche par nom active mais absente du champ (preset appliqué, nom
      * tapé sur la carte ou dans la galerie) : jamais un filtre invisible.
      */
     const nameSearchHidden = searchTerm !== '' && searchTerm !== draft && !(naturalSearch?.owned.includes('searchTerm'));
-    // Ce que l'analyse gratuite n'a pas compris, tel qu'écrit (« lézard des murailles »).
-    const unknownText = proposal?.source === 'local' && !local.understood ? local.criteria.text : null;
+    /** Une recherche appliquée, et le champ montre autre chose : elle reste telle quelle. */
+    const editingApplied = naturalSearch !== null && draft !== naturalSearch.phrase;
+
+    let help = 'Un nom d’espèce ou de lieu, ou une phrase (« les oiseaux le mois dernier »).';
+    if (editingApplied) help = enterApplies
+        ? 'Entrée ou « Appliquer » remplace la recherche appliquée. La croix efface tout.'
+        : 'La recherche appliquée reste active jusqu’à « Appliquer ». La croix efface tout.';
+    else if (proposal && enterApplies) help = 'Entrée ou « Appliquer » : les filtres en cours seront remplacés.';
+    else if (proposal && applicable) help = 'La recherche par nom est active. « Appliquer ce filtre » pour l’utiliser à la place.';
 
     return (
         <div className="space-y-2" data-testid={`natural-search-${variant}`}>
@@ -773,28 +962,30 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                     onKeyDown={handleKeyDown}
                     className={inputClass}
                 />
-                {draft.length > 0 && !lockedInput && (
+                {(draft.length > 0 || naturalSearch !== null) && !lockedInput && (
                     <button
                         type="button"
                         onClick={handleClear}
+                        disabled={locating}
                         aria-label="Effacer la recherche"
-                        className={`absolute inset-y-0 right-0 flex items-center justify-center ${isDesktop ? 'w-12' : 'w-11'} text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200`}
+                        className={`absolute inset-y-0 right-0 flex items-center justify-center ${isDesktop ? 'w-12' : 'w-11'} text-gray-500 hover:text-gray-700 disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200`}
                     >
                         <XMarkIcon className="h-4 w-4" />
                     </button>
                 )}
             </div>
-            <p id={helpId} className="px-1 text-xs text-gray-500 dark:text-gray-400">
-                {proposal
-                    ? "Appuyez sur Entrée ou « Appliquer » : les filtres en cours seront remplacés."
-                    : 'Un nom d’espèce ou de lieu, ou une phrase (« les oiseaux le mois dernier »).'}
-            </p>
+            <p id={helpId} className="px-1 text-xs text-gray-500 dark:text-gray-400">{help}</p>
+            {editingApplied && !applicable && trimmed.length > 0 && !lockedInput && (
+                <button type="button" onClick={() => onReplaceWithNameSearch(draft)} className={`${linkButton} min-h-[36px] px-1 text-xs`}>
+                    Chercher « {draft} » par nom à la place
+                </button>
+            )}
 
             {proposal && proposalPlan && (
                 <section aria-labelledby={proposalHeadingId} className="space-y-2 rounded-2xl border border-ai-200 bg-ai-50/60 p-3 dark:border-ai-400/30 dark:bg-ai-500/10" data-testid="natural-search-proposal">
                     <p id={proposalHeadingId} ref={proposalHeadingRef} tabIndex={-1} className="flex flex-wrap items-center gap-x-2 text-sm font-semibold text-nature-dark focus:outline-none dark:text-white">
                         {proposal.source === 'local' ? null : <SparklesIcon className="h-4 w-4 text-ai-600 dark:text-ai-300" />}
-                        J'ai compris :
+                        {enterApplies || proposal.source !== 'local' ? "J'ai compris :" : 'Lire aussi comme un filtre :'}
                         <span className="text-xs font-normal text-gray-500 dark:text-gray-400">{SOURCE_LABELS[proposal.source]}</span>
                     </p>
                     {proposalPlan.chips.length > 0 ? (
@@ -815,27 +1006,34 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                     )}
                     {unknownText && (
                         <p className="text-xs text-gray-600 dark:text-gray-300">
-                            Pas compris : « {unknownText} ». {proposalCriteria?.text ? "Cherché tel quel dans les noms et les lieux ; l'assistant peut interpréter la phrase entière." : ''}
+                            Pas compris : « {unknownText} ». {proposalCriteria?.text ? 'Cherché tel quel dans les noms et les lieux.' : ''}
                         </p>
                     )}
-                    {local.notes.length > 0 && proposal.source === 'local' && local.notes.map(note => (
+                    {proposal.source === 'local' && local.notes.map(note => (
                         <p key={note} className="text-xs text-amber-800 dark:text-amber-200">{note}</p>
                     ))}
                     {proposalPlan.notes.map(note => <p key={note} className="text-xs text-amber-800 dark:text-amber-200">{note}</p>)}
                     <div className="flex flex-wrap items-center gap-2">
                         <button
+                            ref={applyButtonRef}
                             type="button"
                             onClick={() => void applyProposal()}
-                            disabled={locating || lockedInput || !proposalCriteria || criteriaIsEmpty(proposalCriteria)}
+                            disabled={locating || lockedInput || !applicable}
                             className={primaryButton}
                         >
-                            {locating ? 'Localisation…' : 'Appliquer'}
+                            {locating ? 'Localisation…' : enterApplies ? 'Appliquer' : 'Appliquer ce filtre'}
                         </button>
                         {locating && (
                             <button type="button" onClick={handleCancelLocating} className={quietButton}>Annuler</button>
                         )}
                     </div>
                 </section>
+            )}
+
+            {fragmented && !proposal && !alreadyApplied && (
+                <p className="rounded-xl bg-ai-50 p-3 text-sm text-nature-dark dark:bg-ai-500/10 dark:text-white" data-testid="natural-search-fragments">
+                    Plusieurs passages ne sont pas compris : {local.fragments.map(fragment => `« ${fragment} »`).join(', ')}. L'analyse gratuite ne sait pas les relier : rien n'est appliqué, la recherche se fait par nom.
+                </p>
             )}
 
             {!proposal && (emptyMessage || (cachedRaw && !cached && !alreadyApplied)) && (
@@ -859,7 +1057,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                             acceptLabel="Accepter et interpréter"
                             autoFocus
                         />
-                    ) : (offerAi || isWaiting) && (
+                    ) : (offerAi || isWaiting) && (access !== 'none' || isWaiting) ? (
                         <div className="flex flex-wrap items-start gap-2">
                             <AiButton
                                 label="Interpréter avec l'IA"
@@ -871,13 +1069,23 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                                 hint="la phrase est envoyée à l'assistant ; rien n'est appliqué sans votre choix"
                                 buttonRef={aiButtonRef}
                             />
-                            {isWaiting && (
+                            {isWaiting && !adopted && (
                                 <button type="button" onClick={handleStop} className={quietButton}>
                                     Annuler
                                 </button>
                             )}
                         </div>
-                    )}
+                    ) : offerAi && access === 'none' && phase.kind === 'idle' ? (
+                        // Sans accès approuvé : pas de bouton payant, un lien discret.
+                        <p className="px-1 text-xs text-gray-600 dark:text-gray-300" data-testid="natural-search-ai-access">
+                            L'interprétation de phrases par l'IA fait partie de l'assistant, sur demande d'accès.{' '}
+                            {onOpenAiAccess && (
+                                <button type="button" onClick={onOpenAiAccess} className={`${linkButton} min-h-[36px] text-xs`}>
+                                    Assistant IA
+                                </button>
+                            )}
+                        </p>
+                    ) : null}
                     {phase.kind === 'needs_access' && (
                         <div role="alert" className="rounded-xl bg-ai-50 p-3 text-sm text-nature-dark dark:bg-ai-500/10 dark:text-white">
                             <p>{phase.message}</p>
@@ -905,6 +1113,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                     onAnnounce={setAnnouncement}
                     onEmptied={() => { focusTarget.current = 'input'; }}
                     locked={lockedInput || locating}
+                    headingRef={appliedHeadingRef}
                 />
             )}
             {nameSearchHidden && (
@@ -925,5 +1134,8 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         </div>
     );
 };
+
+/** Message de la recherche pour un code d'erreur produit ici (pas par le serveur). */
+const aiAssistErrorText = (code: AiAssistErrorCode): string => new AiAssistError(code, { feature: 'search' }).message;
 
 export default NaturalSearch;

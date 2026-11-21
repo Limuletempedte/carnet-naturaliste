@@ -25,7 +25,7 @@ import {
     type SearchSeason,
     type SearchYearScope,
 } from './aiSearchFilters';
-import { FRENCH_DEPARTMENTS } from './frenchDepartments';
+import { FRENCH_DEPARTMENTS, normalizeDepartment } from './frenchDepartments';
 import { TAXON_CATEGORIES, type TaxonCategoryKey } from './taxonCategories';
 
 export interface LocalSearchAnalysis {
@@ -36,6 +36,20 @@ export interface LocalSearchAnalysis {
     understood: boolean;
     /** Mots non compris, tels qu'écrits (gardés en texte libre). */
     unknownWords: string[];
+    /**
+     * Passages non compris SÉPARÉS par des mots compris (« chouette effraie
+     * en mai à Pessac ») : jamais collés en un seul texte. La phrase n'est
+     * alors pas applicable telle quelle (seule l'IA peut l'interpréter).
+     */
+    fragments: string[];
+    /** La phrase contient un mot outil (« les », « en », « près »…). */
+    hasFunctionWord: boolean;
+    /**
+     * C'est clairement une phrase (mot outil, ou plusieurs critères) : Entrée
+     * peut appliquer ce qui est compris. Sinon (« Fougères »), la recherche
+     * par nom reste la règle, et le filtre ne s'applique que sur un clic.
+     */
+    clearlyPhrase: boolean;
     /** Remarques (« l'année écrite l'emporte sur « cette année » »). */
     notes: string[];
 }
@@ -58,7 +72,8 @@ interface Token {
     before: string;
 }
 
-const TOKEN_RE = /\d+(?:[.,]\d+)?|[\p{L}\p{M}\p{N}]+/gu;
+// Un nombre (« 2,5 ») ; ou un mot, chiffres compris (« 2A », « 500m »).
+const TOKEN_RE = /\d+(?:[.,]\d+)?(?![\p{L}\p{N}])|[\p{L}\p{M}\p{N}]+/gu;
 
 export const foldWord = (value: string): string => value
     .normalize('NFD')
@@ -80,7 +95,7 @@ const tokenize = (phrase: string): Token[] => {
             f: foldWord(raw),
             start,
             end: start + raw.length,
-            num: /^\d/.test(raw) ? Number(raw.replace(',', '.')) : null,
+            num: /^\d+(?:[.,]\d+)?$/.test(raw) ? Number(raw.replace(',', '.')) : null,
             capital: /^\p{Lu}/u.test(raw),
             before,
         });
@@ -101,6 +116,10 @@ const STOPWORDS = new Set(words(
     "que qui quels quelles quel quelle vu vus vue vues observé observés observée observées observation observations " +
     "espèce espèces individus sur pour par avec y ont pendant durant ce cet cette ces cherche chercher montre moi " +
     "affiche afficher liste voir trouve trouvé trouvés trouvée trouvées donne " +
+    // Participes : jamais des qualificatifs d'espèce (« rapaces entendus en mai »).
+    "entendu entendus entendue entendues aperçu aperçus aperçue aperçues photographié photographiés photographiée " +
+    "photographiées croisé croisés croisée croisées noté notés notée notées repéré repérés repérée repérées " +
+    "contacté contactés contactée contactées signalé signalés signalée signalées ayant " +
     // Prépositions de lieu : jamais un qualificatif d'espèce (« hérons près de Pessac »).
     "près autour vers proche loin",
 ));
@@ -119,6 +138,8 @@ interface LexiconEntry {
     effect: Effect;
     /** Nom d'un ensemble d'espèces : refusé s'il est suivi d'un qualificatif. */
     taxon?: boolean;
+    /** Contrôle sur les mots tels qu'écrits (accents) : « menacés » oui, « menaces » (le nom) non. */
+    rawCheck?: (raws: readonly string[]) => boolean;
 }
 
 const period = (kind: SearchPeriod['kind'], extra: Partial<SearchPeriod> = {}): Effect => ({
@@ -127,9 +148,11 @@ const period = (kind: SearchPeriod['kind'], extra: Partial<SearchPeriod> = {}): 
 });
 
 const LEXICON: LexiconEntry[] = [];
-const add = (expressions: readonly string[], effect: Effect, taxon = false) => {
-    for (const expression of expressions) LEXICON.push({ tokens: words(expression), effect, taxon });
+const add = (expressions: readonly string[], effect: Effect, taxon = false, rawCheck?: LexiconEntry['rawCheck']) => {
+    for (const expression of expressions) LEXICON.push({ tokens: words(expression), effect, taxon, rawCheck });
 };
+/** Le dernier mot porte l'accent du participe (« menacés », pas « menaces »). */
+const accentedParticiple = (raws: readonly string[]) => /é(e?s?)$/u.test((raws[raws.length - 1] ?? '').normalize('NFC').toLowerCase());
 
 // Périodes relatives.
 add(['ce mois-ci', 'ce mois', 'mois en cours'], period('this_month'));
@@ -186,8 +209,8 @@ for (const [synonym, keys] of categoriesBySynonym) {
 }
 
 // Statuts de la liste rouge (comme la consigne de la fonction).
-add(['menacées', 'menacés', 'menacée', 'menacé', 'espèces menacées'], { kind: 'statuses', statuses: [Status.VU, Status.EN, Status.CR] });
-add(['quasi menacées', 'quasi menacés', 'quasi-menacées', 'quasi-menacés', 'quasi menacée', 'quasi-menacée'], { kind: 'statuses', statuses: [Status.NT] });
+add(['menacées', 'menacés', 'menacée', 'menacé'], { kind: 'statuses', statuses: [Status.VU, Status.EN, Status.CR] }, false, accentedParticiple);
+add(['quasi menacées', 'quasi menacés', 'quasi menacée'], { kind: 'statuses', statuses: [Status.NT] }, false, accentedParticiple);
 add(['vulnérables', 'vulnérable'], { kind: 'statuses', statuses: [Status.VU] });
 add(['en danger critique'], { kind: 'statuses', statuses: [Status.CR] });
 add(['en danger'], { kind: 'statuses', statuses: [Status.EN] });
@@ -218,17 +241,33 @@ add([
 
 // Départements : seulement après « en » ou « dans le/la/les » (« Nord »,
 // « Lot » ou « Somme » sont aussi des mots courants), avec une majuscule.
-const DEPARTMENT_ENTRIES = FRENCH_DEPARTMENTS.map(department => ({ tokens: words(department.name), name: department.name }))
-    .sort((a, b) => b.tokens.length - a.tokens.length);
+const DEPARTMENT_ENTRIES = [
+    ...FRENCH_DEPARTMENTS.map(department => ({ tokens: words(department.name), name: department.name })),
+    // « en Corse » : les deux départements (et le « 20 » des codes postaux).
+    { tokens: ['corse'], name: 'Corse' },
+].sort((a, b) => b.tokens.length - a.tokens.length);
+/** Groupe de chaque catégorie (« les oiseaux limicoles » = la seule catégorie). */
+const CATEGORY_GROUP: ReadonlyMap<string, TaxonomicGroup> = new Map(TAXON_CATEGORIES.map(category => [category.key, category.group]));
 
 const MONTHS = words('janvier février mars avril mai juin juillet août septembre octobre novembre décembre');
-const SEASONS: Readonly<Record<string, SearchSeason>> = { printemps: 'spring', ete: 'summer', automne: 'autumn', hiver: 'winter' };
-const NUMBER_WORDS: Readonly<Record<string, number>> = {
-    un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10,
-    onze: 11, douze: 12, quinze: 15, vingt: 20, trente: 30, soixante: 60, cent: 100,
-};
+// Des Map, jamais des objets : un mot tapé (« constructor », « __proto__ »)
+// ne doit jamais tomber sur une clé héritée d'Object.
+const SEASONS: ReadonlyMap<string, SearchSeason> = new Map([['printemps', 'spring'], ['ete', 'summer'], ['automne', 'autumn'], ['hiver', 'winter']]);
+const NUMBER_WORDS: ReadonlyMap<string, number> = new Map([
+    ['un', 1], ['une', 1], ['deux', 2], ['trois', 3], ['quatre', 4], ['cinq', 5], ['six', 6], ['sept', 7], ['huit', 8], ['neuf', 9],
+    ['dix', 10], ['onze', 11], ['douze', 12], ['quinze', 15], ['vingt', 20], ['trente', 30], ['soixante', 60], ['cent', 100],
+]);
 /** « été » est aussi un participe (« ont été vus ») : pas une saison après ces mots. */
-const BEFORE_PARTICIPLE = new Set(words('a ai as avons avez ont avait avaient aurait étant'));
+const BEFORE_PARTICIPLE = new Set(words('a ai as avons avez ont avait avaient aurait étant ayant'));
+/** Mots qui donnent son contexte temporel à un mois ou une saison (« en mai », « au printemps »). */
+const TEMPORAL_BEFORE = new Set(words('en au pendant durant depuis début fin mi courant'));
+/**
+ * Petits mots qui se trouvent aussi DANS un nom (« Cèpe d'été », « commune de
+ * Fougères ») : au milieu de mots inconnus, ils ne font pas une phrase.
+ */
+const NAME_FILLERS = new Set(words('le la les l de d du des aux au un une et à'));
+/** Prépositions d'un complément de nom (« Étang des Canards », « Île aux Oiseaux », « Hygrophore de mars »). */
+const NAME_LINKS = new Set(words('de d du des aux'));
 
 // ---------------------------------------------------------------------------
 // Reconnaissance
@@ -237,6 +276,14 @@ const BEFORE_PARTICIPLE = new Set(words('a ai as avons avez ont avait avaient au
 interface Match {
     length: number;
     apply: (state: State) => boolean;
+    /** Ce qui a été reconnu (lexique), pour les règles de voisinage. */
+    effect?: Effect;
+    /**
+     * `time-after` : mois ou saison reconnu par ce qui le suit (« mars 2024 ») ;
+     * `taxon` : nom d'un ensemble d'espèces. Tous deux refusés dans un nom
+     * propre ou un nom d'espèce (« Petit Mars 2024 », « Étang des Canards »).
+     */
+    guard?: 'time-after' | 'taxon';
 }
 
 interface State {
@@ -268,7 +315,7 @@ const isYear = (token: Token | undefined): token is Token & { num: number } =>
 const numberAt = (token: Token | undefined): number | null => {
     if (!token) return null;
     if (token.num !== null) return token.num;
-    return NUMBER_WORDS[token.f] ?? null;
+    return NUMBER_WORDS.get(token.f) ?? null;
 };
 
 /** Après un mois ou une saison : quelle année ? Renvoie le nombre de mots lus. */
@@ -289,6 +336,19 @@ const yearScopeAfter = (tokens: readonly Token[], at: number): { scope: SearchYe
     return { scope: 'all', length: 0 };
 };
 
+/** Précédé d'un mot de temps : « en mai », « au printemps », « pendant l'hiver », « tout l'été ». */
+const temporalBefore = (tokens: readonly Token[], at: number): boolean => {
+    const previous = tokens[at - 1];
+    if (!previous) return false;
+    if (TEMPORAL_BEFORE.has(previous.f)) return true;
+    const before = tokens[at - 2];
+    return (previous.f === 'l' || previous.f === 'le') && before !== undefined && (TEMPORAL_BEFORE.has(before.f) || before.f === 'tout');
+};
+
+/** Un mois ou une saison n'est reconnu qu'avec un contexte temporel, avant ou après. */
+const hasTemporalContext = (tokens: readonly Token[], at: number, afterLength: number): boolean =>
+    afterLength > 0 || temporalBefore(tokens, at);
+
 /** Toutes les reconnaissances possibles à la position `at` (sans le contrôle du qualificatif). */
 const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
     const matches: Match[] = [];
@@ -297,9 +357,14 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
 
     for (const entry of LEXICON) {
         if (!sameTokens(tokens, at, entry.tokens)) continue;
+        if (entry.rawCheck && !entry.rawCheck(tokens.slice(at, at + entry.tokens.length).map(item => item.raw))) continue;
+        // « dans les environs de Bordeaux » : un lieu nommé, pas la position actuelle.
+        if (entry.effect.kind === 'near' && NAME_LINKS.has(tokens[at + entry.tokens.length]?.f ?? '')) continue;
         const effect = entry.effect;
         matches.push({
             length: entry.tokens.length,
+            effect,
+            guard: entry.taxon ? 'taxon' : undefined,
             apply: state => {
                 switch (effect.kind) {
                     case 'period': return setPeriod(state, effect.period);
@@ -314,12 +379,15 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
         });
     }
 
-    // Mois : « mai », « mai dernier », « mai 2024 », « mai de l'an dernier ».
+    // Mois : seulement avec un contexte temporel (« en mai », « mai dernier »,
+    // « mai 2024 », « en mai de l'an dernier ») ; jamais dans un nom (« Petit
+    // Mars changeant », « Hygrophore de mars », « Saint-Mars-du-Désert »).
     const monthIndex = MONTHS.indexOf(token.f);
-    if (monthIndex >= 0) {
-        const after = yearScopeAfter(tokens, at + 1);
+    const after = monthIndex >= 0 || SEASONS.has(token.f) ? yearScopeAfter(tokens, at + 1) : null;
+    if (monthIndex >= 0 && after && hasTemporalContext(tokens, at, after.length)) {
         matches.push({
             length: 1 + after.length,
+            guard: temporalBefore(tokens, at) ? undefined : 'time-after',
             apply: state => {
                 if (after.year !== undefined) state.years.add(after.year);
                 return setPeriod(state, { kind: 'month', days: null, month: monthIndex + 1, season: null, yearScope: after.scope });
@@ -327,12 +395,15 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
         });
     }
 
-    // Saisons : « au printemps », « cet été », « l'hiver dernier », « été 2024 ».
+    // Saisons : « au printemps », « cet été », « l'hiver dernier », « été 2024 » ;
+    // jamais dans un nom (« Cèpe d'été »).
     const seasonAt = (index: number): SearchSeason | null => {
         const word = tokens[index];
-        if (!word || !(word.f in SEASONS)) return null;
+        if (!word) return null;
+        const found = SEASONS.get(word.f);
+        if (!found) return null;
         if (word.f === 'ete' && index > 0 && BEFORE_PARTICIPLE.has(tokens[index - 1].f)) return null;
-        return SEASONS[word.f];
+        return found;
     };
     const thisSeason = (token.f === 'cet' || token.f === 'ce') ? seasonAt(at + 1) : null;
     if (thisSeason) {
@@ -346,10 +417,10 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
         matches.push({ length: 1, apply: () => true });
     }
     const season = seasonAt(at);
-    if (season) {
-        const after = yearScopeAfter(tokens, at + 1);
+    if (season && after && hasTemporalContext(tokens, at, after.length)) {
         matches.push({
             length: 1 + after.length,
+            guard: temporalBefore(tokens, at) ? undefined : 'time-after',
             apply: state => {
                 if (after.year !== undefined) state.years.add(after.year);
                 return setPeriod(state, { kind: 'season', days: null, month: null, season, yearScope: after.scope });
@@ -358,8 +429,11 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
     }
 
     // Années : « 2024 », « de 2020 à 2022 », « entre 2020 et 2022 », « 2020-2022 ».
-    const yearRange = (from: number, to: number): number[] | null => {
-        if (to < from || to - from + 1 > AI_SEARCH_LIMITS.maxYears) return null;
+    // Bornes dans n'importe quel ordre (« de 2022 à 2020 »).
+    const yearRange = (a: number, b: number): number[] | null => {
+        const from = Math.min(a, b);
+        const to = Math.max(a, b);
+        if (to - from + 1 > AI_SEARCH_LIMITS.maxYears) return null;
         return Array.from({ length: to - from + 1 }, (_, index) => from + index);
     };
     if ((token.f === 'de' || token.f === 'entre') && isYear(tokens[at + 1])
@@ -396,6 +470,12 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
 
     // Rayon : « à moins de 5 km », « dans un rayon de 500 m » (avec « chez moi »).
     const radiusAt = (index: number): { km: number; length: number } | null => {
+        // Collé : « 5km », « 500m ».
+        const glued = /^(\d+(?:[.,]\d+)?)(km|m)$/i.exec(tokens[index]?.raw ?? '');
+        if (glued) {
+            const amount = Number(glued[1].replace(',', '.'));
+            return { km: glued[2].toLowerCase() === 'km' ? amount : amount / 1000, length: 1 };
+        }
         const value = tokens[index]?.num;
         const unit = tokens[index + 1]?.f;
         if (value === null || value === undefined || !unit) return null;
@@ -408,7 +488,8 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
         if (!sameTokens(tokens, at, prefix)) continue;
         const radius = radiusAt(at + prefix.length);
         if (!radius) continue;
-        const km = clampRadiusKm(radius.km);
+        // « 0 km » : le plus petit rayon permis, jamais le rayon par défaut (10 km).
+        const km = radius.km === 0 ? AI_SEARCH_LIMITS.minRadiusKm : clampRadiusKm(radius.km);
         if (km !== null) matches.push({ length: prefix.length + radius.length, apply: state => { state.radiusKm = km; return true; } });
     }
 
@@ -419,8 +500,9 @@ const matchersAt = (tokens: readonly Token[], at: number): Match[] => {
         if (article.length > 0 && !sameTokens(tokens, at + 1, article)) continue;
         const first = tokens[startAt];
         if (!first) continue;
-        if (token.f === 'dans' && article[0] === 'le' && first.num !== null && /^\d{2,3}$/.test(first.raw)) {
-            matches.push({ length: 2 + article.length, apply: state => { if (state.department) return false; state.department = first.raw; return true; } });
+        // « dans le 33 », « dans le 2A » : seulement un numéro qui existe (« 99 » n'est pas compris).
+        if (token.f === 'dans' && article[0] === 'le' && /^(?:\d{2,3}|2[ab])$/i.test(first.raw) && normalizeDepartment(first.raw) !== null) {
+            matches.push({ length: 2 + article.length, apply: state => { if (state.department) return false; state.department = first.raw.toUpperCase(); return true; } });
             continue;
         }
         if (!first.capital) continue;
@@ -470,11 +552,28 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
 
     let index = 0;
     while (index < tokens.length) {
+        // Dans un nom : juste après un mot inconnu (« Petit Mars 2024 »), ou
+        // après « de », « des », « aux »… qui suit un mot inconnu (« Étang des
+        // Canards », « Hygrophore de mars 2024 »).
+        const afterUnknown = kinds[index - 1] === 'free';
+        const afterNameLink = kinds[index - 1] === 'stop' && NAME_LINKS.has(tokens[index - 1].f) && kinds[index - 2] === 'free';
         const candidates = matchersAt(tokens, index)
             .filter(match => !(isTaxonMatch(tokens, index, match.length) && followedByQualifier(tokens, index + match.length)))
+            .filter(match => !(match.guard === 'time-after' && (afterUnknown || afterNameLink)))
+            .filter(match => !(match.guard === 'taxon' && afterNameLink))
             .sort((a, b) => b.length - a.length);
         let applied = 0;
         for (const candidate of candidates) {
+            // « les oiseaux limicoles » : le groupe suivi d'une catégorie de ce groupe ne garde que la catégorie.
+            if (candidate.effect?.kind === 'groups') {
+                const groups = candidate.effect.groups;
+                const refined = matchersAt(tokens, index + candidate.length).some(next => next.effect?.kind === 'categories'
+                    && next.effect.categories.every(key => groups.includes(CATEGORY_GROUP.get(key) as TaxonomicGroup)));
+                if (refined) {
+                    applied = candidate.length;
+                    break;
+                }
+            }
             const before = state.radiusKm;
             if (candidate.apply(state)) {
                 applied = candidate.length;
@@ -535,13 +634,43 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
     criteria.near = state.near
         ? { kind: 'current_position', placeName: null, radiusKm: state.radiusKm ?? AI_SEARCH_LIMITS.defaultRadiusKm }
         : null;
-    const text = runs.join(' ').trim();
-    criteria.text = text.length > 0 ? text.slice(0, AI_SEARCH_LIMITS.maxTextChars) : null;
+    // Un seul passage non compris : c'est le nom cherché. Plusieurs passages
+    // séparés : jamais collés (« chouette effraie » … « Pessac » ne donne pas
+    // « chouette effraie Pessac ») ; la phrase n'est pas applicable telle quelle.
+    const fragments = runs.length > 1 ? runs : [];
+    criteria.text = runs.length === 1 ? runs[0].slice(0, AI_SEARCH_LIMITS.maxTextChars) : null;
 
-    const hasCriteria = criteria.period !== null || criteria.years.length > 0 || criteria.groups.length > 0
-        || criteria.categories.length > 0 || criteria.statuses.length > 0 || criteria.habitats.length > 0
-        || criteria.department !== null || criteria.near !== null;
-    return { criteria, hasCriteria, understood: unknownWords.length === 0, unknownWords, notes };
+    const fields = [
+        criteria.period !== null || criteria.years.length > 0,
+        criteria.groups.length > 0 || criteria.categories.length > 0,
+        criteria.statuses.length > 0,
+        criteria.habitats.length > 0,
+        criteria.department !== null,
+        criteria.near !== null,
+    ].filter(Boolean).length;
+    const hasCriteria = fields > 0;
+    // Mot outil hors d'un nom : un petit mot (« de », « la ») entre deux mots
+    // non compris fait partie du nom (« Cèpe d'été ») ; « près », « en »,
+    // « vus »… font toujours une phrase.
+    const insideFreeRun = (at: number): boolean => {
+        let before = at - 1;
+        while (before >= 0 && kinds[before] === 'stop') before -= 1;
+        let after = at + 1;
+        while (after < tokens.length && kinds[after] === 'stop') after += 1;
+        return kinds[before] === 'free' && kinds[after] === 'free';
+    };
+    const hasFunctionWord = tokens.some((token, at) =>
+        STOPWORDS.has(token.f) && !(NAME_FILLERS.has(token.f) && kinds[at] === 'stop' && insideFreeRun(at)));
+    return {
+        criteria,
+        hasCriteria,
+        understood: unknownWords.length === 0,
+        unknownWords,
+        fragments,
+        hasFunctionWord,
+        clearlyPhrase: hasCriteria && (hasFunctionWord || fields >= 2),
+        notes,
+    };
 };
 
 /** Clé normalisée d'une phrase (cache) : mots sans casse ni accents, séparés d'une espace. */

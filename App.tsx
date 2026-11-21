@@ -179,6 +179,12 @@ const App: React.FC = () => {
         naturalSearch,
         naturalSearchPresetLimited,
         applyNaturalSearch,
+        naturalDraft,
+        setNaturalDraft,
+        lastAiProposal,
+        setLastAiProposal,
+        clearNaturalSearch,
+        replaceWithNameSearch,
         removeNaturalCriterion,
         updateNaturalNear,
         undoNaturalSearch,
@@ -984,6 +990,12 @@ const App: React.FC = () => {
                             excludedNoLatinName={excludedNoLatinName}
                             isOffline={isOffline}
                             onOpenAiAccess={openAiAccessDialog}
+                            naturalDraft={naturalDraft}
+                            onNaturalDraftChange={setNaturalDraft}
+                            lastAiProposal={lastAiProposal}
+                            onLastAiProposalChange={setLastAiProposal}
+                            onClearNaturalSearch={clearNaturalSearch}
+                            onReplaceWithNameSearch={replaceWithNameSearch}
                         />
                     ) : view === View.MAP ? (
                         <div className={`space-y-6 ${isMobileView ? 'pb-20' : ''}`}>

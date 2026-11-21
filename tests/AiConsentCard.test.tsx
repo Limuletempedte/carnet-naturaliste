@@ -111,10 +111,11 @@ describe('AiConsentCard — recherche en langage naturel', () => {
         expect(text).toMatch(/2 ans si un contrôle de sécurité/);
         expect(text).toMatch(/ne servent pas à entraîner/);
         expect(text).toMatch(/même celles où il ne trouve aucun critère/);
-        expect(text).toMatch(/50 au plus/);
+        expect(text).toMatch(/les 50 dernières, 12 mois au plus/);
         expect(text).toMatch(/sans date calculée ni position/);
-        expect(text).toMatch(/effacées de cet appareil si vous retirez cet accord/);
-        expect(text).toMatch(/ni envoyée à l'assistant, ni gardée/);
+        expect(text).toMatch(/Elles restent après une déconnexion/);
+        expect(text).toMatch(/si vous y retirez cet accord dans « Assistant IA »/);
+        expect(text).toMatch(/ni envoyée à l'assistant, ni enregistrée \(pas même dans un préréglage de filtres\)/);
         expect(text).toMatch(/OpenStreetMap \(service Nominatim\)/);
         expect(text).toMatch(/1 utilisation sur les 20 du mois/);
         expect(text).toMatch(/refus de l'assistant ou une réponse inexploitable compte aussi/);

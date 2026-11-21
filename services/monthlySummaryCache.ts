@@ -11,6 +11,7 @@
 // où il est supprimé (services/accountService.ts).
 
 import { AI_STATUS_CACHE_PREFIX, AI_SUMMARY_MAX_CHARS } from './aiAssistService';
+import { purgeExpiredNaturalSearches } from './naturalSearchCache';
 import { readAccountValue, writeAccountValue, type SessionContext } from './sessionScope';
 
 export const MONTHLY_SUMMARY_CACHE_PREFIX = 'ai-monthly-summaries-v1';
@@ -107,8 +108,9 @@ const isCurrentUtcMonth = (iso: unknown, now: Date): boolean => {
 
 /**
  * Au démarrage, pour TOUS les comptes connus de ce navigateur : retire les
- * bilans expirés (clé supprimée si plus rien), et le dernier compteur connu
- * d'un mois passé (il ne sert plus : le compteur est remis à zéro chaque mois).
+ * bilans expirés (clé supprimée si plus rien), le dernier compteur connu
+ * d'un mois passé (il ne sert plus : le compteur est remis à zéro chaque mois)
+ * et les phrases de recherche interprétées depuis plus de 12 mois.
  * Ne lève jamais d'erreur.
  */
 export const purgeExpiredAiBrowserData = (now: Date = new Date()): void => {
@@ -141,4 +143,6 @@ export const purgeExpiredAiBrowserData = (now: Date = new Date()): void => {
             // Clé illisible ou stockage refusé : on passe à la suivante.
         }
     }
+    // Phrases de la recherche en langage naturel : 12 mois au plus.
+    purgeExpiredNaturalSearches(now);
 };

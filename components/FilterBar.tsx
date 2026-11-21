@@ -79,7 +79,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                         className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'p-1.5 text-xs' : 'p-2'}`}
                     >
                         <option value="all">Toutes</option>
-                        {availableYears.map(year => (
+                        {(yearFilter === 'all' || availableYears.includes(yearFilter) ? availableYears : [...availableYears, yearFilter].sort((a, b) => Number(b) - Number(a))).map(year => (
                             <option key={year} value={year}>{year}</option>
                         ))}
                     </select>

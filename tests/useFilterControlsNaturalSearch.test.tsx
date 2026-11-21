@@ -149,6 +149,62 @@ describe('useFilterControls : recherche en langage naturel', () => {
         expect(onToast).toHaveBeenCalledWith('warning', expect.stringContaining('« près de… »'), 8000);
     });
 
+    it.each([
+        ['« Aucun »', (state: Record<string, string>) => ({ ...state, geoMode: 'none' })],
+        ['rectangle', (state: Record<string, string>) => ({ ...state, geoMode: 'bbox' })],
+        ['rayon changé', (state: Record<string, string>) => ({ ...state, radiusKm: '25' })],
+    ])('la position de l’appareil ne reste jamais dans l’état ni dans un preset (%s)', (_label, change) => {
+        const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
+        act(() => {
+            result.current.applyNaturalSearch({
+                phrase: 'oiseaux près de chez moi', source: 'local',
+                criteria: criteria({ groups: [TaxonomicGroup.BIRD], near: { kind: 'current_position', placeName: null, radiusKm: 10 } }),
+                near: { status: 'ok', lat: 12.3456789, lon: 6.5432109 },
+            });
+        });
+        act(() => { result.current.setAdvancedFilterState(change(result.current.advancedFilterState as unknown as Record<string, string>) as never); });
+        expect(result.current.advancedFilterState.radiusCenterLat).toBe('');
+        expect(result.current.advancedFilterState.radiusCenterLon).toBe('');
+        act(() => { result.current.saveFilterPreset('Coin'); });
+        const stored = localStorage.getItem('observation-filter-presets-v2:user-1') ?? '';
+        expect(stored).not.toContain('12.3456789');
+        expect(stored).not.toContain('6.5432109');
+    });
+
+    it('« Annuler la recherche » garde le tri choisi après la recherche', () => {
+        const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
+        act(() => {
+            result.current.applyNaturalSearch({ phrase: 'p', source: 'local', criteria: criteria({ categories: ['canards'] }) });
+        });
+        act(() => {
+            result.current.setAdvancedFilterState(state => ({ ...state, secondarySortKey: 'speciesName', secondarySortDirection: 'descending' }));
+        });
+        act(() => { result.current.undoNaturalSearch(); });
+        expect(result.current.advancedFilterState.secondarySortKey).toBe('speciesName');
+        expect(result.current.advancedFilterState.secondarySortDirection).toBe('descending');
+    });
+
+    it('le texte du champ est gardé par le hook : appliqué, effacé, preset, recherche par nom', () => {
+        const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
+        act(() => { result.current.setSearchTerm('buse'); });
+        expect(result.current.naturalDraft).toBe('buse');
+        act(() => {
+            result.current.applyNaturalSearch({ phrase: 'les canards en 2024', source: 'local', criteria: criteria({ categories: ['canards'], years: [2024] }) });
+        });
+        expect(result.current.naturalDraft).toBe('les canards en 2024');
+        act(() => { result.current.clearNaturalSearch(); });
+        expect(result.current.naturalSearch).toBeNull();
+        expect(result.current.naturalDraft).toBe('');
+        expect(result.current.yearFilter).toBe('all');
+        act(() => {
+            result.current.applyNaturalSearch({ phrase: 'les canards', source: 'local', criteria: criteria({ categories: ['canards'] }) });
+        });
+        act(() => { result.current.replaceWithNameSearch('merle'); });
+        expect(result.current.naturalSearch).toBeNull();
+        expect(result.current.searchTerm).toBe('merle');
+        expect(result.current.naturalDraft).toBe('merle');
+    });
+
     it('« Réessayer » : un lieu trouvé après une autre recherche n’est jamais appliqué à celle-ci', () => {
         const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
         const alpha = { kind: 'place' as const, placeName: 'Alpha', radiusKm: 10 };

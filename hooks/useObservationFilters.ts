@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Observation, Status, TaxonomicGroup } from '../types';
 import { compareIsoDate, getYearFromIsoDate } from '../utils/dateUtils';
-import { normalizeSearchText } from '../utils/textUtils';
+import { searchTextMatches } from '../utils/textUtils';
 import { distanceKm } from '../utils/geoDistance';
 import { applyAiFilter, type AiFilter } from '../utils/aiSearchFilters';
 
@@ -108,13 +108,12 @@ export const useObservationFilters = (
             })
             .filter(obs => {
                 if (!filters.searchTerm) return true;
-                const normalizedSearchTerm = normalizeSearchText(filters.searchTerm);
-                return (
-                    normalizeSearchText(obs.speciesName).includes(normalizedSearchTerm) ||
-                    (obs.latinName && normalizeSearchText(obs.latinName).includes(normalizedSearchTerm)) ||
-                    (obs.location && normalizeSearchText(obs.location).includes(normalizedSearchTerm)) ||
-                    (obs.municipality && normalizeSearchText(obs.municipality).includes(normalizedSearchTerm))
-                );
+                // Comme avant (sous-chaîne sans casse ni accents), et sans tenir
+                // compte d'un pluriel simple, des deux côtés.
+                return searchTextMatches(obs.speciesName, filters.searchTerm)
+                    || searchTextMatches(obs.latinName, filters.searchTerm)
+                    || searchTextMatches(obs.location, filters.searchTerm)
+                    || searchTextMatches(obs.municipality, filters.searchTerm);
             })
             .filter(obs => {
                 const geoMode = filters.geoMode || 'none';

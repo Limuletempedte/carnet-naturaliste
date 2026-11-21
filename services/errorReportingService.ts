@@ -20,16 +20,30 @@ import { isChunkLoadError } from '../utils/chunkLoadError';
  * `/summary/<nom>`), des coordonnées (Nominatim, Open-Meteo) ou un champ
  * proposé par l'assistant. `queryParams: false` ne couvre pas ces traces.
  */
+/**
+ * Sélecteur d'une trace d'interface, sans aucune valeur d'`aria-label`,
+ * `alt` ou `title`. Une valeur peut contenir n'importe quoi (texte tapé :
+ * « "][ », « > »…) : on ne cherche pas où elle finit. On garde ce qui précède
+ * le premier de ces attributs, et on remplace TOUT le reste par le nom des
+ * attributs présents. Les éléments qui citent un texte tapé portent en plus
+ * `data-sentry-element` (Sentry n'écrit alors que ce nom fixe).
+ */
+export const scrubUiSelector = (message: string): string => {
+    const first = message.search(/\[(?:aria-label|alt|title)=/);
+    if (first < 0) return message;
+    const kept = message.slice(0, first);
+    const rest = message.slice(first);
+    const names = ['aria-label', 'alt', 'title'].filter(name => rest.includes(`[${name}=`));
+    return `${kept}${names.map(name => `[${name}]`).join('')}${rest.includes(' > ') ? ' > …' : ''}`;
+};
+
 export const scrubBreadcrumb = (breadcrumb: Sentry.Breadcrumb): Sentry.Breadcrumb | null => {
     // Traces d'interface (`ui.click`, `ui.input`…) : le sélecteur recopie
     // `aria-label`, `alt` et `title`, donc parfois un nom d'espèce (« Choisir
     // Parus major », image d'une espèce). Seul le nom de l'attribut reste.
     if (typeof breadcrumb.category === 'string' && breadcrumb.category.startsWith('ui.')) {
         if (typeof breadcrumb.message !== 'string') return breadcrumb;
-        // La valeur peut contenir « "] » (texte tapé par la personne) : on
-        // va jusqu'au guillemet fermant suivi d'un autre attribut, d'un « > »
-        // ou de la fin, jamais au premier « "] » venu.
-        return { ...breadcrumb, message: breadcrumb.message.replace(/\[(aria-label|alt|title)=(?:"[\s\S]*?"|'[\s\S]*?'|[^\]]*)\](?=\[|\s>\s|$)/g, '[$1]') };
+        return { ...breadcrumb, message: scrubUiSelector(breadcrumb.message) };
     }
     if (breadcrumb.category !== 'fetch' && breadcrumb.category !== 'xhr') return breadcrumb;
     const data = breadcrumb.data ? { ...breadcrumb.data } : undefined;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Status, TaxonomicGroup } from '../types';
 import { captureSessionContext, readAccountValue, subscribeSessionChange, writeAccountValue } from '../services/sessionScope';
+import { subscribeNaturalSearchCache } from '../services/naturalSearchCache';
 import { logger } from '../utils/logger';
 import { generateUUID } from '../utils/uuidUtils';
 import {
@@ -77,6 +78,12 @@ export interface AppliedNaturalSearch {
     previous: FilterSnapshot;
 }
 
+/** Dernière réponse de l'assistant, pour la phrase qu'elle interprète (gardée au remontage du champ). */
+export interface AiSearchProposal {
+    phrase: string;
+    criteria: SearchCriteria;
+}
+
 export interface NaturalSearchInput {
     phrase: string;
     source: AppliedNaturalSearch['source'];
@@ -131,8 +138,21 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
     const [endDateFilter, setEndDateFilterRaw] = useState<string>('');
     const [advancedFilterState, setAdvancedFilterStateRaw] = useState<AdvancedFilterDialogState>(() => createDefaultAdvancedFilterState());
     const [naturalSearch, setNaturalSearchState] = useState<AppliedNaturalSearch | null>(null);
+    /**
+     * Texte du champ de recherche de la liste, gardé ici (et non dans le
+     * champ) : passer à la carte, tourner l'écran ou franchir la largeur
+     * téléphone/ordinateur ne le perd pas, ni la dernière réponse payée.
+     */
+    const [naturalDraft, setNaturalDraft] = useState('');
+    const [lastAiProposal, setLastAiProposal] = useState<AiSearchProposal | null>(null);
     /** Copie synchrone de `naturalSearch` (plusieurs changements dans un même geste). */
     const naturalRef = useRef<AppliedNaturalSearch | null>(null);
+    /**
+     * Centre écrit par un « près de… » (position de l'appareil ou lieu
+     * cherché) : marqué pour ne JAMAIS être enregistré, quel que soit le
+     * chemin (preset, rayon changé à la main, passage en rectangle…).
+     */
+    const searchCenterRef = useRef<{ lat: string; lon: string } | null>(null);
     const [filterPresets, setFilterPresets] = useState<StoredFilterPreset[]>(() => {
         const raw = context ? readAccountValue(FILTER_PRESETS_STORAGE_KEY, context) : null;
         if (!raw) return [];
@@ -160,7 +180,10 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
     // Changement de compte : la recherche (phrase, lieu) ne passe jamais d'un compte à l'autre.
     useEffect(() => subscribeSessionChange(() => {
         naturalRef.current = null;
+        searchCenterRef.current = null;
         setNaturalSearchState(null);
+        setNaturalDraft('');
+        setLastAiProposal(null);
         setSearchTermRaw('');
         setYearFilterRaw('all');
         setTaxonomicGroupFilterRaw('all');
@@ -168,6 +191,11 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         setStartDateFilterRaw('');
         setEndDateFilterRaw('');
         setAdvancedFilterStateRaw(previous => withoutGeo(previous));
+    }), []);
+
+    // Accord retiré (cache effacé) : la dernière réponse ne reste pas à l'écran.
+    useEffect(() => subscribeNaturalSearchCache(event => {
+        if (event === 'purge') setLastAiProposal(null);
     }), []);
 
     const resetFields = (fields: readonly ExistingFilterField[]) => {
@@ -179,10 +207,22 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
                 case 'statusFilter': setStatusFilterRaw('all'); break;
                 case 'startDateFilter': setStartDateFilterRaw(''); break;
                 case 'endDateFilter': setEndDateFilterRaw(''); break;
-                case 'geo': setAdvancedFilterStateRaw(previous => withoutGeo(previous)); break;
+                case 'geo':
+                    searchCenterRef.current = null;
+                    setAdvancedFilterStateRaw(previous => withoutGeo(previous));
+                    break;
             }
         }
     };
+
+    /** L'état contient-il le centre écrit par un « près de… » ? */
+    const holdsSearchCenter = (state: AdvancedFilterDialogState): boolean => {
+        const center = searchCenterRef.current;
+        return center !== null && state.radiusCenterLat === center.lat && state.radiusCenterLon === center.lon;
+    };
+    /** Le même état, sans le centre écrit par un « près de… » (rayon gardé). */
+    const withoutSearchCenter = (state: AdvancedFilterDialogState): AdvancedFilterDialogState =>
+        (holdsSearchCenter(state) ? { ...state, radiusCenterLat: '', radiusCenterLon: '' } : state);
 
     const writeFields = (writes: ExistingFilterWrites) => {
         if (writes.searchTerm !== undefined) setSearchTermRaw(writes.searchTerm);
@@ -193,6 +233,7 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         if (writes.endDateFilter !== undefined) setEndDateFilterRaw(writes.endDateFilter);
         const geo = writes.geo;
         if (geo) {
+            searchCenterRef.current = { lat: String(geo.lat), lon: String(geo.lon) };
             setAdvancedFilterStateRaw(previous => ({
                 ...withoutGeo(previous),
                 geoMode: 'radius',
@@ -217,6 +258,8 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         resetFields(current.owned.filter(field => !except.includes(field)));
         if (criteriaIsEmpty(criteria)) {
             commitNatural(null);
+            // Plus aucune étiquette : le champ suit (vide, ou la recherche par nom restante).
+            setNaturalDraft(except.includes('searchTerm') ? naturalDraft : '');
             return;
         }
         const writes: ExistingFilterWrites = { ...plan.writes };
@@ -250,7 +293,13 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         natural: naturalRef.current,
     });
 
-    const setSearchTerm = (value: string) => { detach(['searchTerm']); setSearchTermRaw(value); };
+    // Sans recherche en langage naturel appliquée, le champ de la liste montre
+    // la recherche par nom (tapée ici, sur la carte ou dans la galerie).
+    const setSearchTerm = (value: string) => {
+        detach(['searchTerm']);
+        setSearchTermRaw(value);
+        if (!naturalRef.current) setNaturalDraft(value);
+    };
     const setYearFilter = (value: string) => { detach(['yearFilter']); setYearFilterRaw(value); };
     const setTaxonomicGroupFilter = (value: TaxonomicGroup | 'all') => { detach(['taxonomicGroupFilter']); setTaxonomicGroupFilterRaw(value); };
     const setStatusFilter = (value: Status | 'all') => { detach(['statusFilter']); setStatusFilterRaw(value); };
@@ -259,8 +308,14 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
     const setAdvancedFilterState = (
         update: AdvancedFilterDialogState | ((previous: AdvancedFilterDialogState) => AdvancedFilterDialogState),
     ) => {
-        const next = typeof update === 'function' ? update(advancedFilterState) : update;
-        if (GEO_KEYS.some(key => next[key] !== advancedFilterState[key])) detach(['geo']);
+        let next = typeof update === 'function' ? update(advancedFilterState) : update;
+        if (GEO_KEYS.some(key => next[key] !== advancedFilterState[key])) {
+            detach(['geo']);
+            // La personne change le filtre géographique (« Aucun », rectangle,
+            // autre rayon) : le centre venu de la position n'y reste jamais.
+            next = withoutSearchCenter(next);
+            searchCenterRef.current = null;
+        }
         setAdvancedFilterStateRaw(next);
     };
 
@@ -274,6 +329,7 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         const plan = buildFilterPlan(input.criteria, new Date(), input.near);
         resetFields(ALL_FIELDS);
         writeFields(plan.writes);
+        setNaturalDraft(input.phrase);
         commitNatural({
             phrase: input.phrase,
             source: input.source,
@@ -316,14 +372,43 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         setStatusFilterRaw(previous.statusFilter);
         setStartDateFilterRaw(previous.startDateFilter);
         setEndDateFilterRaw(previous.endDateFilter);
-        setAdvancedFilterStateRaw(previous.advanced);
+        // Le filtre géographique d'avant revient ; le tri choisi depuis est gardé.
+        setAdvancedFilterStateRaw(current => {
+            const geo = Object.fromEntries(GEO_KEYS.map(key => [key, previous.advanced[key]])) as Pick<AdvancedFilterDialogState, (typeof GEO_KEYS)[number]>;
+            return { ...current, ...geo };
+        });
+        const previousGeo = previous.natural?.plan.writes.geo;
+        searchCenterRef.current = previousGeo ? { lat: String(previousGeo.lat), lon: String(previousGeo.lon) } : null;
         commitNatural(previous.natural);
+        setNaturalDraft(previous.natural?.phrase ?? previous.searchTerm);
+    };
+
+    /**
+     * Retire la recherche en langage naturel appliquée (croix « Effacer la
+     * recherche ») : les filtres qu'elle avait écrits et le champ sont vidés ;
+     * les autres filtres ne bougent pas.
+     */
+    const clearNaturalSearch = () => {
+        const current = naturalRef.current;
+        if (current) resetFields(current.owned);
+        commitNatural(null);
+        setSearchTermRaw('');
+        setNaturalDraft('');
+    };
+
+    /** Remplace la recherche appliquée par une recherche par nom (geste explicite). */
+    const replaceWithNameSearch = (text: string) => {
+        clearNaturalSearch();
+        setSearchTermRaw(text);
+        setNaturalDraft(text);
     };
 
     /** « Réinitialiser » : tous les filtres ET la recherche en langage naturel (le tri est gardé). */
     const resetAllFilters = () => {
         resetFields(ALL_FIELDS);
         commitNatural(null);
+        setNaturalDraft('');
+        setLastAiProposal(null);
     };
 
     const aiFilter = naturalSearch?.plan.aiFilter ?? null;
@@ -373,6 +458,7 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
 
     const resetAdvancedFilters = () => {
         detach(['geo']);
+        searchCenterRef.current = null;
         setAdvancedFilterStateRaw(createDefaultAdvancedFilterState());
     };
 
@@ -396,7 +482,8 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
 
     const saveFilterPreset = (name: string) => {
         const limits = presetLimits();
-        const keepsNearOut = naturalRef.current?.plan.owners.geo === 'near';
+        const keepsNearOut = naturalRef.current?.plan.owners.geo === 'near' || holdsSearchCenter(advancedFilterState);
+        if (keepsNearOut && !limits.includes('« près de… »')) limits.push('« près de… »');
         const newPreset: StoredFilterPreset = {
             id: generateUUID(),
             name,
@@ -424,6 +511,8 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         if (!preset) return;
         // Le preset remplace tout, recherche en langage naturel comprise.
         commitNatural(null);
+        searchCenterRef.current = null;
+        setNaturalDraft(preset.searchTerm);
         setSearchTermRaw(preset.searchTerm);
         setYearFilterRaw(preset.yearFilter);
         setTaxonomicGroupFilterRaw(preset.taxonomicGroupFilter);
@@ -464,6 +553,12 @@ export const useFilterControls = ({ onToast }: UseFilterControlsParams) => {
         /** Une recherche en cours a des critères qu'un preset ne garde pas. */
         naturalSearchPresetLimited: naturalSearch !== null && (naturalSearch.plan.aiFilter !== null || naturalSearch.plan.owners.geo === 'near'),
         applyNaturalSearch,
+        naturalDraft,
+        setNaturalDraft,
+        lastAiProposal,
+        setLastAiProposal,
+        clearNaturalSearch,
+        replaceWithNameSearch,
         removeNaturalCriterion,
         updateNaturalNear,
         undoNaturalSearch,
