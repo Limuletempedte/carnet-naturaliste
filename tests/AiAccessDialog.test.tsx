@@ -233,6 +233,37 @@ describe('AiAccessDialog', () => {
         expect(mocks.withdrawAccess).not.toHaveBeenCalled();
     });
 
+    it('présente la recherche : où la trouver, ce qui est envoyé, accord à donner', async () => {
+        mocks.getAiOverview
+            .mockResolvedValueOnce(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }))
+            .mockResolvedValueOnce(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }, { consents: { search: '2026-11-v1' } }));
+        renderDialog();
+        const card = await screen.findByTestId('ai-feature-search');
+        expect(card.textContent).toMatch(/Interpréter avec l'IA/);
+        expect(card.textContent).toMatch(/telle que vous l'avez écrite/);
+        expect(card.textContent).toMatch(/Jamais d'observation ni de position/);
+        fireEvent.click(within(card).getByRole('checkbox'));
+        fireEvent.click(within(card).getByRole('button', { name: 'Donner mon accord' }));
+        await waitFor(() => expect(mocks.giveConsent).toHaveBeenCalledWith('search', expect.objectContaining({ userId: 'user-1' })));
+    });
+
+    it('retirer l’accord à la recherche efface les phrases gardées dans ce navigateur, même si le retrait échoue', async () => {
+        const key = 'ai-search-phrases-v1:user-1';
+        localStorage.setItem(key, JSON.stringify({ version: 'x', entries: [] }));
+        mocks.getAiOverview.mockResolvedValue(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }, { consents: { search: '2026-11-v1' } }));
+        renderDialog();
+        fireEvent.click(await screen.findByRole('button', { name: 'Retirer mon accord à la recherche' }));
+        await waitFor(() => expect(mocks.withdrawConsent).toHaveBeenCalledWith('search', expect.anything()));
+        await waitFor(() => expect(localStorage.getItem(key)).toBeNull());
+
+        localStorage.setItem(key, JSON.stringify({ version: 'x', entries: [] }));
+        mocks.withdrawAccess.mockRejectedValueOnce(new AiAssistError('unknown'));
+        fireEvent.click(screen.getByRole('button', { name: 'Retirer mon accord' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Confirmer le retrait' }));
+        await waitFor(() => expect(mocks.withdrawAccess).toHaveBeenCalled());
+        await waitFor(() => expect(localStorage.getItem(key)).toBeNull());
+    });
+
     it('signale un accord à la note donné sous la version provisoire', async () => {
         mocks.getAiOverview.mockResolvedValue(ov({ kind: 'approved', remaining: 20, monthlyQuota: 20 }, { consents: { note: '2026-11-v0' } }));
         renderDialog();

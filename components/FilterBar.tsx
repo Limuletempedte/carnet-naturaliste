@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Status } from '../types';
+import type { AppliedNaturalSearch } from '../hooks/useFilterControls';
+import type { CriterionRef, NearResolution, SearchNear } from '../utils/aiSearchFilters';
+import { NaturalSearchApplied } from './NaturalSearch';
 
 interface FilterBarProps {
     searchTerm: string;
@@ -11,7 +14,16 @@ interface FilterBarProps {
     availableYears: string[];
     isMobileView: boolean;
     searchId?: string;
+    /** Recherche en langage naturel appliquée : ses étiquettes restent visibles ici aussi. */
+    naturalSearch?: AppliedNaturalSearch | null;
+    onRemoveNaturalCriterion?: (ref: CriterionRef) => void;
+    onUpdateNaturalNear?: (near: NearResolution, forNear?: SearchNear) => void;
+    onUndoNaturalSearch?: () => void;
+    onResetAllFilters?: () => void;
+    excludedNoLatinName?: number;
 }
+
+const noop = () => undefined;
 
 const FilterBar: React.FC<FilterBarProps> = ({
     searchTerm,
@@ -22,8 +34,23 @@ const FilterBar: React.FC<FilterBarProps> = ({
     onStatusChange,
     availableYears,
     isMobileView,
-    searchId = 'search-input-filter'
+    searchId = 'search-input-filter',
+    naturalSearch = null,
+    onRemoveNaturalCriterion = noop,
+    onUpdateNaturalNear = noop,
+    onUndoNaturalSearch = noop,
+    onResetAllFilters = noop,
+    excludedNoLatinName = 0,
 }) => {
+    const [announcement, setAnnouncement] = useState('');
+    const searchRef = useRef<HTMLInputElement | null>(null);
+    /** La section « J'ai compris » va disparaître : le focus revient au champ. */
+    const focusSearchNext = useRef(false);
+    useEffect(() => {
+        if (!focusSearchNext.current || naturalSearch) return;
+        focusSearchNext.current = false;
+        searchRef.current?.focus();
+    }, [naturalSearch]);
     // Identifiants dérivés du searchId pour rester uniques si plusieurs FilterBar
     // coexistent (UIA-06 : labels Année/Statut sans association).
     const yearId = `${searchId}-year`;
@@ -34,6 +61,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 <div className={`relative ${isMobileView ? '' : 'md:col-span-1'}`}>
                     <label htmlFor={searchId} className={`block font-bold text-gray-700 dark:text-gray-300 mb-1 ${isMobileView ? 'text-xs' : 'text-sm'}`}>Recherche</label>
                     <input
+                        ref={searchRef}
                         type="text"
                         id={searchId}
                         placeholder="Espèce, lieu..."
@@ -51,7 +79,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                         className={`w-full border border-nature-light-gray dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-nature-green focus:border-transparent transition dark:bg-nature-dark-bg dark:text-white ${isMobileView ? 'p-1.5 text-xs' : 'p-2'}`}
                     >
                         <option value="all">Toutes</option>
-                        {availableYears.map(year => (
+                        {(yearFilter === 'all' || availableYears.includes(yearFilter) ? availableYears : [...availableYears, yearFilter].sort((a, b) => Number(b) - Number(a))).map(year => (
                             <option key={year} value={year}>{year}</option>
                         ))}
                     </select>
@@ -71,6 +99,21 @@ const FilterBar: React.FC<FilterBarProps> = ({
                     </select>
                 </div>
             </div>
+            {/* Les filtres de la recherche en langage naturel s'appliquent ici aussi : jamais sans leurs étiquettes. */}
+            {naturalSearch && (
+                <NaturalSearchApplied
+                    naturalSearch={naturalSearch}
+                    onRemoveCriterion={onRemoveNaturalCriterion}
+                    onUpdateNear={onUpdateNaturalNear}
+                    onUndo={() => { focusSearchNext.current = true; onUndoNaturalSearch(); setAnnouncement('Recherche annulée : les filtres d’avant sont rétablis.'); }}
+                    onResetAll={() => { focusSearchNext.current = true; onResetAllFilters(); setAnnouncement('Tous les filtres sont réinitialisés.'); }}
+                    excludedNoLatinName={excludedNoLatinName}
+                    onAnnounce={setAnnouncement}
+                    onEmptied={() => { focusSearchNext.current = true; }}
+                    compact={isMobileView}
+                />
+            )}
+            <p role="status" aria-live="polite" className="sr-only">{announcement}</p>
         </div>
     );
 };

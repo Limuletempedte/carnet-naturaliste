@@ -38,14 +38,10 @@ export const CONSENT_VERSIONS: Readonly<Partial<Record<TextFeatureName, string>>
     // Texte affiché : `NoteConsentText` (components/AiConsentCard.tsx). La
     // version provisoire `2026-11-v0` de la PR A est refusée désormais.
     note: '2026-11-v1',
-    // PROVISOIRE (PR A de la recherche) : déclarée côté fonction seulement,
-    // l'application n'affiche aucune carte. Plus longue que les 32
-    // caractères permis par `ai_consents.version` : aucun accord ne peut
-    // l'atteindre, donc `consent_outdated` pour tous, même si
-    // `AI_DISABLED_FEATURES` oublie `search` (fermé par défaut). La PR B
-    // DOIT la remplacer, des deux côtés, par une version enregistrable en
-    // écrivant le texte du consentement (tests/aiAssistService.test.ts).
-    search: 'pr-a-fermee-jusqu-au-texte-de-la-pr-b',
+    // Texte affiché : `SearchConsentText` (components/AiConsentCard.tsx). La
+    // version provisoire de la PR A (plus longue que les 32 caractères de
+    // `ai_consents.version`, donc impossible à enregistrer) est remplacée.
+    search: '2026-11-v1',
 };
 
 // ---------------------------------------------------------------------------

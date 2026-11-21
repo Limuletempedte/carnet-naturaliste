@@ -60,8 +60,17 @@ describe('errorReportingService — traces réseau', () => {
             category: 'ui.click',
             message: 'div.panel > button.choose[aria-label="Choisir Rougegorge familier"] > img[alt="Erithacus rubecula"][title=\'Parus major\']',
         });
-        expect(click?.message).toBe('div.panel > button.choose[aria-label] > img[alt][title]');
+        expect(click?.message).toBe('div.panel > button.choose[aria-label][alt][title] > …');
         expect(click?.message).not.toMatch(/Rougegorge|Erithacus|Parus/);
+        // Une valeur qui contient « "] », « "][ » ou « > » (phrase tapée) ne laisse rien passer.
+        for (const value of ['ab"]secretfragment »', 'ab"][type="x"]secretfragment', 'a"] > b[aria-label="secretfragment', "x'][title='secretfragment"]) {
+            const tricky = service.scrubBreadcrumb({
+                category: 'ui.click',
+                message: `li > button[aria-label="Retirer le critère : nom ou lieu contenant « ${value}"][type="button"]`,
+            });
+            expect(tricky?.message, value).not.toMatch(/secretfragment/);
+            expect(tricky?.message?.startsWith('li > button[aria-label]'), value).toBe(true);
+        }
         const input = service.scrubBreadcrumb({ category: 'ui.input', message: 'input#speciesName' });
         expect(input?.message).toBe('input#speciesName');
     });

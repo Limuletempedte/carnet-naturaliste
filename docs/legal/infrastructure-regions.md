@@ -1,6 +1,6 @@
 # Documentation des regions d'hebergement de l'infrastructure
 
-**Date de mise a jour** : 2026-11-20
+**Date de mise a jour** : 2026-11-21
 
 ---
 
@@ -13,7 +13,7 @@ d'hebergement et les implications RGPD.
 **Synthese : les donnees personnelles (compte, observations, photos, sons) sont hebergees
 dans l'Union europeenne (Supabase, region `eu-central-1` / Francfort). Cela ne couvre pas les traitements tiers : Turnstile traite des signaux techniques
 sur une infrastructure mondiale ; l'assistant IA (Anthropic, facultatif, sur consentement par fonctionnalité) envoie la photo
-(aide à l'identification), les chiffres du mois (bilan) ou le texte d'une note (note → fiche) aux États-Unis ; les sauvegardes techniques sont décrites dans le registre.**
+(aide à l'identification), les chiffres du mois (bilan), le texte d'une note (note → fiche) ou une phrase de recherche (recherche en langage naturel) aux États-Unis ; les sauvegardes techniques sont décrites dans le registre.**
 
 ---
 
@@ -50,17 +50,17 @@ sur une infrastructure mondiale ; l'assistant IA (Anthropic, facultatif, sur con
 |---|---|
 | Service | Supabase Edge Functions |
 | Region | Meme region que le projet Supabase (`eu-central-1`, UE) |
-| Donnees traitees | `delete-account` : JWT token (verification), user ID (suppression). `ai-identify` : JWT token, photo réencodée et contexte (mois, pays, département, groupe, habitat), transmis à Anthropic. `ai-text` : JWT token ; pour le bilan du mois, chiffres agrégés du mois et noms d'espèces (ni lieu, ni GPS, ni commentaire, ni date précise) ; pour la note → fiche, le texte de la note tel qu'il est écrit (1 000 caractères au plus, lieux et noms compris ; ni date de la fiche, ni GPS, ni reste de la fiche) ; transmis à Anthropic. |
-| Donnees persistees | `delete-account` : aucune. `ai-identify` et `ai-text` : ni photo, ni chiffres, ni note, ni hypothèses, ni texte produit ; seulement une ligne de journal dans `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut), conservée 3 mois. Le texte du bilan est gardé dans le navigateur de l'utilisateur, pas sur le serveur ; la note n'est gardée nulle part (sauf dans le commentaire de la fiche, si l'utilisateur le choisit). |
+| Donnees traitees | `delete-account` : JWT token (verification), user ID (suppression). `ai-identify` : JWT token, photo réencodée et contexte (mois, pays, département, groupe, habitat), transmis à Anthropic. `ai-text` : JWT token ; pour le bilan du mois, chiffres agrégés du mois et noms d'espèces (ni lieu, ni GPS, ni commentaire, ni date précise) ; pour la note → fiche, le texte de la note tel qu'il est écrit (1 000 caractères au plus, lieux et noms compris ; ni date de la fiche, ni GPS, ni reste de la fiche) ; pour la recherche en langage naturel, la phrase telle qu'elle est écrite (200 caractères au plus, lieux et noms compris ; ni observation, ni position, ni date) ; transmis à Anthropic. |
+| Donnees persistees | `delete-account` : aucune. `ai-identify` et `ai-text` : ni photo, ni chiffres, ni note, ni phrase de recherche, ni filtres, ni hypothèses, ni texte produit ; seulement une ligne de journal dans `ai_usage` (date, fonctionnalité, modèle, tokens, coût, statut), conservée 3 mois. Le texte du bilan est gardé dans le navigateur de l'utilisateur, pas sur le serveur ; la note n'est gardée nulle part (sauf dans le commentaire de la fiche, si l'utilisateur le choisit) ; les phrases de recherche interprétées sont gardées dans le navigateur de l'utilisateur (les 50 dernières, 12 mois au plus, sans date calculée ni position). |
 
 ### 3 bis. Anthropic (assistant IA)
 
 | Composant | Detail |
 |---|---|
-| Service | API Claude (Anthropic), appelée uniquement par les fonctions `ai-identify` (photo) et `ai-text` (bilan du mois, note → fiche) |
+| Service | API Claude (Anthropic), appelée uniquement par les fonctions `ai-identify` (photo) et `ai-text` (bilan du mois, note → fiche, recherche en langage naturel) |
 | Sous-traitant | Anthropic, via Anthropic Ireland Ltd pour l'EEE (DPA intégré aux Commercial Terms) |
 | Region | Pas de traitement limité à l'UE (`inference_geo` : `global` ou `us`) ; données stockées aux **États-Unis** |
-| Donnees recues | Photo : photo réencodée (1 280 px max, sans EXIF ni GPS), mois, pays, département, groupe s'il a été choisi, habitat s'il est renseigné. Bilan : mois, totaux, répartition par groupe, noms des espèces les plus observées et des espèces nouvelles, totaux de l'année précédente. Note : le texte de la note tel qu'il est écrit (lieux et noms compris). Aucun identifiant ni email. |
+| Donnees recues | Photo : photo réencodée (1 280 px max, sans EXIF ni GPS), mois, pays, département, groupe s'il a été choisi, habitat s'il est renseigné. Bilan : mois, totaux, répartition par groupe, noms des espèces les plus observées et des espèces nouvelles, totaux de l'année précédente. Note : le texte de la note tel qu'il est écrit (lieux et noms compris). Recherche : la phrase telle qu'elle est écrite (lieux et noms compris ; jamais d'observation ni de position). Aucun identifiant ni email. |
 | Transfert hors UE | **Oui** — clauses contractuelles types de l'UE (modules 2 et 3) |
 | Conservation | Effacement sous 30 jours ; jusqu'à 2 ans si un contrôle de sécurité signale la demande. Pas d'entraînement par défaut. |
 
@@ -84,13 +84,13 @@ le traitement 8 du [registre](registre-traitements.md). La durée de validité d
 |---|---|---|---|
 | Cloudflare Turnstile | Mondial | IP et signaux techniques anti-robots | Possible |
 | Supabase (BDD + Storage) | eu-central-1 (UE) | Observations, auth, photos, sons | Non |
-| Supabase Edge Fn | eu-central-1 (UE) | JWT (ephemere), photo, chiffres du mois ou texte d'une note transmis à Anthropic | Non (la fonction elle-même) |
-| Anthropic (assistant IA) | US (stockage) | Photo réencodée + contexte, chiffres du mois et noms d'espèces, ou texte d'une note, sur consentement | **Oui** (clauses contractuelles types) |
+| Supabase Edge Fn | eu-central-1 (UE) | JWT (ephemere), photo, chiffres du mois, texte d'une note ou phrase de recherche transmis à Anthropic | Non (la fonction elle-même) |
+| Anthropic (assistant IA) | US (stockage) | Photo réencodée + contexte, chiffres du mois et noms d'espèces, texte d'une note ou phrase de recherche, sur consentement | **Oui** (clauses contractuelles types) |
 | Vercel (CDN) | Global | Frontend public (aucune donnee perso) | Sans objet |
 | iNaturalist | US | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |
 | GBIF | UE/Global | Termes de recherche (non personnel) | Lecture seule, pas de donnee perso |
 | Wikipédia (Wikimedia Foundation) | US | Nom d'espece (fiche de l'espece) + IP | Lecture seule, pas de donnee perso |
-| Nominatim | UE/Global | Coordonnees GPS (geocodage inverse) ou adresse tapee + IP | Geocodage (interet legitime) |
+| Nominatim | UE/Global | Coordonnees GPS (geocodage inverse), adresse tapee ou nom d'un lieu cite dans une phrase de recherche (geocodage direct) + IP | Geocodage (interet legitime ; service demande pour le lieu d'une recherche) |
 | Open-Meteo | UE | Coordonnees GPS et date (meteo), coordonnees (altitude) | Non |
 
 ---

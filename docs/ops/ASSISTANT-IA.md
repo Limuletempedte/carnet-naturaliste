@@ -577,7 +577,7 @@ dépense dans la Console.
   **0,0060 $** (conforme à l'essai du §6.3).
 
 Pour refermer le bilan sans rien défaire (puis redéployer, §6.6), tant que
-la recherche n'est pas ouverte (§6.8, avant sa PR B) :
+la recherche n'est pas ouverte (§6.8, avant l'étape 3 de « Ouvrir la recherche après la fusion de la PR B ») :
 
 ```bash
 npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowiezzqehadcfnbkijo
@@ -585,7 +585,7 @@ npx supabase secrets set AI_DISABLED_FEATURES=summary,search --project-ref xowie
 
 > ⚠️ `secrets set` **remplace** la liste, il n'ajoute pas. Écrire toujours la
 > liste **complète** de ce qui doit rester coupé : `summary` seul rouvrirait
-> la recherche. Une fois la recherche ouverte (après sa PR B), refermer le
+> la recherche. Une fois la recherche ouverte (§6.8, étape 3 de l'ouverture faite), refermer le
 > bilan seul s'écrira `AI_DISABLED_FEATURES=summary`.
 
 ### 6.5 Comment `ai-text` décide
@@ -946,7 +946,7 @@ langage naturel (phase 4).
 #### Couper et rouvrir la note
 
 - **Refermer** (sans rien défaire) : tant que la recherche n'est pas ouverte
-  (§6.8, avant sa PR B), `AI_DISABLED_FEATURES=note,search` (ou
+  (§6.8, avant l'étape 3 de l'ouverture), `AI_DISABLED_FEATURES=note,search` (ou
   `summary,note,search` pour couper aussi le bilan) ; ensuite, `note` seul.
   Puis redéployer `ai-text` et refaire le contrôle de l'étape 5 de la PR A
   (`503 feature_disabled`). L'application affiche alors « momentanément
@@ -969,15 +969,12 @@ même modèle (`AI_TEXT_MODEL`), même quota et même budget. Après les essais
 du 20 novembre, la recherche reste sur `AI_TEXT_MODEL` (Sonnet 5.5) ;
 un réglage par fonctionnalité existe (`AI_TEXT_MODEL_SEARCH`, voir « Modèle
 par fonctionnalité » plus bas), mais n'est pas posé. Le consentement de
-la recherche est en version **provisoire**, déclarée côté fonction seulement :
-l'application n'affiche aucune carte, et rien n'est visible pour les
-utilisateurs. Cette version (`pr-a-fermee-jusqu-au-texte-de-la-pr-b`) est
-**plus longue que les 32 caractères** permis par `ai_consents.version` :
-aucun accord ne peut l'atteindre, donc la fonction répond `consent_outdated`
-à tous, même si la liste de coupure oublie `search` par erreur. C'est un
-second verrou ; la coupure (`AI_DISABLED_FEATURES=search`) reste la règle. Le champ de recherche, l'analyse locale
-gratuite, les étiquettes « J'ai compris » et les textes légaux viendront avec
-la PR B.
+la recherche était, avec la PR A, en version **provisoire**, déclarée côté
+fonction seulement et **plus longue que les 32 caractères** permis par
+`ai_consents.version` : aucun accord ne pouvait l'atteindre (second verrou,
+`consent_outdated` pour tous). La **PR B** (application et textes légaux,
+voir plus bas) la remplace par `2026-11-v1`, des deux côtés ; la coupure
+(`AI_DISABLED_FEATURES=search`) reste le verrou jusqu'à l'ouverture.
 
 **Ce qui est envoyé à Claude** : la phrase tapée dans la recherche
 seulement, 200 caractères au plus (refus au-delà, jamais de troncature),
@@ -1312,12 +1309,143 @@ la recherche est en production **fermée** (`AI_DISABLED_FEATURES=search`,
   ```
 
 - **Toujours écrire la liste complète** : `secrets set` remplace la valeur.
-- **Rouvrir** : seulement après la fusion de la PR B, qui remplacera la
-  version provisoire du consentement des deux côtés par une version
-  enregistrable. Comme pour
-  la note (§6.7, « Ouvrir la note après la fusion de la PR B ») :
-  **redéployer `ai-text` d'abord**, recherche encore fermée, puis retirer
-  `search` de la liste (`secrets unset AI_DISABLED_FEATURES` si elle ne
-  contient que `search`), redéployer, et refaire les contrôles 401, 204,
-  403. Dans l'autre ordre, la version en service attendrait encore l'accord
-  provisoire et l'application tournerait en boucle sur la carte d'accord.
+- **Ouvrir pour la première fois** : voir « Ouvrir la recherche après la
+  fusion de la PR B » plus bas (ordre impératif).
+
+#### PR B (application et textes légaux)
+
+Ce que voit l'utilisateur, dans la liste des observations (téléphone et
+ordinateur). Principe : **la recherche par nom d'abord**, jamais moins bonne
+qu'avant la PR (l'analyse gratuite est en service pour tous dès la fusion,
+même IA fermée) :
+
+- sans recherche en langage naturel appliquée, chaque frappe filtre **par
+  nom**, exactement comme avant, quoi qu'on tape (« buse », « Fougères »,
+  « Petit Mars changeant », « Villeneuve-en-Montagne », « Le Teich ») : même
+  règle que `main` (sous-chaîne), dans la liste, la carte et la galerie. Le
+  pluriel simple n'est ignoré (des deux côtés, de mot à mot) que dans le
+  texte d'une recherche en langage naturel **appliquée** (« hirondelles
+  rustiques en mai » trouve « Hirondelle rustique ») ;
+- l'**analyse locale gratuite** (`utils/naturalSearchLocal.ts`, aucun appel)
+  **propose** en plus ce qu'elle reconnaît : un mois ou une saison seulement
+  avec un contexte temporel (« en mai », « fin mai », « mai 2024 », « l'été
+  dernier », « champignons d'automne »), années, périodes relatives, groupes
+  et catégories (jamais dans un nom : « Étang des Canards », « Île aux
+  Oiseaux » ; jamais après « à » devant une majuscule : « oiseaux à
+  Fougères »), statuts, quelques milieux, un département après « en » ou
+  « dans le », « près de chez moi ». Un composé à traits d'union est un seul
+  nom : rien n'y est reconnu, sauf s'il est reconnu en entier (« ce
+  mois-ci », « chauves-souris », « mi-avril ») ;
+- Entrée n'applique la proposition que pour une **phrase claire** (mot
+  outil, ou plusieurs critères) ; un mot seul reconnu (« Fougères ») reste une
+  recherche par nom, et son filtre ne s'applique que sur « Appliquer ce
+  filtre ». Des passages non compris séparés (« chouette effraie en mai à
+  Pessac ») ne sont jamais collés : rien n'est appliqué. Un repère de temps
+  non compris après le premier élément compris (« oiseaux vus hier »,
+  « oiseaux en avril et mai », « oiseaux avant 2020 ») : rien n'est
+  appliqué, le passage est cité, l'IA est proposée ;
+- étiquettes « J'ai compris : … » retirables une à une ; une recherche
+  appliquée ne change plus avant « Appliquer » ; la croix l'efface ; un texte
+  tapé par-dessus se cherche par nom à la place, sur Entrée dès qu'Entrée
+  n'appliquerait rien (« Fougères », « Rapaces ») ou sur « Chercher « … »
+  par nom à la place » ;
+  « Annuler la recherche » rend les filtres d'avant (le tri est gardé) ;
+- « **Interpréter avec l'IA** » n'est proposé que pour une phrase (mot outil,
+  critère reconnu, ou ensemble du dictionnaire suivi d'un complément :
+  « oiseaux de Pessac », « plantes rares ») qui garde des mots non compris,
+  jamais pour un simple nom (« buse variable », « Pic épeiche », « Grand
+  cormoran », « Le Teich ») ; sans accès approuvé, un lien discret vers
+  « Assistant IA » remplace le bouton. L'état de l'assistant n'est lu qu'à ce
+  moment-là. Carte d'accord `search` au premier usage, à l'endroit même ; si
+  le texte du champ change pendant la carte ou la vérification (un preset
+  appliqué), la carte se ferme et rien ne part ;
+- une phrase interprétée est gardée dans le navigateur
+  (`ai-search-phrases-v1:<id>`, 50 au plus, **12 mois** au plus, forme
+  relative, sans date calculée ni position, versionnée avec le dictionnaire,
+  gardée après une déconnexion) : rejouée, elle ne coûte rien et marche hors
+  ligne. Une phrase en cours d'interprétation n'est jamais renvoyée, même
+  après un passage par la carte ou une rotation de l'écran ;
+- « près de chez moi » demande la position au navigateur **au moment
+  d'appliquer** ; refusée ou introuvable, l'étiquette le dit (« Réessayer »).
+  La position (ou celle du lieu) reste dans le filtre de la recherche, en
+  mémoire, **jamais dans les filtres avancés** : elle n'est donc jamais
+  enregistrée, pas même dans un préréglage ; un filtre géographique posé à la
+  main s'y ajoute. Un lieu
+  nommé (rendu par l'assistant) est cherché par Nominatim (`searchAddress`) ;
+- les étiquettes restent visibles sur la carte et dans la galerie.
+
+Côté fonction, seule la version de l'accord change : `CONSENT_VERSIONS.search`
+= `2026-11-v1` (égalité stricte avec l'application, testée). `index.ts`
+n'est pas touché par cette PR.
+
+#### Ouvrir la recherche après la fusion de la PR B (propriétaire, dans l'ordre)
+
+État avant : recherche en production **fermée**
+(`AI_DISABLED_FEATURES=search`, `ai-text` version 12, celle de la PR #138).
+La PR #139 (modèle par fonctionnalité, consignes durcies) est sur `main` mais
+**pas encore déployée** : le redéploiement de l'étape 2 l'emporte, avec la
+nouvelle version de l'accord.
+
+> ⚠️ **Ordre impératif : redéployer `ai-text` (étape 2) AVANT de retirer
+> `search` de la liste de coupure (étape 3).** La version en service attend
+> encore l'accord provisoire, impossible à enregistrer, alors que
+> l'application enregistre `2026-11-v1` : une recherche ouverte avant le
+> redéploiement répondrait `consent_outdated`, l'application reproposerait la
+> carte d'accord, et la personne tournerait en boucle (sans frais, mais sans
+> jamais d'interprétation).
+
+1. **Vercel a déployé `main`** : sur le site en ligne, une phrase dans la
+   recherche de la liste affiche « J'ai compris : … » (analyse gratuite) et,
+   si elle n'est pas toute comprise, le bouton « Interpréter avec l'IA ». Au
+   premier essai, **la carte d'accord apparaît d'abord** (personne n'a encore
+   d'accord `search`) ; l'accord accepté est enregistré en `2026-11-v1`, puis,
+   tant que la recherche est fermée, l'envoi répond « La recherche avec l'IA
+   est momentanément indisponible », sans rien compter (la coupure est
+   vérifiée avant toute réservation).
+2. **Redéployer `ai-text` d'abord, recherche encore fermée.** Vérifier
+   d'abord dans *Edge Functions → Secrets* que `AI_DISABLED_FEATURES` vaut
+   toujours `search`, et que `npx supabase secrets list --project-ref
+   xowiezzqehadcfnbkijo` ne montre **aucun** `AI_TEXT_MODEL_SUMMARY`,
+   `AI_TEXT_MODEL_NOTE` ni `AI_TEXT_MODEL_SEARCH` (les trois fonctionnalités
+   suivent `AI_TEXT_MODEL`, `claude-sonnet-5-5`). Puis, depuis `main` à jour :
+
+   ```bash
+   npx supabase functions deploy ai-text --use-api
+   ```
+
+   Contrôles sans frais : les trois `curl` du §6.2, étape 5. Attendu :
+   **401**, **204**, **403**, et « Verify JWT » toujours activé. Ce
+   déploiement emporte la PR #139, qui touche `index.ts` : **vérifier que le
+   bilan et la note marchent toujours** (un bilan et une note depuis le site,
+   environ 0,006 $ et 0,01 $ ; les deux dernières lignes `ai_usage` ont
+   `feature` `summary` puis `note`, statut `ok`, `model = 'claude-sonnet-5-5'`).
+   Et que la recherche est toujours fermée : contrôle gratuit de l'étape 5 de
+   la PR A (plus haut), attendu **`503 feature_disabled`**.
+3. **Retirer `search` de la liste de coupure.** Si elle ne contient que
+   `search` :
+
+   ```bash
+   npx supabase secrets unset AI_DISABLED_FEATURES --project-ref xowiezzqehadcfnbkijo
+   ```
+
+   Si elle contient autre chose, réécrire la liste **complète** sans `search`
+   (`secrets set` remplace la valeur). Puis redéployer `ai-text` (même
+   commande qu'à l'étape 2) pour qu'elle relise le réglage, et refaire les
+   trois contrôles **401**, **204**, **403**.
+4. **Une vraie recherche depuis le site en ligne** (une utilisation, environ
+   0,011 $) : dans la liste, écrire par exemple « les hérons l'hiver dernier
+   près de Bordeaux », appuyer sur « Interpréter avec l'IA », donner
+   l'accord **si la carte apparaît** (elle n'apparaît pas si l'accord a déjà
+   été donné à l'étape 1), relire les étiquettes, appliquer, puis « Annuler
+   la recherche ». Rejouer la même phrase : les étiquettes reviennent **sans
+   nouvel appel** (« phrase déjà interprétée »), le compteur ne bouge pas.
+5. **Contrôles en base**, dans l'éditeur SQL : la ligne `ai_consents` de son
+   compte a `feature = 'search'` et `version = '2026-11-v1'` ; la dernière
+   ligne `ai_usage` a `feature = 'search'`, statut `ok`, modèle
+   `claude-sonnet-5-5` et un coût proche de 0,011 $ (une seule ligne pour
+   les deux essais de l'étape 4). Contrôler aussi la dépense dans la Console
+   Anthropic.
+
+Retour arrière : refermer (« Couper et rouvrir la recherche », plus haut).
+L'analyse gratuite, le cache et les étiquettes continuent de marcher ; le
+bouton IA répond alors « momentanément indisponible ».

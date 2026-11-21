@@ -93,3 +93,42 @@ describe('AiConsentCard — note → fiche', () => {
     });
 });
 
+
+describe('AiConsentCard — recherche en langage naturel', () => {
+    it('dit exactement ce que fait le code', () => {
+        render(<AiConsentCard feature="search" onAccept={vi.fn()} onCancel={vi.fn()} />);
+        const text = screen.getByTestId('ai-search-consent-text').textContent ?? '';
+        expect(text).toMatch(/La phrase, telle que vous l'avez écrite/);
+        expect(text).toMatch(/200 caractères au plus/);
+        expect(text).toMatch(/y compris les lieux et les noms/);
+        expect(text).toMatch(/seulement quand vous appuyez sur « Interpréter avec l'IA »/);
+        expect(text).toMatch(/Aucune observation, ni votre position, ni la date du jour/);
+        expect(text).toMatch(/L'analyse gratuite, elle, n'envoie rien/);
+        expect(text).toMatch(/Anthropic Ireland Ltd/);
+        expect(text).toMatch(/États-Unis/);
+        expect(text).toMatch(/clauses contractuelles types/);
+        expect(text).toMatch(/30 jours/);
+        expect(text).toMatch(/2 ans si un contrôle de sécurité/);
+        expect(text).toMatch(/ne servent pas à entraîner/);
+        expect(text).toMatch(/même celles où il ne trouve aucun critère/);
+        expect(text).toMatch(/les 50 dernières, 12 mois au plus/);
+        expect(text).toMatch(/sans date calculée ni position/);
+        expect(text).toMatch(/Elles restent après une déconnexion/);
+        expect(text).toMatch(/si vous y retirez cet accord dans « Assistant IA »/);
+        expect(text).toMatch(/ni envoyée à l'assistant, ni enregistrée \(pas même dans un préréglage de filtres\)/);
+        expect(text).toMatch(/OpenStreetMap \(service Nominatim\)/);
+        expect(text).toMatch(/1 utilisation sur les 20 du mois/);
+        expect(text).toMatch(/refus de l'assistant ou une réponse inexploitable compte aussi/);
+        expect(text).toMatch(/Retirer mon accord à la recherche/);
+    });
+
+    it('exige la case avant d’accepter', () => {
+        const onAccept = vi.fn();
+        render(<AiConsentCard feature="search" onAccept={onAccept} onCancel={vi.fn()} acceptLabel="Accepter et interpréter" />);
+        const accept = screen.getByRole('button', { name: 'Accepter et interpréter' }) as HTMLButtonElement;
+        expect(accept.disabled).toBe(true);
+        fireEvent.click(screen.getByRole('checkbox', { name: /envoi de mes phrases de recherche/ }));
+        fireEvent.click(accept);
+        expect(onAccept).toHaveBeenCalledTimes(1);
+    });
+});
