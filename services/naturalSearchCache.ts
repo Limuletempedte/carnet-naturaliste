@@ -60,15 +60,16 @@ const notify = (event: 'write' | 'purge') => {
 // une autre instance du champ (remontage pendant l'attente)
 // ---------------------------------------------------------------------------
 
-const inFlight = new Map<string, Promise<void>>();
+/** Fin d'une interprétation : null si elle a réussi (ou a été annulée), sinon le message de son erreur. */
+const inFlight = new Map<string, Promise<string | null>>();
 const flightKey = (phrase: string, userId: string) => `${userId}\u0000${normalizePhraseKey(phrase)}`;
 
 /** Interprétation de cette phrase déjà en cours pour ce compte, ou null. */
-export const interpretationInFlight = (phrase: string, userId: string): Promise<void> | null =>
+export const interpretationInFlight = (phrase: string, userId: string): Promise<string | null> | null =>
     inFlight.get(flightKey(phrase, userId)) ?? null;
 
 /** Note qu'une interprétation est en cours (oubliée à sa fin, réussie ou non). */
-export const trackInterpretation = (phrase: string, userId: string, settled: Promise<void>): void => {
+export const trackInterpretation = (phrase: string, userId: string, settled: Promise<string | null>): void => {
     const key = flightKey(phrase, userId);
     inFlight.set(key, settled);
     void settled.finally(() => {

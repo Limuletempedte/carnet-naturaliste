@@ -9,11 +9,12 @@
 // plus tard depuis le cache reste juste.
 //
 // Ce qui correspond à un filtre existant de la liste y est écrit (année
-// unique, dates de début et de fin, statut unique, groupe unique, rayon,
-// texte), pour que les réglages actuels continuent de marcher ; le reste va
-// dans un `AiFilter` (plusieurs groupes, catégories, genres, mois ou saison
-// de toutes les années, plusieurs années ou statuts, habitats, département,
-// commune). Un champ nommé dans `dropped` n'est JAMAIS appliqué.
+// unique, dates de début et de fin, statut unique, groupe unique, texte),
+// pour que les réglages actuels continuent de marcher ; le reste va dans un
+// `AiFilter` en mémoire (plusieurs groupes, catégories, genres, mois ou
+// saison de toutes les années, plusieurs années ou statuts, habitats,
+// département, commune, et le rayon d'un « près de… » : ses coordonnées
+// n'entrent JAMAIS dans les filtres avancés, donc jamais dans un préréglage). Un champ nommé dans `dropped` n'est JAMAIS appliqué.
 //
 // Les textes (nom, lieu, commune, département, genres) viennent de la
 // phrase ou de la fonction : ce sont des TEXTES, à afficher en texte React,
@@ -21,6 +22,7 @@
 
 import { Habitat, Status, TaxonomicGroup, type Observation } from '../types';
 import { dateToIsoLocal } from './dateUtils';
+import { distanceKm } from './geoDistance';
 import { departmentName, foldPlaceName, normalizeDepartment, observationInDepartment } from './frenchDepartments';
 import { TAXON_CATEGORIES, TAXON_CATEGORY_KEYS, type TaxonCategoryKey } from './taxonCategories';
 
@@ -412,7 +414,7 @@ export const resolvePeriod = (period: SearchPeriod, now: Date): ResolvedPeriod =
 
 /** Filtres existants de la liste (`ObservationFilterState`) que la recherche peut écrire. */
 export type ExistingFilterField =
-    | 'searchTerm' | 'yearFilter' | 'taxonomicGroupFilter' | 'statusFilter' | 'startDateFilter' | 'endDateFilter' | 'geo';
+    | 'searchTerm' | 'yearFilter' | 'taxonomicGroupFilter' | 'statusFilter' | 'startDateFilter' | 'endDateFilter';
 
 export interface ExistingFilterWrites {
     searchTerm?: string;
@@ -421,8 +423,6 @@ export interface ExistingFilterWrites {
     statusFilter?: Status;
     startDateFilter?: string;
     endDateFilter?: string;
-    /** Rayon autour d'un point (filtre avancé « Rayon »). */
-    geo?: { lat: number; lon: number; radiusKm: number };
 }
 
 /** Critères sans filtre existant : appliqués en plus des filtres de la liste. */
@@ -442,6 +442,11 @@ export interface AiFilter {
     department: string | null;
     /** Commune telle qu'écrite (comparée sans casse ni accents). */
     commune: string | null;
+    /**
+     * Rayon d'un « près de… » : position de l'appareil ou lieu cherché. En
+     * mémoire seulement : jamais dans les filtres avancés ni un préréglage.
+     */
+    near: { lat: number; lon: number; radiusKm: number } | null;
     /** Période ou année entièrement à venir : aucune observation. */
     nothing: boolean;
 }
@@ -561,7 +566,7 @@ export const buildFilterPlan = (criteria: SearchCriteria, now: Date, near?: Near
     const notes: string[] = [];
     const aiFilter: AiFilter = {
         months: null, years: null, groups: [], categories: [], genera: [], statuses: null, habitats: null,
-        department: null, commune: null, nothing: false,
+        department: null, commune: null, near: null, nothing: false,
     };
     const today = dateToIsoLocal(now);
     const currentYear = now.getFullYear();
@@ -672,8 +677,7 @@ export const buildFilterPlan = (criteria: SearchCriteria, now: Date, near?: Near
     if (criteria.near) {
         const { label, tone } = nearLabel(criteria.near, near);
         if (near?.status === 'ok') {
-            writes.geo = { lat: near.lat, lon: near.lon, radiusKm: criteria.near.radiusKm };
-            owners.geo = 'near';
+            aiFilter.near = { lat: near.lat, lon: near.lon, radiusKm: criteria.near.radiusKm };
         }
         chips.push({ id: 'near', label, tone, ref: { field: 'near' } });
     }
@@ -691,7 +695,7 @@ export const buildFilterPlan = (criteria: SearchCriteria, now: Date, near?: Near
 
     const hasAiFilter = aiFilter.nothing || aiFilter.months !== null || aiFilter.years !== null || aiFilter.groups.length > 0
         || aiFilter.categories.length > 0 || aiFilter.genera.length > 0 || aiFilter.statuses !== null || aiFilter.habitats !== null
-        || aiFilter.department !== null || aiFilter.commune !== null;
+        || aiFilter.department !== null || aiFilter.commune !== null || aiFilter.near !== null;
     return { writes, owners, aiFilter: hasAiFilter ? aiFilter : null, chips, notes };
 };
 
@@ -772,6 +776,12 @@ const matchesOthers = (observation: Observation, filter: AiFilter): boolean => {
     if (filter.habitats !== null && (!observation.habitat || !filter.habitats.includes(observation.habitat))) return false;
     if (filter.department !== null && !observationInDepartment(observation.department, filter.department)) return false;
     if (filter.commune !== null && foldPlaceName(observation.municipality ?? '') !== foldPlaceName(filter.commune)) return false;
+    if (filter.near !== null) {
+        // Comme le filtre par rayon : une observation sans position est écartée.
+        const { lat, lon } = observation.gps ?? { lat: null, lon: null };
+        if (lat === null || lon === null || !Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+        if (distanceKm(filter.near.lat, filter.near.lon, lat, lon) > filter.near.radiusKm) return false;
+    }
     return true;
 };
 
@@ -806,5 +816,6 @@ export const describeAiFilterParts = (filter: AiFilter): string[] => {
     if (filter.habitats) parts.push('habitats');
     if (filter.department) parts.push('département');
     if (filter.commune) parts.push('commune');
+    if (filter.near) parts.push('« près de… »');
     return parts;
 };

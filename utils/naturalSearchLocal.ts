@@ -45,6 +45,12 @@ export interface LocalSearchAnalysis {
     /** La phrase contient un mot outil (« les », « en », « près »…). */
     hasFunctionWord: boolean;
     /**
+     * Repères de temps non compris, placés après un élément compris
+     * (« hier », « 12 mai », « cette semaine », « avant 2020 ») : la phrase
+     * n'est pas applicable telle quelle (seule l'IA peut l'interpréter).
+     */
+    unresolvedTime: string[];
+    /**
      * Un mot d'ensemble du dictionnaire (« oiseaux », « canards »,
      * « hirondelles ») suivi d'un complément (« de Pessac », « colverts ») :
      * rien n'est appliqué (c'est peut-être une espèce ou un lieu), mais
@@ -364,8 +370,28 @@ function taxonEndsAt(tokens: readonly Token[], end: number): boolean {
     return LEXICON.some(entry => entry.taxon && end - entry.tokens.length >= 0 && sameTokens(tokens, end - entry.tokens.length, entry.tokens));
 }
 
-/** Premiers mots des ensembles du dictionnaire (« oiseaux », « canards », « hirondelles »…). */
-const TAXON_HEADS: ReadonlySet<string> = new Set(LEXICON.filter(entry => entry.taxon).map(entry => entry.tokens[0]));
+/**
+ * Noms d'ensembles reconnus quand un complément les suit (bouton IA, sans
+ * rien appliquer) : les mots des synonymes « X et Y » du dictionnaire
+ * (« hirondelles et martinets », « chouettes et hiboux »), et quelques mots
+ * d'ensemble sans filtre (« plantes rares », « fleurs jaunes »). Jamais un
+ * adjectif d'un synonyme (« grand » de « grand gibier »).
+ */
+const ENSEMBLE_NOUNS: ReadonlySet<string> = new Set([
+    ...LEXICON.filter(entry => entry.taxon && entry.tokens.includes('et')).flatMap(entry => entry.tokens.filter(word => word !== 'et')),
+    ...words('plantes fleurs insectes animaux'),
+]);
+/** Expressions d'ensembles du dictionnaire (groupes et catégories), mot à mot. */
+const TAXON_ENTRIES: readonly (readonly string[])[] = LEXICON.filter(entry => entry.taxon).map(entry => entry.tokens);
+/** Repères de temps que l'analyse gratuite ne sait pas lire (« hier », « cette semaine »…). */
+const TIME_CUES = new Set(words(
+    'hier avant-hier demain semaine semaines week-end weekend matin matinée soir soirée nuit midi jour jours journée ' +
+    'mois an ans année années avant après depuis jusqu',
+));
+/** Composés qui sont eux-mêmes des repères de temps. */
+const COMPOUND_TIME_CUES = new Set(['week end', 'avant hier', 'apres midi', 'apres demain']);
+/** Devant une année, ils changent son sens (« avant 2020 » n'est pas « en 2020 »). */
+const BEFORE_YEAR_CUES = new Set(words('avant après depuis jusqu'));
 
 /** Un mois ou une saison n'est reconnu qu'avec un contexte temporel, avant ou après. */
 const hasTemporalContext = (tokens: readonly Token[], at: number, afterLength: number): boolean =>
@@ -590,6 +616,14 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
     const kinds: Array<'used' | 'stop' | 'free'> = tokens.map(() => 'free');
     /** Rayon lu sans « chez moi » : redevient du texte non compris. */
     let radiusSpan: [number, number] | null = null;
+    // Mots composés à traits d'union (« Villeneuve-en-Montagne ») : un seul
+    // nom. Aucune reconnaissance n'y commence ni n'y finit, sauf si elle le
+    // couvre en entier (« ce mois-ci », « chauves-souris », « 2020-2022 »).
+    const compoundOf: number[] = [];
+    tokens.forEach((token, at) => { compoundOf[at] = at > 0 && /^[-\u2010\u2011]$/u.test(token.before) ? compoundOf[at - 1] : at; });
+    const compoundStart = (at: number) => compoundOf[at] === at;
+    const compoundEnd = (at: number) => at === tokens.length - 1 || compoundOf[at + 1] !== compoundOf[at];
+    const inCompound = (at: number) => !(compoundStart(at) && compoundEnd(at));
 
     let index = 0;
     while (index < tokens.length) {
@@ -605,6 +639,7 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
                 && PLACE_BEFORE_DE.has(tokens[index - 2]?.f ?? '')));
         const afterNameLink = kinds[index - 1] === 'stop' && NAME_LINKS.has(tokens[index - 1].f) && kinds[index - 2] === 'free';
         const candidates = matchersAt(tokens, index)
+            .filter(match => compoundStart(index) && compoundEnd(index + match.length - 1))
             .filter(match => !(isTaxonMatch(tokens, index, match.length) && followedByQualifier(tokens, index + match.length)))
             .filter(match => !(match.guard === 'time-after' && (afterUnknown || afterNameLink)))
             .filter(match => !(match.guard === 'taxon' && (afterNameLink || afterPlace)))
@@ -643,6 +678,7 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
     // Texte libre : chaque suite de mots non compris, avec les mots outils
     // qu'elle enserre (« lézard des murailles »), telle qu'écrite.
     const runs: string[] = [];
+    const runSpans: Array<[number, number]> = [];
     const unknownWords: string[] = [];
     let runStart = -1;
     let runEnd = -1;
@@ -657,6 +693,7 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
         if (kind === 'stop' && runStart >= 0) continue;
         if (runStart >= 0) {
             runs.push(phrase.slice(tokens[runStart].start, tokens[runEnd].end));
+            runSpans.push([runStart, runEnd]);
             runStart = -1;
             runEnd = -1;
         }
@@ -707,18 +744,51 @@ export const analyzeNaturalSearch = (phrase: string): LocalSearchAnalysis => {
         return kinds[before] === 'free' && kinds[after] === 'free';
     };
     // Un ensemble du dictionnaire refusé parce qu'un complément le suit.
-    const hasTaxonWord = tokens.some((token, at) =>
-        kinds[at] === 'free' && TAXON_HEADS.has(token.f) && followedByQualifier(tokens, at + 1));
+    // Une expression ENTIÈRE du dictionnaire (« oiseaux », « canards ») ou un
+    // nom d'ensemble (« hirondelles », « plantes »), refusés parce qu'un
+    // complément les suit. Jamais le premier mot seul d'un synonyme (« Grand cormoran »).
+    const refusedEntry = TAXON_ENTRIES.some(entry => tokens.some((_, at) =>
+        sameTokens(tokens, at, entry) && entry.every((__, offset) => kinds[at + offset] === 'free')
+        && followedByQualifier(tokens, at + entry.length)));
+    const refusedNoun = tokens.some((token, at) =>
+        kinds[at] === 'free' && !inCompound(at) && ENSEMBLE_NOUNS.has(token.f) && followedByQualifier(tokens, at + 1));
+    const hasTaxonWord = refusedEntry || refusedNoun;
+    // « Le Teich », « L'Aigle » : un article devant un nom propre, sans aucun critère, n'en fait pas une phrase.
+    const leadingArticleOfName = (at: number) => at === 0 && !hasCriteria
+        && (token0 => token0 === 'le' || token0 === 'la' || token0 === 'les' || token0 === 'l')(tokens[0].f) && tokens[1]?.capital === true;
     const hasFunctionWord = tokens.some((token, at) =>
-        STOPWORDS.has(token.f) && !(NAME_FILLERS.has(token.f) && kinds[at] === 'stop' && insideFreeRun(at)));
+        STOPWORDS.has(token.f) && !inCompound(at) && !leadingArticleOfName(at)
+        && !(NAME_FILLERS.has(token.f) && kinds[at] === 'stop' && insideFreeRun(at)));
+    // Repères de temps non compris APRÈS le premier élément compris (« oiseaux
+    // vus hier ») ; un passage au début (la place du nom d'espèce : « Cèpe
+    // d'été en septembre ») ou pris dans un composé n'est pas concerné.
+    const firstUsed = kinds.indexOf('used');
+    const isTimeCue = (at: number) => {
+        const token = tokens[at];
+        if (inCompound(at)) {
+            const whole = tokens.filter((_, other) => compoundOf[other] === compoundOf[at]).map(item => item.f).join(' ');
+            return COMPOUND_TIME_CUES.has(whole);
+        }
+        return TIME_CUES.has(token.f) || MONTHS.includes(token.f) || SEASONS.has(token.f) || token.num !== null;
+    };
+    const unresolvedTime = firstUsed < 0 ? [] : runSpans
+        .filter(([start, end]) => start > firstUsed && Array.from({ length: end - start + 1 }, (_, offset) => start + offset).some(isTimeCue))
+        .map(([start, end]) => phrase.slice(tokens[start].start, tokens[end].end));
+    // « avant 2020 », « depuis 2020 » : l'année est lue, mais pas le sens du mot qui la précède.
+    tokens.forEach((token, at) => {
+        if (BEFORE_YEAR_CUES.has(token.f) && !inCompound(at) && isYear(tokens[at + 1]) && kinds[at + 1] === 'used') {
+            unresolvedTime.push(phrase.slice(token.start, tokens[at + 1].end));
+        }
+    });
     return {
         criteria,
         hasCriteria,
-        understood: unknownWords.length === 0,
+        understood: unknownWords.length === 0 && unresolvedTime.length === 0,
         unknownWords,
         fragments,
         hasFunctionWord,
         hasTaxonWord,
+        unresolvedTime,
         clearlyPhrase: hasCriteria && (hasFunctionWord || fields >= 2),
         notes,
     };

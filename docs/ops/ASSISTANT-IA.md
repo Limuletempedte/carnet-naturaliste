@@ -1321,9 +1321,11 @@ même IA fermée) :
 
 - sans recherche en langage naturel appliquée, chaque frappe filtre **par
   nom**, exactement comme avant, quoi qu'on tape (« buse », « Fougères »,
-  « Petit Mars changeant ») ; en plus, un pluriel simple est ignoré des deux
-  côtés, de mot à mot (« canards colverts » trouve « Canard colvert », mais
-  « gris » ne trouve pas « Grive musicienne ») ;
+  « Petit Mars changeant », « Villeneuve-en-Montagne », « Le Teich ») : même
+  règle que `main` (sous-chaîne), dans la liste, la carte et la galerie. Le
+  pluriel simple n'est ignoré (des deux côtés, de mot à mot) que dans le
+  texte d'une recherche en langage naturel **appliquée** (« hirondelles
+  rustiques en mai » trouve « Hirondelle rustique ») ;
 - l'**analyse locale gratuite** (`utils/naturalSearchLocal.ts`, aucun appel)
   **propose** en plus ce qu'elle reconnaît : un mois ou une saison seulement
   avec un contexte temporel (« en mai », « fin mai », « mai 2024 », « l'été
@@ -1331,23 +1333,32 @@ même IA fermée) :
   et catégories (jamais dans un nom : « Étang des Canards », « Île aux
   Oiseaux » ; jamais après « à » devant une majuscule : « oiseaux à
   Fougères »), statuts, quelques milieux, un département après « en » ou
-  « dans le », « près de chez moi » ;
+  « dans le », « près de chez moi ». Un composé à traits d'union est un seul
+  nom : rien n'y est reconnu, sauf s'il est reconnu en entier (« ce
+  mois-ci », « chauves-souris », « mi-avril ») ;
 - Entrée n'applique la proposition que pour une **phrase claire** (mot
   outil, ou plusieurs critères) ; un mot seul reconnu (« Fougères ») reste une
   recherche par nom, et son filtre ne s'applique que sur « Appliquer ce
   filtre ». Des passages non compris séparés (« chouette effraie en mai à
-  Pessac ») ne sont jamais collés : rien n'est appliqué ;
+  Pessac ») ne sont jamais collés : rien n'est appliqué. Un repère de temps
+  non compris après le premier élément compris (« oiseaux vus hier »,
+  « oiseaux en avril et mai », « oiseaux avant 2020 ») : rien n'est
+  appliqué, le passage est cité, l'IA est proposée ;
 - étiquettes « J'ai compris : … » retirables une à une ; une recherche
-  appliquée ne change plus avant « Appliquer » ; la croix l'efface ; un nom
-  tapé par-dessus se cherche à la place sur Entrée ou sur « Chercher « … »
+  appliquée ne change plus avant « Appliquer » ; la croix l'efface ; un texte
+  tapé par-dessus se cherche par nom à la place, sur Entrée dès qu'Entrée
+  n'appliquerait rien (« Fougères », « Rapaces ») ou sur « Chercher « … »
   par nom à la place » ;
   « Annuler la recherche » rend les filtres d'avant (le tri est gardé) ;
 - « **Interpréter avec l'IA** » n'est proposé que pour une phrase (mot outil,
   critère reconnu, ou ensemble du dictionnaire suivi d'un complément :
-  « oiseaux de Pessac ») qui garde des mots non compris, jamais pour un
-  simple nom (« buse variable », « Pic épeiche ») ; sans accès approuvé, un lien discret vers
+  « oiseaux de Pessac », « plantes rares ») qui garde des mots non compris,
+  jamais pour un simple nom (« buse variable », « Pic épeiche », « Grand
+  cormoran », « Le Teich ») ; sans accès approuvé, un lien discret vers
   « Assistant IA » remplace le bouton. L'état de l'assistant n'est lu qu'à ce
-  moment-là. Carte d'accord `search` au premier usage, à l'endroit même ;
+  moment-là. Carte d'accord `search` au premier usage, à l'endroit même ; si
+  le texte du champ change pendant la carte ou la vérification (un preset
+  appliqué), la carte se ferme et rien ne part ;
 - une phrase interprétée est gardée dans le navigateur
   (`ai-search-phrases-v1:<id>`, 50 au plus, **12 mois** au plus, forme
   relative, sans date calculée ni position, versionnée avec le dictionnaire,
@@ -1356,7 +1367,10 @@ même IA fermée) :
   après un passage par la carte ou une rotation de l'écran ;
 - « près de chez moi » demande la position au navigateur **au moment
   d'appliquer** ; refusée ou introuvable, l'étiquette le dit (« Réessayer »).
-  La position n'est jamais enregistrée, pas même dans un préréglage. Un lieu
+  La position (ou celle du lieu) reste dans le filtre de la recherche, en
+  mémoire, **jamais dans les filtres avancés** : elle n'est donc jamais
+  enregistrée, pas même dans un préréglage ; un filtre géographique posé à la
+  main s'y ajoute. Un lieu
   nommé (rendu par l'assistant) est cherché par Nominatim (`searchAddress`) ;
 - les étiquettes restent visibles sur la carte et dans la galerie.
 

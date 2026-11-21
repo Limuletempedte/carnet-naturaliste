@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Observation, Status, TaxonomicGroup } from '../types';
 import { compareIsoDate, getYearFromIsoDate } from '../utils/dateUtils';
-import { searchTextMatches } from '../utils/textUtils';
+import { normalizeSearchText, searchTextMatches } from '../utils/textUtils';
 import { distanceKm } from '../utils/geoDistance';
 import { applyAiFilter, type AiFilter } from '../utils/aiSearchFilters';
 
@@ -29,6 +29,13 @@ export interface ObservationFilterState {
     bboxMaxLon?: string;
     /** Critères de la recherche en langage naturel sans filtre existant (utils/aiSearchFilters.ts). */
     aiFilter?: AiFilter | null;
+    /**
+     * Le texte cherché vient d'une recherche en langage naturel APPLIQUÉE :
+     * il ignore un pluriel simple (« hirondelles rustiques » trouve
+     * « Hirondelle rustique »). Faux pour un nom tapé au clavier, qui suit
+     * exactement la règle d'avant (sous-chaîne).
+     */
+    searchTermFoldsPlural?: boolean;
 }
 
 const parseOptionalNumber = (value?: string): number | null => {
@@ -108,12 +115,21 @@ export const useObservationFilters = (
             })
             .filter(obs => {
                 if (!filters.searchTerm) return true;
-                // Comme avant (sous-chaîne sans casse ni accents), et sans tenir
-                // compte d'un pluriel simple, des deux côtés.
-                return searchTextMatches(obs.speciesName, filters.searchTerm)
-                    || searchTextMatches(obs.latinName, filters.searchTerm)
-                    || searchTextMatches(obs.location, filters.searchTerm)
-                    || searchTextMatches(obs.municipality, filters.searchTerm);
+                if (filters.searchTermFoldsPlural) {
+                    // Texte d'une recherche en langage naturel appliquée : sans pluriel simple, de mot à mot.
+                    return searchTextMatches(obs.speciesName, filters.searchTerm)
+                        || searchTextMatches(obs.latinName, filters.searchTerm)
+                        || searchTextMatches(obs.location, filters.searchTerm)
+                        || searchTextMatches(obs.municipality, filters.searchTerm);
+                }
+                // Nom tapé au clavier : exactement la règle d'avant (sous-chaîne sans casse ni accents).
+                const normalizedSearchTerm = normalizeSearchText(filters.searchTerm);
+                return (
+                    normalizeSearchText(obs.speciesName).includes(normalizedSearchTerm) ||
+                    (obs.latinName && normalizeSearchText(obs.latinName).includes(normalizedSearchTerm)) ||
+                    (obs.location && normalizeSearchText(obs.location).includes(normalizedSearchTerm)) ||
+                    (obs.municipality && normalizeSearchText(obs.municipality).includes(normalizedSearchTerm))
+                );
             })
             .filter(obs => {
                 const geoMode = filters.geoMode || 'none';

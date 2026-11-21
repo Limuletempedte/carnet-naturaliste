@@ -438,6 +438,8 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const proposalHeadingRef = useRef<HTMLParagraphElement | null>(null);
     const appliedHeadingRef = useRef<HTMLParagraphElement | null>(null);
     const focusTarget = useRef<'ai' | 'proposal' | 'input' | 'apply' | 'applied' | null>(null);
+    /** Phrase du parcours en cours de vérification (« Vérification… ») : elle seule pourra partir. */
+    const checkingPhraseRef = useRef<string | null>(null);
 
     const draftRef = useRef(draft);
     useEffect(() => { draftRef.current = draft; }, [draft]);
@@ -454,14 +456,16 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const alreadyApplied = naturalSearch !== null && naturalSearch.phrase === draft;
     /** Plusieurs passages non compris séparés : jamais appliqué tel quel. */
     const fragmented = local.fragments.length > 0;
+    /** Passages séparés, ou repère de temps non compris (« oiseaux vus hier ») : jamais appliqué tel quel. */
+    const blockedLocal = fragmented || local.unresolvedTime.length > 0;
 
     const proposal: Proposal | null = useMemo(() => {
         if (trimmed.length === 0 || alreadyApplied) return null;
         if (aiForDraft && !criteriaIsEmpty(aiForDraft.criteria)) return { phrase: draft, source: 'ai', criteria: aiForDraft.criteria };
         if (cached) return { phrase: draft, source: 'cache', criteria: cached };
-        if (local.hasCriteria && !fragmented) return { phrase: draft, source: 'local', criteria: local.criteria };
+        if (local.hasCriteria && !blockedLocal) return { phrase: draft, source: 'local', criteria: local.criteria };
         return null;
-    }, [trimmed, alreadyApplied, aiForDraft, draft, cached, local, fragmented]);
+    }, [trimmed, alreadyApplied, aiForDraft, draft, cached, local, blockedLocal]);
 
     const proposalCriteria = useMemo(() => {
         if (!proposal) return null;
@@ -476,11 +480,13 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const enterApplies = applicable && proposal !== null && (proposal.source !== 'local' || local.clearlyPhrase);
 
     const isWaiting = phase.kind === 'checking' || phase.kind === 'analyzing';
-    const lockedInput = isWaiting || phase.kind === 'consent' || consentWorking;
+    // Pendant l'enregistrement d'un accord annulé, le champ redevient
+    // modifiable ; le bouton IA, lui, reste occupé avec sa raison.
+    const lockedInput = isWaiting || phase.kind === 'consent';
     /** Une recherche appliquée, et le champ montre autre chose : elle reste telle quelle. */
     const editingApplied = naturalSearch !== null && draft !== naturalSearch.phrase;
     /** Rien à appliquer dans le nouveau texte : proposer de chercher ce nom à la place (lien, ou Entrée). */
-    const offerNameSearchInstead = editingApplied && !applicable && trimmed.length > 0 && !lockedInput;
+    const offerNameSearchInstead = editingApplied && !enterApplies && trimmed.length > 0 && !lockedInput && !locating;
     const tooLong = draft.length > AI_SEARCH_LIMITS.maxInputChars;
     // Bouton IA : une phrase (mot outil, critère reconnu, ou ensemble du
     // dictionnaire suivi d'un complément : « oiseaux de Pessac ») avec des mots
@@ -488,7 +494,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
     const offerAi = trimmed.length > 0 && !tooLong && !local.understood
         && (local.hasFunctionWord || local.hasCriteria || local.hasTaxonWord)
         && !cachedRaw && !aiForDraft && !alreadyApplied;
-    const showAiZone = offerAi || phase.kind !== 'idle';
+    const showAiZone = offerAi || phase.kind !== 'idle' || consentWorking;
 
     // Démontage (onglet Carte, rotation de l'écran…) : l'écran ne suit plus,
     // mais une phrase déjà partie n'est PAS coupée : sa réponse, peut-être
@@ -595,16 +601,50 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         setPhase({ kind: 'analyzing' });
         setAdopted(true);
         setAnnouncement('Interprétation de la phrase en cours…');
-        void pending.then(() => {
+        void pending.then(message => {
             if (runRef.current !== runId || !isSessionCurrent(context)) return;
-            setAdopted(false);
-            const found = readCachedSearch(phrase, context);
-            if (found) showInterpretation(phrase, found, 'cache');
-            else setPhase({ kind: 'idle' });
+            finishAdopted(context, phrase, message);
         }).finally(() => unlock(runId));
+        // Nettoyage (démontage, ou double montage de React en mode strict) :
+        // ce parcours s'arrête et libère le verrou, l'instance suivante reprend l'attente.
+        return () => {
+            if (runRef.current === runId) runRef.current += 1;
+            unlock(runId);
+        };
         // Au montage seulement.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    /**
+     * Fin d'une interprétation lancée par une autre instance du champ :
+     * sa réponse (dans le cache) ou son message d'erreur, et le compteur à jour.
+     */
+    function finishAdopted(context: SessionContext, phrase: string, message: string | null) {
+        setAdopted(false);
+        const memo = freshAccess(context.userId);
+        if (memo) setRemaining(memo.remaining);
+        const found = readCachedSearch(phrase, context);
+        if (found) showInterpretation(phrase, found, 'cache');
+        else if (message) {
+            setPhase({ kind: 'error', message });
+            focusTarget.current = 'ai';
+        } else setPhase({ kind: 'idle' });
+    }
+
+    /** La phrase du champ n'est plus celle du parcours : il s'arrête, rien ne part. */
+    function stopForChangedPhrase() {
+        runRef.current += 1;
+        setPhase({ kind: 'idle' });
+        setConsentError(null);
+        setAnnouncement('La phrase a changé : rien n’a été envoyé à l’assistant.');
+    }
+
+    // Phrase changée pendant l'accord ou la vérification (preset appliqué,
+    // recherche effacée ailleurs) : la carte se ferme, rien ne part.
+    useEffect(() => {
+        if (phase.kind === 'consent' && draft !== phase.phrase) stopForChangedPhrase();
+        else if (phase.kind === 'checking' && checkingPhraseRef.current !== null && draft !== checkingPhraseRef.current) stopForChangedPhrase();
+    }, [draft, phase]);
 
     const handleChange = (value: string) => {
         if (lockedInput) return;
@@ -669,18 +709,20 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         if (pending) {
             setPhase({ kind: 'analyzing' });
             setAdopted(true);
-            await pending;
+            const message = await pending;
             if (runRef.current !== runId || !isSessionCurrent(context)) return;
-            setAdopted(false);
-            const found = readCachedSearch(phrase, context);
-            if (found) showInterpretation(phrase, found, 'cache');
-            else setPhase({ kind: 'error', message: aiAssistErrorText('unknown') });
+            finishAdopted(context, phrase, message);
             return;
         }
         // Déjà interprétée (cache relu juste avant d'envoyer).
         const already = readCachedSearch(phrase, context);
         if (already) {
             showInterpretation(phrase, already, 'cache');
+            return;
+        }
+        // Dernier contrôle juste avant l'envoi : le champ montre-t-il toujours cette phrase ?
+        if (draftRef.current !== phrase) {
+            stopForChangedPhrase();
             return;
         }
         const controller = new AbortController();
@@ -690,14 +732,28 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         setAnnouncement('Interprétation de la phrase en cours…');
         // Payé : relu et gardé dès la réponse, même si la liste a été quittée
         // entre-temps (jamais si l'accord a été retiré depuis).
+        // Le compteur suit la réponse, réussie ou en erreur, quelle que soit
+        // l'instance du champ qui l'attend (la liste a pu être remontée).
         const request = Promise.resolve().then(() => callAiText('search', { text: phrase }, { signal: controller.signal }, context)).then(response => {
             if (controller.signal.aborted || !isSessionCurrent(context)) return null;
             noteRemaining(context, response.remaining);
             const criteria = parseSearchResult(response.result);
             if (criteria) rememberSearch(phrase, criteria, context, purges);
             return { remaining: response.remaining, criteria };
+        }, (error: unknown) => {
+            const wrapped = error instanceof AiAssistError ? error : new AiAssistError('unknown', { feature: 'search' });
+            if (!controller.signal.aborted && isSessionCurrent(context)) {
+                if (typeof wrapped.remaining === 'number') noteRemaining(context, wrapped.remaining);
+                // Plus rien ce mois-ci : le compteur affiché le dit.
+                else if (wrapped.code === 'quota_exceeded') noteRemaining(context, 0);
+                else if (RECOUNT_CODES.has(wrapped.code)) refreshCounter(context);
+            }
+            throw wrapped;
         });
-        trackInterpretation(phrase, context.userId, request.then(() => undefined, () => undefined));
+        trackInterpretation(phrase, context.userId, request.then(
+            outcome => (outcome && !outcome.criteria ? aiAssistErrorText('invalid_output') : null),
+            (error: AiAssistError) => (controller.signal.aborted ? null : error.message),
+        ));
         try {
             const outcome = await request;
             if (!outcome || runRef.current !== runId) return;
@@ -712,15 +768,8 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         } catch (error) {
             if (controller.signal.aborted || runRef.current !== runId || !isSessionCurrent(context)) return;
             setAnnouncement('');
+            // Le compteur a déjà été mis à jour avec la réponse (plus haut).
             const wrapped = error instanceof AiAssistError ? error : new AiAssistError('unknown', { feature: 'search' });
-            if (typeof wrapped.remaining === 'number') {
-                noteRemaining(context, wrapped.remaining);
-            } else if (wrapped.code === 'quota_exceeded') {
-                // Plus rien ce mois-ci : le compteur affiché le dit.
-                noteRemaining(context, 0);
-            } else if (RECOUNT_CODES.has(wrapped.code)) {
-                refreshCounter(context);
-            }
             if (wrapped.code === 'consent_outdated') {
                 const refreshed = await loadOverview(context, runId);
                 if (refreshed && runRef.current === runId) setPhase({ kind: 'consent', outdated: true, phrase });
@@ -751,6 +800,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         const runId = lock();
         if (runId === null) return;
         const phrase = draft;
+        checkingPhraseRef.current = phrase;
         setConsentError(null);
         setEmptyMessage(null);
         setPhase({ kind: 'checking' });
@@ -826,6 +876,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
             if (!stillWanted()) return;
             // La carte se ferme : le bouton IA, occupé, reprend le focus (« Annuler » reste atteignable).
             setConsentWorking(false);
+            checkingPhraseRef.current = phrase;
             setPhase({ kind: 'checking' });
             setAnnouncement('Accord enregistré. Vérification de votre accès…');
             focusTarget.current = 'ai';
@@ -873,6 +924,12 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         focusTarget.current = 'apply';
     };
 
+    /** Passe de la recherche appliquée à la recherche par nom du texte tapé (annoncé). */
+    const replaceWithName = () => {
+        onReplaceWithNameSearch(draft);
+        setAnnouncement(`Recherche par nom : « ${draft.trim()} ».`);
+    };
+
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key !== 'Enter') return;
         // Entrée applique une phrase claire déjà comprise ; elle n'appelle
@@ -884,7 +941,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
         }
         // Un nom tapé par-dessus une recherche appliquée : Entrée (la touche
         // « Rechercher » du clavier) fait comme « Chercher « … » par nom à la place ».
-        if (offerNameSearchInstead) onReplaceWithNameSearch(draft);
+        if (offerNameSearchInstead) replaceWithName();
     };
 
     const handleClear = () => {
@@ -988,7 +1045,7 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
             </div>
             <p id={helpId} className="px-1 text-xs text-gray-500 dark:text-gray-400">{help}</p>
             {offerNameSearchInstead && (
-                <button type="button" onClick={() => onReplaceWithNameSearch(draft)} className={`${linkButton} min-h-[36px] px-1 text-xs`}>
+                <button type="button" onClick={replaceWithName} className={`${linkButton} min-h-[36px] px-1 text-xs`}>
                     Chercher « {draft} » par nom à la place
                 </button>
             )}
@@ -1042,6 +1099,11 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                 </section>
             )}
 
+            {!fragmented && local.unresolvedTime.length > 0 && !proposal && !alreadyApplied && (
+                <p className="rounded-xl bg-ai-50 p-3 text-sm text-nature-dark dark:bg-ai-500/10 dark:text-white" data-testid="natural-search-time">
+                    {local.unresolvedTime.map(passage => `« ${passage} »`).join(', ')} : un repère de temps que l'analyse gratuite ne sait pas lire. Rien n'est appliqué.
+                </p>
+            )}
             {fragmented && !proposal && !alreadyApplied && (
                 <p className="rounded-xl bg-ai-50 p-3 text-sm text-nature-dark dark:bg-ai-500/10 dark:text-white" data-testid="natural-search-fragments">
                     Plusieurs passages ne sont pas compris : {local.fragments.map(fragment => `« ${fragment} »`).join(', ')}. L'analyse gratuite ne sait pas les relier : rien n'est appliqué, la recherche se fait par nom.
@@ -1069,13 +1131,13 @@ const NaturalSearch: React.FC<NaturalSearchProps> = ({
                             acceptLabel="Accepter et interpréter"
                             autoFocus
                         />
-                    ) : (offerAi || isWaiting) && (access !== 'none' || isWaiting) ? (
+                    ) : (offerAi || isWaiting || consentWorking) && (access !== 'none' || isWaiting || consentWorking) ? (
                         <div className="flex flex-wrap items-start gap-2">
                             <AiButton
                                 label="Interpréter avec l'IA"
-                                loadingLabel={phase.kind === 'checking' ? 'Vérification…' : 'Interprétation en cours…'}
+                                loadingLabel={phase.kind === 'checking' ? 'Vérification…' : isWaiting ? 'Interprétation en cours…' : 'Enregistrement de l’accord…'}
                                 onClick={() => void handleInterpret()}
-                                isLoading={isWaiting}
+                                isLoading={isWaiting || consentWorking}
                                 isOffline={isOffline}
                                 remaining={remaining}
                                 hint="la phrase est envoyée à l'assistant ; rien n'est appliqué sans votre choix"

@@ -96,7 +96,7 @@ describe('useFilterControls : recherche en langage naturel', () => {
         expect(result.current.hasActiveFilters).toBe(false);
     });
 
-    it('rayon : la position est écrite dans le filtre avancé, jamais dans les critères', () => {
+    it('rayon : la position vit dans l’AiFilter (en mémoire), jamais dans les filtres avancés ni les critères', () => {
         const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
         act(() => {
             result.current.applyNaturalSearch({
@@ -105,11 +105,17 @@ describe('useFilterControls : recherche en langage naturel', () => {
                 near: { status: 'ok', lat: 45.1, lon: 1.2 },
             });
         });
-        expect(result.current.advancedFilterState).toMatchObject({ geoMode: 'radius', radiusCenterLat: '45.1', radiusCenterLon: '1.2', radiusKm: '10' });
+        expect(result.current.advancedFilterState).toMatchObject({ geoMode: 'none', radiusCenterLat: '', radiusCenterLon: '', radiusKm: '' });
+        expect(result.current.filters.aiFilter?.near).toEqual({ lat: 45.1, lon: 1.2, radiusKm: 10 });
         expect(JSON.stringify(result.current.naturalSearch?.criteria)).not.toContain('45.1');
+        // Un filtre géographique posé à la main s'ajoute à la recherche.
+        act(() => { result.current.setAdvancedFilterState(state => ({ ...state, geoMode: 'bbox', bboxMinLat: '44', bboxMaxLat: '46', bboxMinLon: '0', bboxMaxLon: '2' })); });
+        expect(result.current.filters.aiFilter?.near).toEqual({ lat: 45.1, lon: 1.2, radiusKm: 10 });
+        expect(result.current.filters.geoMode).toBe('bbox');
+        // « Réinitialiser avancé » ne touche que les filtres avancés : le « près de… » reste.
         act(() => { result.current.resetAdvancedFilters(); });
         expect(result.current.advancedFilterState.geoMode).toBe('none');
-        expect(result.current.naturalSearch).toBeNull();
+        expect(result.current.filters.aiFilter?.near).toEqual({ lat: 45.1, lon: 1.2, radiusKm: 10 });
     });
 
     it('un preset ne peut pas enregistrer l’AiFilter : un message le dit', () => {
@@ -149,26 +155,40 @@ describe('useFilterControls : recherche en langage naturel', () => {
         expect(onToast).toHaveBeenCalledWith('warning', expect.stringContaining('« près de… »'), 8000);
     });
 
-    it.each([
-        ['« Aucun »', (state: Record<string, string>) => ({ ...state, geoMode: 'none' })],
-        ['rectangle', (state: Record<string, string>) => ({ ...state, geoMode: 'bbox' })],
-        ['rayon changé', (state: Record<string, string>) => ({ ...state, radiusKm: '25' })],
-    ])('la position de l’appareil ne reste jamais dans l’état ni dans un preset (%s)', (_label, change) => {
+    it('aucun enchaînement ne met une coordonnée de l’appareil dans les filtres avancés ni dans un preset', () => {
+        const DEVICE = { status: 'ok' as const, lat: 12.3456789, lon: 6.5432109 };
+        const PLACE = { status: 'ok' as const, lat: 23.4567891, lon: 7.6543219 };
+        const near = (radiusKm = 10) => criteria({ groups: [TaxonomicGroup.BIRD], near: { kind: 'current_position', placeName: null, radiusKm } });
         const { result } = renderHook(() => useFilterControls({ onToast: vi.fn() }));
+        const advancedHasNoCoordinate = () => {
+            const state = JSON.stringify(result.current.advancedFilterState);
+            expect(state).not.toMatch(/12\.34|6\.54|23\.45|7\.65/);
+        };
+        act(() => { result.current.applyNaturalSearch({ phrase: 'oiseaux près de chez moi', source: 'local', criteria: near(), near: DEVICE }); });
+        advancedHasNoCoordinate();
+        // Retouche de la latitude ou de la longitude (valeurs tapées par la personne), effacer puis retaper.
+        act(() => { result.current.setAdvancedFilterState(state => ({ ...state, geoMode: 'radius', radiusCenterLat: '4' })); });
+        act(() => { result.current.setAdvancedFilterState(state => ({ ...state, radiusCenterLat: '' })); });
+        act(() => { result.current.setAdvancedFilterState(state => ({ ...state, radiusCenterLon: '1', radiusKm: '25' })); });
+        act(() => { result.current.setAdvancedFilterState(state => ({ ...state, geoMode: 'bbox' })); });
+        act(() => { result.current.setAdvancedFilterState(state => ({ ...state, geoMode: 'none' })); });
+        advancedHasNoCoordinate();
+        // Deux « près de » à la suite, « Réessayer », annuler.
         act(() => {
             result.current.applyNaturalSearch({
-                phrase: 'oiseaux près de chez moi', source: 'local',
-                criteria: criteria({ groups: [TaxonomicGroup.BIRD], near: { kind: 'current_position', placeName: null, radiusKm: 10 } }),
-                near: { status: 'ok', lat: 12.3456789, lon: 6.5432109 },
+                phrase: 'près de Castelbrume', source: 'ai',
+                criteria: criteria({ near: { kind: 'place', placeName: 'Castelbrume', radiusKm: 5 } }), near: { status: 'not_found' },
             });
         });
-        act(() => { result.current.setAdvancedFilterState(change(result.current.advancedFilterState as unknown as Record<string, string>) as never); });
-        expect(result.current.advancedFilterState.radiusCenterLat).toBe('');
-        expect(result.current.advancedFilterState.radiusCenterLon).toBe('');
+        act(() => { result.current.updateNaturalNear(PLACE); });
+        advancedHasNoCoordinate();
+        act(() => { result.current.undoNaturalSearch(); });
+        advancedHasNoCoordinate();
         act(() => { result.current.saveFilterPreset('Coin'); });
-        const stored = localStorage.getItem('observation-filter-presets-v2:user-1') ?? '';
-        expect(stored).not.toContain('12.3456789');
-        expect(stored).not.toContain('6.5432109');
+        act(() => { result.current.undoNaturalSearch(); });
+        act(() => { result.current.saveFilterPreset('Coin 2'); });
+        const everything = Object.keys(localStorage).map(key => localStorage.getItem(key)).join('|');
+        expect(everything).not.toMatch(/12\.34|6\.54|23\.45|7\.65/);
     });
 
     it('« Annuler la recherche » garde le tri choisi après la recherche', () => {

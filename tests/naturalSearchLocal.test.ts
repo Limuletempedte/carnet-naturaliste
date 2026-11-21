@@ -328,3 +328,85 @@ describe('analyse locale : nom simple et utilitaires', () => {
         expect(countWords('les rapaces vus')).toBe(3);
     });
 });
+
+describe('analyse locale : quatrième passe', () => {
+    // B2 : un composé à traits d'union est un seul nom.
+    it.each(['Villeneuve-en-Montagne', 'Saint-Paul-en-Forêt', 'Saint-Médard-en-Jalles', 'Mai-sur-Orne', 'Châlons-en-Champagne'])(
+        '« %s » : un nom composé reste une recherche par nom (aucune proposition, aucun bouton IA)', (phrase) => {
+            const result = analyze(phrase);
+            expect(result.hasCriteria).toBe(false);
+            expect(result.hasFunctionWord).toBe(false);
+            expect(result.hasTaxonWord).toBe(false);
+            expect(result.criteria.text).toBe(phrase);
+            expect(result.unresolvedTime).toEqual([]);
+        });
+
+    it('un composé reconnu en entier reste reconnu', () => {
+        expect(analyze('ce mois-ci').criteria.period).toMatchObject({ kind: 'this_month' });
+        expect(analyze('chauves-souris').criteria.groups).toEqual([TaxonomicGroup.CHIROPTERA]);
+        expect(analyze('perce-oreilles').criteria.groups).toEqual([TaxonomicGroup.DERMAPTERA]);
+        expect(analyze('oiseaux en sous-bois').criteria.habitats.length).toBeGreaterThan(0);
+        expect(analyze('mi-avril').criteria.period).toMatchObject({ kind: 'month', month: 4 });
+        expect(analyze('2020-2022').criteria.years).toEqual([2020, 2021, 2022]);
+    });
+
+    it('« oiseaux à Saint-Paul-en-Forêt » : les oiseaux, et le nom composé en texte', () => {
+        const result = analyze('oiseaux à Saint-Paul-en-Forêt');
+        expect(result.criteria.groups).toEqual([TaxonomicGroup.BIRD]);
+        expect(result.criteria.habitats).toEqual([]);
+        expect(result.criteria.text).toBe('Saint-Paul-en-Forêt');
+    });
+
+    // B4 : un repère de temps non compris, après le premier élément compris.
+    it.each([
+        ['oiseaux en avril et mai', ['mai']],
+        ['oiseaux vus hier', ['hier']],
+        ['oiseaux le 12 mai', ['12 mai']],
+        ['rapaces cette semaine', ['semaine']],
+        ['oiseaux ce matin', ['matin']],
+        ['oiseaux avant 2020', ['avant 2020']],
+    ])('« %s » : repère de temps non compris, rien d’applicable sans l’IA', (phrase, passages) => {
+        const result = analyze(phrase);
+        expect(result.unresolvedTime).toEqual(passages);
+        expect(result.understood).toBe(false);
+        expect(result.hasCriteria).toBe(true);
+    });
+
+    it.each(['buse variable en mai', 'oiseaux à Pessac', 'Mars 2024 à Pessac', 'Rapaces de mai à Pessac', 'Cèpe d’été en septembre', 'Morille de printemps 2024'])(
+        '« %s » : aucun repère de temps en suspens (le nom en tête n’est pas concerné)', (phrase) => {
+            expect(analyze(phrase).unresolvedTime).toEqual([]);
+        });
+
+    // B7 : bouton IA seulement si une entrée COMPLÈTE du dictionnaire est refusée.
+    it.each(['Grand cormoran', 'Grand corbeau', 'Grand Mars changeant', 'Grand paon de nuit'])(
+        '« %s » : nom d’espèce, aucun ensemble refusé', (phrase) => {
+            const result = analyze(phrase);
+            expect(result.hasTaxonWord).toBe(false);
+            expect(result.hasFunctionWord).toBe(false);
+            expect(result.hasCriteria).toBe(false);
+        });
+
+    it.each(['oiseaux de Pessac', 'Canards colverts', 'hirondelles rustiques'])('« %s » : ensemble refusé, l’IA reste proposée', (phrase) => {
+        expect(analyze(phrase).hasTaxonWord).toBe(true);
+    });
+
+    // C1 : article en tête suivi d'un nom à majuscule, sans critère : un nom.
+    it.each(['Le Teich', 'La Rochelle', 'L’Aigle', 'Les Eyzies'])('« %s » : l’article fait partie du nom', (phrase) => {
+        const result = analyze(phrase);
+        expect(result.hasFunctionWord).toBe(false);
+        expect(result.hasCriteria).toBe(false);
+        expect(result.hasTaxonWord).toBe(false);
+    });
+
+    it('« les buses variables » : l’article reste un mot outil (bouton IA)', () => {
+        expect(analyze('les buses variables').hasFunctionWord).toBe(true);
+    });
+
+    // C4 : ensembles larges suivis d'un complément.
+    it.each(['plantes rares', 'fleurs des champs', 'insectes du jardin', 'animaux nocturnes'])(
+        '« %s » : rien d’appliqué, l’IA peut interpréter', (phrase) => {
+            const result = analyze(phrase);
+            expect(result.hasCriteria).toBe(false);
+            expect(result.hasTaxonWord).toBe(true);
+        });
+});

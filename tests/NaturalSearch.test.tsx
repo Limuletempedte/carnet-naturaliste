@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useState } from 'react';
+import { StrictMode, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSessionIdentity } from '../services/sessionScope';
 
@@ -346,13 +346,15 @@ describe('NaturalSearch : étiquettes, lieu, réinitialisation', () => {
         const chip = screen.getByTestId('search-chip-near');
         expect(chip.getAttribute('data-tone')).toBe('error');
         expect(chip.textContent).toMatch(/position refusée, critère non appliqué/);
-        expect(controls.advancedFilterState.geoMode).toBe('none');
+        expect(controls.filters.aiFilter).toBeNull();
         expect(controls.taxonomicGroupFilter).toBe('Oiseaux');
         expect(mocks.callAiText).not.toHaveBeenCalled();
         expect(screen.getByTestId('natural-search-status').textContent).toMatch(/sauf : autour de ma position actuelle \(10 km\) : position refusée/);
 
         fireEvent.click(within(chip).getByRole('button', { name: 'Réessayer' }));
-        await waitFor(() => expect(controls.advancedFilterState.geoMode).toBe('radius'));
+        await waitFor(() => expect(controls.filters.aiFilter?.near).toEqual({ lat: 44.8, lon: -0.6, radiusKm: 10 }));
+        // Jamais dans les filtres avancés.
+        expect(controls.advancedFilterState.geoMode).toBe('none');
         expect(screen.getByTestId('search-chip-near').getAttribute('data-tone')).toBe('ok');
         await waitFor(() => expect(document.activeElement?.textContent).toMatch(/J'ai compris/));
     });
@@ -644,5 +646,234 @@ describe('NaturalSearch : interprétation par l’assistant', () => {
         await act(async () => { resolveCall({ result: serverResult({ text: 'hérons cendrés' }), remaining: 11 }); });
         expect(screen.queryByTestId('natural-search-proposal')).toBeNull();
         expect(input().value).toBe('');
+    });
+});
+
+describe('NaturalSearch : quatrième passe de la relecture croisée', () => {
+    beforeEach(setup);
+    afterEach(teardown);
+
+    const PHRASE = 'hérons cendrés près de Castelbrume';
+
+    // B2 : un nom composé reste un nom.
+    it.each(['Villeneuve-en-Montagne', 'Saint-Paul-en-Forêt', 'Saint-Médard-en-Jalles', 'Mai-sur-Orne', 'Châlons-en-Champagne'])(
+        '« %s » : recherche par nom, ni proposition ni bouton IA', (value) => {
+            render(<Harness />);
+            type(value);
+            expect(controls.searchTerm).toBe(value);
+            expect(screen.queryByTestId('natural-search-proposal')).toBeNull();
+            expect(aiButton()).toBeNull();
+            pressEnter();
+            expect(controls.naturalSearch).toBeNull();
+        });
+
+    it('« oiseaux à Saint-Paul-en-Forêt » : Oiseaux, et le nom composé cherché tel quel', async () => {
+        render(<Harness />);
+        type('oiseaux à Saint-Paul-en-Forêt');
+        pressEnter();
+        await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+        expect(controls.taxonomicGroupFilter).toBe('Oiseaux');
+        expect(controls.searchTerm).toBe('Saint-Paul-en-Forêt');
+        expect(controls.filters.aiFilter).toBeNull();
+    });
+
+    // B3 : Entrée cherche le nom dès qu'elle n'appliquerait rien.
+    it.each(['Fougères', 'Pics', 'Rapaces', 'Morille de printemps 2024'])(
+        '« %s » tapé par-dessus « champignons d’automne » : lien et Entrée cherchent ce nom', async (value) => {
+            render(<Harness />);
+            type('champignons d’automne');
+            pressEnter();
+            await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+            type(value);
+            expect(screen.getByRole('button', { name: `Chercher « ${value} » par nom à la place` })).toBeTruthy();
+            // « Appliquer ce filtre » reste proposé, sur un clic.
+            expect(within(screen.getByTestId('natural-search-proposal')).getByRole('button', { name: 'Appliquer ce filtre' })).toBeTruthy();
+            pressEnter();
+            expect(controls.naturalSearch).toBeNull();
+            expect(controls.searchTerm).toBe(value);
+            expect(screen.getByTestId('natural-search-status').textContent).toBe(`Recherche par nom : « ${value} ».`);
+            expect(controls.taxonomicGroupFilter).toBe('all');
+            expect(controls.filters.aiFilter).toBeNull();
+        });
+
+    it('« Fougères » par-dessus une recherche appliquée : « Appliquer ce filtre » au clic applique le filtre', async () => {
+        render(<Harness />);
+        type('champignons d’automne');
+        pressEnter();
+        await waitFor(() => expect(controls.naturalSearch).not.toBeNull());
+        type('Fougères');
+        fireEvent.click(within(screen.getByTestId('natural-search-proposal')).getByRole('button', { name: 'Appliquer ce filtre' }));
+        await waitFor(() => expect(controls.naturalSearch?.phrase).toBe('Fougères'));
+        expect(controls.filters.aiFilter?.categories).toEqual(['fougeres']);
+    });
+
+    // B4 : un repère de temps non compris bloque l'application locale.
+    it.each([
+        ['oiseaux en avril et mai', '« mai »'],
+        ['oiseaux vus hier', '« hier »'],
+        ['oiseaux le 12 mai', '« 12 mai »'],
+        ['rapaces cette semaine', '« semaine »'],
+        ['oiseaux ce matin', '« matin »'],
+        ['oiseaux avant 2020', '« avant 2020 »'],
+    ])('« %s » : rien sur Entrée, pas d’« Appliquer », le passage cité, le bouton IA proposé', (value, cited) => {
+        render(<Harness />);
+        type(value);
+        expect(screen.queryByTestId('natural-search-proposal')).toBeNull();
+        expect(screen.queryByRole('button', { name: /^Appliquer/ })).toBeNull();
+        expect(screen.getByTestId('natural-search-time').textContent).toContain(cited);
+        expect(aiButton()).toBeTruthy();
+        pressEnter();
+        expect(controls.naturalSearch).toBeNull();
+        expect(controls.filters.aiFilter).toBeNull();
+        expect(controls.yearFilter).toBe('all');
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+    });
+
+    it.each(['buse variable en mai', 'oiseaux à Pessac', 'Mars 2024 à Pessac', 'Rapaces de mai à Pessac', 'Cèpe d’été en septembre'])(
+        '« %s » : toujours appliqué sur Entrée', async (value) => {
+            render(<Harness />);
+            type(value);
+            expect(screen.queryByTestId('natural-search-time')).toBeNull();
+            pressEnter();
+            await waitFor(() => expect(controls.naturalSearch?.phrase).toBe(value));
+        });
+
+    // B7, C1 : un nom d'espèce ou de lieu n'invite pas à payer.
+    it.each(['Grand cormoran', 'Grand corbeau', 'Grand Mars changeant', 'Grand paon de nuit', 'Le Teich', 'La Rochelle', 'L’Aigle', 'Les Eyzies'])(
+        '« %s » : recherche par nom, aucun bouton IA', (value) => {
+            render(<Harness />);
+            type(value);
+            expect(controls.searchTerm).toBe(value);
+            expect(screen.queryByTestId('natural-search-proposal')).toBeNull();
+            expect(aiButton()).toBeNull();
+        });
+
+    it.each(['oiseaux de Pessac', 'Canards colverts', 'hirondelles rustiques', 'les buses variables', 'plantes rares', 'fleurs des champs', 'insectes du jardin', 'animaux nocturnes'])(
+        '« %s » : rien d’appliqué, bouton IA proposé', (value) => {
+            render(<Harness />);
+            type(value);
+            expect(screen.queryByTestId('natural-search-proposal')).toBeNull();
+            expect(aiButton()).toBeTruthy();
+            pressEnter();
+            expect(controls.naturalSearch).toBeNull();
+        });
+
+    // B5 : la phrase change pendant l'accord ou la vérification : rien ne part.
+    const savePreset = () => {
+        type('buse');
+        act(() => { controls.saveFilterPreset('Buses'); });
+        return controls.filterPresets[controls.filterPresets.length - 1].id;
+    };
+
+    it('préréglage appliqué pendant la carte d’accord : la carte se ferme, rien n’est envoyé', async () => {
+        mocks.getAiOverview.mockResolvedValue(approved({}));
+        render(<Harness />);
+        const presetId = savePreset();
+        type(PHRASE);
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        await screen.findByTestId('ai-consent-card-search');
+        act(() => { controls.applyFilterPreset(presetId); });
+        expect(input().value).toBe('buse');
+        await waitFor(() => expect(screen.queryByTestId('ai-consent-card-search')).toBeNull());
+        expect(input().readOnly).toBe(false);
+        expect(mocks.giveConsent).not.toHaveBeenCalled();
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+    });
+
+    it('préréglage appliqué pendant « Vérification… » : le parcours s’arrête, rien n’est envoyé', async () => {
+        let resolveOverview: (value: AiOverview) => void = () => undefined;
+        mocks.getAiOverview.mockImplementation(() => new Promise(resolve => { resolveOverview = resolve; }));
+        render(<Harness />);
+        const presetId = savePreset();
+        type(PHRASE);
+        // L'accès est lu pour montrer le bouton : on répond, puis le clic relit (en attente).
+        await act(async () => { resolveOverview(approved()); });
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        expect(screen.getByRole('button', { name: /Vérification/ })).toBeTruthy();
+        act(() => { controls.applyFilterPreset(presetId); });
+        await act(async () => { resolveOverview(approved()); });
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+        expect(screen.queryByTestId('ai-consent-card-search')).toBeNull();
+        expect(input().value).toBe('buse');
+    });
+
+    it('préréglage appliqué entre l’accord enregistré et l’envoi : rien n’est envoyé', async () => {
+        mocks.getAiOverview.mockResolvedValue(approved({}));
+        render(<Harness />);
+        const presetId = savePreset();
+        type(PHRASE);
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        const card = await screen.findByTestId('ai-consent-card-search');
+        let resolveOverview: (value: AiOverview) => void = () => undefined;
+        mocks.getAiOverview.mockImplementation(() => new Promise(resolve => { resolveOverview = resolve; }));
+        fireEvent.click(within(card).getByRole('checkbox'));
+        fireEvent.click(within(card).getByRole('button', { name: 'Accepter et interpréter' }));
+        await waitFor(() => expect(mocks.giveConsent).toHaveBeenCalled());
+        await waitFor(() => expect(screen.getByRole('button', { name: /Vérification/ })).toBeTruthy());
+        act(() => { controls.applyFilterPreset(presetId); });
+        await act(async () => { resolveOverview(approved()); });
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+    });
+
+    // B6 : l'erreur arrive après un remontage du champ.
+    it('remontage pendant l’envoi, puis model_refused (11 restantes) : message d’erreur et compteur à jour', async () => {
+        let rejectCall: (error: unknown) => void = () => undefined;
+        mocks.callAiText.mockReturnValue(new Promise((_resolve, reject) => { rejectCall = reject; }));
+        render(<Harness />);
+        type(PHRASE);
+        expect(await screen.findByText(/12 restantes/)).toBeTruthy();
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        act(() => { setShown(false); });
+        act(() => { setShown(true); });
+        expect(screen.getByRole('button', { name: /Interprétation en cours/ })).toBeTruthy();
+        await act(async () => { rejectCall(new AiAssistError('model_refused', { feature: 'search', remaining: 11 })); });
+        expect((await screen.findByRole('alert')).textContent).toMatch(/n'a pas pu interpréter cette phrase/);
+        expect(await screen.findByText(/11 restantes/)).toBeTruthy();
+        expect(mocks.callAiText).toHaveBeenCalledTimes(1);
+    });
+
+    // C2 : en mode strict (double montage), l'attente reprise est nettoyée puis reprise une seule fois.
+    it('mode strict : remontage pendant l’envoi, la réponse revient une fois, sans nouvel envoi', async () => {
+        let resolveCall: (value: unknown) => void = () => undefined;
+        mocks.callAiText.mockReturnValue(new Promise(resolve => { resolveCall = resolve; }));
+        render(<StrictMode><Harness /></StrictMode>);
+        type(PHRASE);
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        await waitFor(() => expect(mocks.callAiText).toHaveBeenCalledTimes(1));
+        act(() => { setShown(false); });
+        act(() => { setShown(true); });
+        expect(screen.getByRole('button', { name: /Interprétation en cours/ })).toBeTruthy();
+        await act(async () => { resolveCall({ result: serverResult({ text: 'hérons cendrés' }), remaining: 11 }); });
+        expect(await screen.findByTestId('natural-search-proposal')).toBeTruthy();
+        // Le verrou est libéré : le champ redevient modifiable.
+        expect(input().readOnly).toBe(false);
+        expect(mocks.callAiText).toHaveBeenCalledTimes(1);
+    });
+
+    // C3 : « Annuler » pendant l'enregistrement de l'accord.
+    it('« Annuler » pendant l’enregistrement de l’accord : champ modifiable, bouton IA occupé avec sa raison', async () => {
+        mocks.getAiOverview.mockResolvedValue(approved({}));
+        let resolveConsent: () => void = () => undefined;
+        mocks.giveConsent.mockReturnValue(new Promise<void>(resolve => { resolveConsent = resolve; }));
+        render(<Harness />);
+        type(PHRASE);
+        fireEvent.click(aiButton() as HTMLButtonElement);
+        const card = await screen.findByTestId('ai-consent-card-search');
+        fireEvent.click(within(card).getByRole('checkbox'));
+        fireEvent.click(within(card).getByRole('button', { name: 'Accepter et interpréter' }));
+        fireEvent.click(within(card).getByRole('button', { name: 'Annuler' }));
+        expect(screen.queryByTestId('ai-consent-card-search')).toBeNull();
+        expect(input().readOnly).toBe(false);
+        const busy = screen.getByRole('button', { name: /Enregistrement de l’accord/ });
+        expect(busy.getAttribute('aria-busy')).toBe('true');
+        // Occupé : un clic ne lance rien.
+        fireEvent.click(busy);
+        type(`${PHRASE} vus`);
+        expect(input().value).toBe(`${PHRASE} vus`);
+        await act(async () => { resolveConsent(); });
+        expect(mocks.callAiText).not.toHaveBeenCalled();
+        expect(aiButton()).toBeTruthy();
+        expect((aiButton() as HTMLButtonElement).disabled).toBe(false);
     });
 });

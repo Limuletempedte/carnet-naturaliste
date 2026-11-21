@@ -190,14 +190,26 @@ describe('plan de filtres', () => {
     it('« près de chez moi » : appliqué seulement avec une position ; sinon étiquette d’erreur, jamais abandonné', () => {
         const near = criteria({ near: { kind: 'current_position', placeName: null, radiusKm: 10 } });
         const ok = buildFilterPlan(near, now, { status: 'ok', lat: 44.8, lon: -0.6 });
-        expect(ok.writes.geo).toEqual({ lat: 44.8, lon: -0.6, radiusKm: 10 });
+        // Jamais dans les filtres existants (avancés) : dans l'AiFilter, en mémoire.
+        expect(ok.writes).toEqual({});
+        expect(ok.aiFilter?.near).toEqual({ lat: 44.8, lon: -0.6, radiusKm: 10 });
         expect(ok.chips[0]).toMatchObject({ label: 'autour de ma position actuelle (10 km)', tone: 'ok' });
         const denied = buildFilterPlan(near, now, { status: 'denied' });
-        expect(denied.writes.geo).toBeUndefined();
+        expect(denied.aiFilter).toBeNull();
         expect(denied.chips[0]).toMatchObject({ tone: 'error' });
         expect(denied.chips[0].label).toMatch(/position refusée/);
         const place = buildFilterPlan(criteria({ near: { kind: 'place', placeName: 'Castelbrume', radiusKm: 5 } }), now, { status: 'not_found' });
         expect(place.chips[0].label).toBe('autour de Castelbrume (5 km) : lieu introuvable, critère non appliqué');
+    });
+
+    it('« près de… » filtre en mémoire : distance au centre, observation sans position écartée', () => {
+        const plan = buildFilterPlan(criteria({ near: { kind: 'current_position', placeName: null, radiusKm: 10 } }), now, { status: 'ok', lat: 44.84, lon: -0.58 });
+        const kept = applyAiFilter([
+            obs({ speciesName: 'proche', gps: { lat: 44.85, lon: -0.57 } }),
+            obs({ speciesName: 'loin', gps: { lat: 45.5, lon: -0.58 } }),
+            obs({ speciesName: 'sans position', gps: { lat: null, lon: null } }),
+        ], plan.aiFilter).kept;
+        expect(kept.map(item => item.speciesName)).toEqual(['proche']);
     });
 
     it('département normalisé par la table locale (« Gironde » = 33)', () => {
