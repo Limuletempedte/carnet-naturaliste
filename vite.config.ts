@@ -69,6 +69,8 @@ export default defineConfig(() => {
         // (index.tsx onNeedRefresh) inopérante — onNeedRefresh n'est appelé
         // qu'en mode 'prompt' — et un déploiement pouvait recharger l'app
         // pendant une saisie. En 'prompt', l'utilisateur choisit le moment.
+        // Exception : si l'ancienne version ne démarre plus (page blanche, donc
+        // pas de bandeau), public/sw-unstick.js active la nouvelle tout de suite.
         registerType: 'prompt',
         // CO-01: masked-icon.svg n'existe pas (feature Safari pinned-tab deprecated), retire de la liste.
         // EE-5: logo.svg precache (affiche sur l'ecran de connexion et l'ecran hors-ligne).
@@ -136,7 +138,7 @@ export default defineConfig(() => {
           ]
         },
         workbox: {
-          importScripts: ['/sw-private-media-cleanup.js'],
+          importScripts: ['/sw-private-media-cleanup.js', '/sw-unstick.js'],
           maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MiB to accommodate the large main bundle
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           // PE-11: Exclude heavy vendor chunks from precache (loaded on-demand via runtime cache)
