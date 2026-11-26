@@ -24,6 +24,7 @@ let outDir = '';
 let chunks: Rolldown.OutputChunk[] = [];
 let precached = new Set<string>();
 let indexHtml = '';
+let swSource = '';
 
 beforeAll(async () => {
     outDir = mkdtempSync(join(tmpdir(), 'carnet-precache-'));
@@ -45,8 +46,8 @@ beforeAll(async () => {
     } finally {
         process.env.NODE_ENV = previousNodeEnv;
     }
-    const sw = readFileSync(join(outDir, 'sw.js'), 'utf8');
-    precached = new Set([...sw.matchAll(/url:"([^"]+)"/g)].map((m) => m[1]));
+    swSource = readFileSync(join(outDir, 'sw.js'), 'utf8');
+    precached = new Set([...swSource.matchAll(/url:"([^"]+)"/g)].map((m) => m[1]));
     indexHtml = readFileSync(join(outDir, 'index.html'), 'utf8');
 }, 180_000);
 
@@ -94,6 +95,12 @@ describe('Pré-cache du service worker et démarrage hors ligne', () => {
             .filter((c) => precached.has(c.fileName))
             .flatMap((c) => c.imports.filter((dep) => !precached.has(dep)).map((dep) => `${c.fileName} -> ${dep}`));
         expect(broken).toEqual([]);
+    });
+
+    it('sw.js charge le script qui débloque une ancienne version cassée', () => {
+        // Page blanche du 2026-11-26 : voir public/sw-unstick.js et tests/swUnstick.test.ts.
+        expect(swSource).toContain('"/sw-unstick.js"');
+        expect(precached.has('sw-unstick.js')).toBe(true);
     });
 
     it("index.html ne précharge aucun chunk lourd", () => {
